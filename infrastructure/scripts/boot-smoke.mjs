@@ -43,6 +43,8 @@ const services = [
       SMTP_HOST: '127.0.0.1',
       SMTP_PORT: '1',
       SMS_PROVIDER: 'disabled',
+      // 32 bytes of 0x2a, base64. Smoke-test only.
+      AI_SECRETS_MASTER_KEY: Buffer.alloc(32, 42).toString('base64'),
     },
   },
   {

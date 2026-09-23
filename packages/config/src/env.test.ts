@@ -14,13 +14,17 @@ const base = {
   EMAIL_FROM: 'dev@localhost',
   SMTP_HOST: 'localhost',
   SMS_PROVIDER: 'dev-mailbox',
+  AI_SECRETS_MASTER_KEY: 'ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=',
 };
+
+const productionAiKey = Buffer.alloc(32, 7).toString('base64');
 
 const deployed = {
   ...base,
   APP_ENV: 'production',
   CORS_ALLOWED_ORIGINS: 'https://interview.codebegun.com',
   SMS_PROVIDER: 'disabled',
+  AI_SECRETS_MASTER_KEY: productionAiKey,
 };
 
 describe('loadEnv', () => {
@@ -108,5 +112,43 @@ describe('loadEnv', () => {
   it('parses worker environment', () => {
     const env = loadEnv(workerEnvSchema, base);
     expect(env.WORKER_HEALTH_PORT).toBe(4100);
+  });
+});
+
+describe('AI provider settings', () => {
+  it('requires a 32-byte base64 master key', () => {
+    expect(loadEnv(apiEnvSchema, base).AI_SECRETS_KEY_ID).toBe('k1');
+    const { AI_SECRETS_MASTER_KEY: _omit, ...rest } = base;
+    expect(() => loadEnv(apiEnvSchema, rest)).toThrow(/AI_SECRETS_MASTER_KEY/);
+    expect(() =>
+      loadEnv(apiEnvSchema, {
+        ...base,
+        AI_SECRETS_MASTER_KEY: Buffer.alloc(16).toString('base64'),
+      }),
+    ).toThrow(/32 bytes/);
+  });
+
+  it('refuses the mock provider and the example key when deployed', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...deployed, AI_MOCK_MODE: 'true' })).toThrow(
+      /AI_MOCK_MODE/,
+    );
+    expect(() =>
+      loadEnv(apiEnvSchema, { ...deployed, AI_SECRETS_MASTER_KEY: base.AI_SECRETS_MASTER_KEY }),
+    ).toThrow(/example development key/);
+    expect(loadEnv(apiEnvSchema, { ...base, AI_MOCK_MODE: 'true' }).AI_MOCK_MODE).toBe(true);
+  });
+
+  it('validates previous rotation keys', () => {
+    const k0 = Buffer.alloc(32, 1).toString('base64');
+    expect(
+      loadEnv(apiEnvSchema, { ...base, AI_SECRETS_PREVIOUS_KEYS: `k0:${k0}` })
+        .AI_SECRETS_PREVIOUS_KEYS,
+    ).toBe(`k0:${k0}`);
+    expect(() => loadEnv(apiEnvSchema, { ...base, AI_SECRETS_PREVIOUS_KEYS: 'k0:short' })).toThrow(
+      /AI_SECRETS_PREVIOUS_KEYS/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...base, AI_SECRETS_PREVIOUS_KEYS: `k1:${k0}` })).toThrow(
+      /must not repeat/,
+    );
   });
 });

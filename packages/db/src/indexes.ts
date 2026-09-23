@@ -1,3 +1,11 @@
+import {
+  AiModelModel,
+  AiProviderModel,
+  AiRouteModel,
+  AiUsageModel,
+  PromptTemplateModel,
+  ProviderHealthModel,
+} from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
 import { AuthIdentityModel } from './models/auth-identity.js';
 import { OtpChallengeModel } from './models/otp-challenge.js';
@@ -12,6 +20,12 @@ const MODELS = [
   RefreshTokenModel,
   OtpChallengeModel,
   AuditLogModel,
+  AiProviderModel,
+  AiModelModel,
+  AiRouteModel,
+  AiUsageModel,
+  ProviderHealthModel,
+  PromptTemplateModel,
 ];
 
 /**

@@ -108,7 +108,7 @@ export function createSessionService(opts: SessionServiceOptions) {
           expiresAt: { $gt: now },
         },
         { $set: { usedAt: now } },
-        { new: true },
+        { returnDocument: 'after' },
       ).lean();
 
       if (!row) {

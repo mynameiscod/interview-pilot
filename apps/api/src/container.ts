@@ -9,10 +9,13 @@ import {
   type EmailProvider,
   type OtpSmsProvider,
 } from '@cbi/provider-adapters';
+import type { AdapterRegistry, UsageSink } from '@cbi/ai-core';
 import type { JWTVerifyGetKey } from 'jose';
 import { createAuditService } from './lib/audit.js';
 import { createRateLimiters } from './middleware/rate-limit.js';
 import { createAdminUserService } from './modules/admin/admin-users.service.js';
+import { createAiAdminService } from './modules/ai/ai-admin.service.js';
+import { buildAiRuntime } from './modules/ai/ai-runtime.js';
 import { createAccountService } from './modules/auth/account.service.js';
 import type { CookieSettings } from './modules/auth/cookies.js';
 import { createGoogleVerifier } from './modules/auth/google-verifier.js';
@@ -31,6 +34,8 @@ export interface ContainerOptions {
     email?: EmailProvider;
     sms?: OtpSmsProvider | null;
     googleKeySet?: JWTVerifyGetKey;
+    aiAdapters?: AdapterRegistry;
+    aiUsage?: UsageSink;
   };
 }
 
@@ -117,6 +122,14 @@ export function buildContainer(opts: ContainerOptions) {
     logger,
     adminUrl: env.PUBLIC_ADMIN_URL,
   });
+  const ai = buildAiRuntime({
+    env,
+    logger,
+    redis,
+    adapters: opts.overrides?.aiAdapters,
+    usage: opts.overrides?.aiUsage,
+  });
+  const aiAdmin = createAiAdminService({ ai, audit, logger });
   const cookies: CookieSettings = {
     secure: env.APP_ENV !== 'development' && env.APP_ENV !== 'test',
     domain: env.COOKIE_DOMAIN,
@@ -133,8 +146,10 @@ export function buildContainer(opts: ContainerOptions) {
     otp,
     google,
     adminUsers,
+    ai,
+    aiAdmin,
     cookies,
-    providers: { email: email.name, sms: sms?.name ?? null },
+    providers: { email: email.name, sms: sms?.name ?? null, aiMock: ai.mockEnabled },
     limiters: createRateLimiters(opts.rateLimitRedis),
   };
 }

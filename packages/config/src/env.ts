@@ -55,6 +55,19 @@ const optionalString = z
   .transform((v) => (v && v.trim() !== '' ? v.trim() : undefined));
 const isDeployed = (appEnv: AppEnv) => appEnv === 'staging' || appEnv === 'production';
 
+/** A base64-encoded 32-byte key (AES-256). */
+const base64Key32 = z
+  .string()
+  .trim()
+  .refine((v) => {
+    const bytes = Buffer.from(v, 'base64');
+    return bytes.length === 32 && bytes.toString('base64') === v;
+  }, 'must be exactly 32 bytes, base64-encoded (openssl rand -base64 32)');
+
+/** True when a base64 key decodes to the development example value. */
+const isExampleKey = (v: string) =>
+  /dev-only|change-me/i.test(Buffer.from(v, 'base64').toString('latin1'));
+
 const apiObjectSchema = baseEnvSchema.extend({
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
@@ -105,6 +118,23 @@ const apiObjectSchema = baseEnvSchema.extend({
   MSG91_AUTH_KEY: optionalString,
   MSG91_OTP_TEMPLATE_ID: optionalString,
   MSG91_OTP_VARIABLE: z.string().default('otp'),
+
+  // --- AI providers ---------------------------------------------------------
+  /** Encrypts provider API keys stored through Admin (AES-256-GCM). */
+  AI_SECRETS_MASTER_KEY: base64Key32,
+  AI_SECRETS_KEY_ID: z
+    .string()
+    .regex(/^[a-z0-9_-]{1,16}$/i, 'letters, digits, - and _ only (max 16)')
+    .default('k1'),
+  /** Older keys kept for decryption during rotation: `k0:base64,k1:base64`. */
+  AI_SECRETS_PREVIOUS_KEYS: optionalString,
+  /** Deterministic mock provider; development/test only. */
+  AI_MOCK_MODE: booleanString.default(false),
+  AI_CONFIG_CACHE_TTL_SEC: z.coerce.number().int().min(1).max(600).default(30),
+  /** Optional first-run keys; imported once (encrypted) when the provider has none. */
+  AI_BOOTSTRAP_OPENAI_API_KEY: optionalString,
+  AI_BOOTSTRAP_ANTHROPIC_API_KEY: optionalString,
+  AI_BOOTSTRAP_GEMINI_API_KEY: optionalString,
 });
 
 export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
@@ -129,7 +159,32 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
   if (env.JWT_ACCESS_SECRET === env.OTP_HMAC_SECRET) {
     issue('OTP_HMAC_SECRET', 'must differ from JWT_ACCESS_SECRET');
   }
+  if (env.AI_SECRETS_PREVIOUS_KEYS) {
+    for (const item of env.AI_SECRETS_PREVIOUS_KEYS.split(',').map((s) => s.trim())) {
+      const [keyId, key] = [item.slice(0, item.indexOf(':')), item.slice(item.indexOf(':') + 1)];
+      if (!keyId || !base64Key32.safeParse(key).success) {
+        issue('AI_SECRETS_PREVIOUS_KEYS', 'entries must look like keyId:base64 (32-byte keys)');
+        break;
+      }
+      if (keyId === env.AI_SECRETS_KEY_ID) {
+        issue('AI_SECRETS_PREVIOUS_KEYS', 'must not repeat AI_SECRETS_KEY_ID');
+        break;
+      }
+    }
+  }
   if (isDeployed(env.APP_ENV)) {
+    if (env.AI_MOCK_MODE) {
+      issue(
+        'AI_MOCK_MODE',
+        `the mock AI provider is for development and tests only, not ${env.APP_ENV}`,
+      );
+    }
+    if (isExampleKey(env.AI_SECRETS_MASTER_KEY)) {
+      issue(
+        'AI_SECRETS_MASTER_KEY',
+        `the example development key must not be used in ${env.APP_ENV}`,
+      );
+    }
     if (env.SMS_PROVIDER === 'dev-mailbox') {
       issue('SMS_PROVIDER', `dev-mailbox is for local development only, not ${env.APP_ENV}`);
     }
@@ -148,6 +203,8 @@ export type ApiEnv = z.infer<typeof apiEnvSchema>;
 export const workerEnvSchema = baseEnvSchema.extend({
   WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
   WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
+  /** How often AI usage is rolled up into providerHealth. */
+  WORKER_PROVIDER_HEALTH_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
 });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

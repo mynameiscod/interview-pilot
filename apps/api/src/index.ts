@@ -1,6 +1,7 @@
 import { apiEnvSchema, createLogger, loadEnv } from '@cbi/config';
 import { createApp, SERVICE_NAME } from './app.js';
 import { buildContainer } from './container.js';
+import { bootstrapAi } from './modules/ai/ai-bootstrap.js';
 import {
   connectMongo,
   createRedis,
@@ -38,6 +39,8 @@ async function main(): Promise<void> {
 
   const container = buildContainer({ env, logger, redis, rateLimitRedis: redis });
   logger.info(container.providers, 'providers configured');
+  await bootstrapAi({ env, ai: container.ai, audit: container.audit, logger });
+  const stopAiListener = await container.ai.listenForChanges();
   const app = createApp({
     container,
     logger,
@@ -61,6 +64,7 @@ async function main(): Promise<void> {
 
     server.close(async () => {
       try {
+        await stopAiListener();
         await Promise.allSettled([disconnectMongo(), redis.quit()]);
         logger.info('shutdown complete');
       } finally {

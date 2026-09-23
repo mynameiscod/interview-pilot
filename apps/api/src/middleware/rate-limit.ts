@@ -4,7 +4,7 @@ import { ipKeyGenerator, rateLimit, type Options } from 'express-rate-limit';
 import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { AppError } from '../lib/errors.js';
 
-export type RateLimiterName = 'public' | 'auth' | 'otpRequest' | 'otpVerify' | 'admin';
+export type RateLimiterName = 'public' | 'auth' | 'otpRequest' | 'otpVerify' | 'admin' | 'aiTest';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -18,6 +18,8 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   otpRequest: { windowMs: 15 * 60_000, limit: 10, failOpen: false },
   otpVerify: { windowMs: 60_000, limit: 15, failOpen: false },
   admin: { windowMs: 60_000, limit: 300, failOpen: true },
+  /** Admin model connectivity tests make real, billed provider calls. */
+  aiTest: { windowMs: 60_000, limit: 10, failOpen: false },
 };
 
 /** @param redis null → in-process memory counters (single-process tests only). */
@@ -31,7 +33,9 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
       legacyHeaders: false,
       passOnStoreError: failOpen,
       keyGenerator: (req) =>
-        name === 'admin' && req.auth ? `user:${req.auth.userId}` : ipKeyGenerator(req.ip ?? ''),
+        (name === 'admin' || name === 'aiTest') && req.auth
+          ? `user:${req.auth.userId}`
+          : ipKeyGenerator(req.ip ?? ''),
       handler: (_req, _res, next) =>
         next(new AppError(429, 'RATE_LIMITED', 'Too many requests. Please wait and try again.')),
     };
@@ -50,5 +54,6 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     otpRequest: make('otpRequest'),
     otpVerify: make('otpVerify'),
     admin: make('admin'),
+    aiTest: make('aiTest'),
   };
 }

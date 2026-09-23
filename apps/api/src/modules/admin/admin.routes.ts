@@ -14,6 +14,7 @@ import type { Container } from '../../container.js';
 import { AppError } from '../../lib/errors.js';
 import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
+import { aiAdminRouter } from '../ai/ai.routes.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
 export function adminRouter(c: Container): Router {
@@ -107,6 +108,9 @@ export function adminRouter(c: Container): Router {
       },
     });
   });
+
+  // ---- AI provider layer and prompt registry -----------------------------
+  router.use(aiAdminRouter(c));
 
   return router;
 }

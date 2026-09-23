@@ -11,6 +11,7 @@ import type { ClientSession, Types } from 'mongoose';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import { transaction } from '../../lib/transaction.js';
 import type { AccountService } from '../auth/account.service.js';
 import { adminInviteEmail } from '../auth/messages.js';
 import type { SessionService } from '../auth/session.service.js';
@@ -47,19 +48,6 @@ function toSummary(user: UserLike, displayName: string | null): AdminUserSummary
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
   };
-}
-
-async function transaction<T>(fn: (session: ClientSession) => Promise<T>): Promise<T> {
-  const session = await mongoose.startSession();
-  try {
-    let result!: T;
-    await session.withTransaction(async () => {
-      result = await fn(session);
-    });
-    return result;
-  } finally {
-    await session.endSession();
-  }
 }
 
 /**

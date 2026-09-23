@@ -192,7 +192,7 @@ export function createOtpService(opts: OtpServiceOptions) {
           $expr: { $lt: ['$attempts', '$maxAttempts'] },
         },
         { $inc: { attempts: 1 } },
-        { new: true },
+        { returnDocument: 'after' },
       ).lean();
 
       if (!challenge) {

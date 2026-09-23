@@ -1,6 +1,25 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  ActivatePromptBody,
+  AddAiModelPriceBody,
   AdminMeResponse,
+  AiModelHealth,
+  AiModelSummary,
+  AiProviderSummary,
+  AiRouteSummary,
+  AiUsageEntriesPage,
+  AiUsageEntriesQuery,
+  AiUsageReport,
+  CreateAiModelBody,
+  CreatePromptVersionBody,
+  PromptListQuery,
+  PromptTemplateSummary,
+  RemoveAiProviderCredentialBody,
+  SetAiProviderCredentialBody,
+  TestAiModelResponse,
+  UpdateAiModelBody,
+  UpdateAiProviderBody,
+  UpsertAiRouteBody,
   AdminUserSummary,
   ApiErrorBody,
   AuditLogPage,
@@ -270,6 +289,105 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     query: AuditLogQuery,
     response: AuditLogPage,
     errors: [400, 401, 403],
+  });
+
+  // ---- Admin: AI provider layer ------------------------------------------------
+  const ai = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, { tag: 'Admin AI', auth: 'bearer', errors: [400, 401, 403, 404], ...spec });
+  ai('get', '/admin/ai/providers', {
+    summary: 'AI providers; credentials are shown as last4 only (ai.read)',
+    response: z.array(AiProviderSummary),
+  });
+  ai('patch', '/admin/ai/providers/{id}', {
+    summary: 'Enable/disable a provider or change its base URL, region or notes (ai.manage)',
+    body: UpdateAiProviderBody,
+    response: AiProviderSummary,
+  });
+  ai('put', '/admin/ai/providers/{id}/credential', {
+    summary: 'Store (encrypt) a provider API key (ai.manage)',
+    body: SetAiProviderCredentialBody,
+    response: AiProviderSummary,
+  });
+  ai('delete', '/admin/ai/providers/{id}/credential', {
+    summary: 'Remove the stored provider API key (ai.manage)',
+    body: RemoveAiProviderCredentialBody,
+    response: AiProviderSummary,
+    errors: [400, 401, 403, 404, 409],
+  });
+  ai('get', '/admin/ai/models', {
+    summary: 'Models with parameters and effective-dated pricing (ai.read)',
+    response: z.array(AiModelSummary),
+  });
+  ai('post', '/admin/ai/models', {
+    summary: 'Add a model to a provider (ai.manage)',
+    body: CreateAiModelBody,
+    response: AiModelSummary,
+    status: 201,
+    errors: [400, 401, 403, 404, 409],
+  });
+  ai('patch', '/admin/ai/models/{id}', {
+    summary: 'Change a model’s name, languages, parameters or enabled state (ai.manage)',
+    body: UpdateAiModelBody,
+    response: AiModelSummary,
+  });
+  ai('post', '/admin/ai/models/{id}/prices', {
+    summary: 'Add a price effective now or later; history is never rewritten (ai.manage)',
+    body: AddAiModelPriceBody,
+    response: AiModelSummary,
+    status: 201,
+  });
+  ai('post', '/admin/ai/models/{id}/test', {
+    summary: 'Send a small billed request straight to the model (ai.manage; 10/min)',
+    response: TestAiModelResponse,
+    errors: [401, 403, 404, 429],
+  });
+  ai('get', '/admin/ai/routes', {
+    summary: 'Fallback chain per feature (ai.read)',
+    response: z.array(AiRouteSummary),
+  });
+  ai('put', '/admin/ai/routes/{feature}', {
+    summary: 'Replace a feature’s fallback chain; applies to every process immediately (ai.manage)',
+    body: UpsertAiRouteBody,
+    response: AiRouteSummary,
+  });
+  ai('get', '/admin/ai/usage', {
+    summary:
+      'Calls, tokens, cost (micro-units per currency) and latency by feature, model or day (ai_usage.read)',
+    query: z.object({
+      from: z.iso.datetime().optional(),
+      to: z.iso.datetime().optional(),
+      groupBy: z.enum(['feature', 'model', 'day']).optional(),
+      feature: z.string().optional(),
+    }),
+    response: AiUsageReport,
+  });
+  ai('get', '/admin/ai/usage/entries', {
+    summary: 'Individual metered calls, newest first (ai_usage.read)',
+    query: AiUsageEntriesQuery,
+    response: AiUsageEntriesPage,
+  });
+  ai('get', '/admin/ai/health', {
+    summary: 'Circuit-breaker state and the latest 5-minute health window per model (ai.read)',
+    response: z.array(AiModelHealth),
+  });
+  ai('get', '/admin/prompts', {
+    summary: 'Prompt template versions (prompts.read)',
+    query: PromptListQuery,
+    response: z.array(PromptTemplateSummary),
+  });
+  ai('post', '/admin/prompts', {
+    summary:
+      'Create the next version of a prompt as a DRAFT; content is immutable (prompts.manage)',
+    body: CreatePromptVersionBody,
+    response: PromptTemplateSummary,
+    status: 201,
+    errors: [400, 401, 403, 409],
+  });
+  ai('post', '/admin/prompts/{id}/activate', {
+    summary: 'Activate a version and retire the previous one (prompts.manage)',
+    body: ActivatePromptBody,
+    response: PromptTemplateSummary,
+    errors: [400, 401, 403, 404, 409],
   });
 
   const generator = new OpenApiGeneratorV31(registry.definitions);

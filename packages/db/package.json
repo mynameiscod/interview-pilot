@@ -20,6 +20,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@cbi/ai-core": "workspace:*",
     "@cbi/config": "workspace:*",
     "@cbi/shared-types": "workspace:*",
     "ioredis": "6.0.0",

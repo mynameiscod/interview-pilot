@@ -75,6 +75,9 @@ services:
       SMTP_PORT: '1025'
       SMTP_REQUIRE_TLS: 'false'
       SMS_PROVIDER: dev-mailbox
+      # Development-only AI settings: example master key and the labelled mock provider.
+      AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
+      AI_MOCK_MODE: 'true'
     ports:
       - '127.0.0.1:4000:4000'
     depends_on:

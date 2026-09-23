@@ -1,3 +1,4 @@
+import { AiAbortedError, AiUnavailableError } from '@cbi/ai-core';
 import type { ApiErrorBody } from '@cbi/shared-types';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
@@ -19,6 +20,14 @@ function toAppError(err: unknown): AppError {
       issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
     });
   }
+  // The attempt trail is logged, never returned: it names providers and models.
+  if (err instanceof AiUnavailableError || err instanceof AiAbortedError) {
+    return new AppError(
+      503,
+      'AI_UNAVAILABLE',
+      'The AI service is temporarily unavailable. Please try again in a moment.',
+    );
+  }
   const httpErr = err as HttpLikeError;
   // body-parser errors carry a `type`; never forward their messages, which can echo input.
   if (httpErr?.type === 'entity.too.large') {
@@ -33,7 +42,9 @@ function toAppError(err: unknown): AppError {
 /** Converts every error into the standard `{ error: {...} }` envelope. */
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const appError = toAppError(err);
-  if (appError.status >= 500) {
+  if (err instanceof AiUnavailableError) {
+    req.log.error({ feature: err.feature, attempts: err.attempts }, 'ai unavailable');
+  } else if (appError.status >= 500) {
     req.log.error({ err }, 'unhandled error');
   } else {
     req.log.info({ code: appError.code, status: appError.status }, 'request rejected');

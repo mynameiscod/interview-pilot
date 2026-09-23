@@ -3,13 +3,17 @@ import type { Redis } from '@cbi/db';
 import { QueueName } from '@cbi/shared-types';
 import { Queue, Worker } from 'bullmq';
 import { writeHeartbeat } from './processors/heartbeat.js';
+import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
+export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
   version: string;
   heartbeatIntervalMs: number;
+  /** AI provider health rollup interval; omit to disable (it needs MongoDB). */
+  providerHealthIntervalMs?: number;
   /** Connection dedicated to BullMQ (maxRetriesPerRequest: null). */
   queueConnection: Redis;
   /** Connection used by processors for ordinary commands. */
@@ -38,6 +42,15 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     },
   );
 
+  // One scheduler shared by all replicas: the rollup is idempotent, but once a minute is enough.
+  if (opts.providerHealthIntervalMs) {
+    await systemQueue.upsertJobScheduler(
+      PROVIDER_HEALTH_JOB,
+      { every: opts.providerHealthIntervalMs },
+      { name: PROVIDER_HEALTH_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const systemWorker = new Worker(
     QueueName.SYSTEM,
     async (job) => {
@@ -53,6 +66,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             },
             opts.heartbeatIntervalMs,
           );
+          return;
+        }
+        case PROVIDER_HEALTH_JOB: {
+          const windows = await rollupProviderHealth();
+          opts.logger.debug({ windows }, 'provider health rolled up');
           return;
         }
         default:

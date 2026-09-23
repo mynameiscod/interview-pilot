@@ -8,12 +8,14 @@ import {
   createRecordingEmailProvider,
   createRecordingSmsProvider,
 } from '@cbi/provider-adapters/testing';
+import type { AdapterRegistry } from '@cbi/ai-core';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { createApp } from '../app.js';
 import { buildContainer } from '../container.js';
 
 export const TEST_GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';
 export const TEST_ORIGIN = 'http://localhost:5173';
+export const TEST_AI_MASTER_KEY = Buffer.alloc(32, 9).toString('base64');
 
 export function testEnv(overrides: Record<string, string> = {}): ApiEnv {
   return loadEnv(apiEnvSchema, {
@@ -33,6 +35,8 @@ export function testEnv(overrides: Record<string, string> = {}): ApiEnv {
     SMS_PROVIDER: 'dev-mailbox',
     OTP_RESEND_COOLDOWN_SEC: '10',
     REQUEST_BODY_LIMIT: '4kb',
+    AI_SECRETS_MASTER_KEY: TEST_AI_MASTER_KEY,
+    AI_MOCK_MODE: 'true',
     ...overrides,
   });
 }
@@ -62,6 +66,7 @@ export async function buildTestApp(
     redis?: Redis;
     env?: Record<string, string>;
     rateLimitRedis?: Redis | null;
+    aiAdapters?: AdapterRegistry;
   } = {},
 ) {
   const env = testEnv(opts.env);
@@ -84,6 +89,7 @@ export async function buildTestApp(
       email: email.provider,
       sms: env.SMS_PROVIDER === 'disabled' ? null : sms.provider,
       googleKeySet: google.keySet,
+      aiAdapters: opts.aiAdapters,
     },
   });
   const app = createApp({
