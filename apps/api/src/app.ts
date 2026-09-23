@@ -1,0 +1,98 @@
+import type { ApiEnv, Logger } from '@cbi/config';
+import { API_V1_PREFIX } from '@cbi/shared-types';
+import express, { type Express } from 'express';
+import helmet from 'helmet';
+import { pinoHttp } from 'pino-http';
+import swaggerUi from 'swagger-ui-express';
+import { AppError } from './lib/errors.js';
+import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { originGuard } from './middleware/origin-guard.js';
+import { resolveRequestId } from './middleware/request-id.js';
+import { healthRouter } from './modules/health/health.routes.js';
+import type { DependencyProbe } from '@cbi/config';
+import { buildOpenApiDocument } from './openapi/document.js';
+
+export const SERVICE_NAME = 'api';
+
+export interface AppDependencies {
+  env: Pick<
+    ApiEnv,
+    | 'APP_ENV'
+    | 'APP_VERSION'
+    | 'CORS_ALLOWED_ORIGINS'
+    | 'TRUST_PROXY_HOPS'
+    | 'REQUEST_BODY_LIMIT'
+    | 'API_DOCS_ENABLED'
+  >;
+  logger: Logger;
+  probes: Record<string, DependencyProbe>;
+  isDraining: () => boolean;
+}
+
+export function createApp(deps: AppDependencies): Express {
+  const { env, logger } = deps;
+  const app = express();
+
+  app.disable('x-powered-by');
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
+
+  app.use(
+    pinoHttp({
+      logger,
+      genReqId: resolveRequestId,
+      autoLogging: { ignore: (req) => req.url === '/healthz' || req.url === '/readyz' },
+      customLogLevel: (_req, res, err) =>
+        err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      serializers: {
+        req: (req: { id: unknown; method: string; url: string }) => ({
+          id: req.id,
+          method: req.method,
+          url: req.url,
+        }),
+        res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
+      },
+    }),
+  );
+
+  // Health endpoints sit outside CORS/origin checks: they are called by NGINX and Docker.
+  app.use(
+    healthRouter({
+      service: SERVICE_NAME,
+      version: env.APP_VERSION,
+      env: env.APP_ENV,
+      probes: deps.probes,
+      isDraining: deps.isDraining,
+    }),
+  );
+
+  if (env.API_DOCS_ENABLED) {
+    const document = buildOpenApiDocument(env.APP_VERSION);
+    app.get('/api/docs/openapi.json', (_req, res) => {
+      res.json(document);
+    });
+    app.use(
+      '/api/docs',
+      helmet({ contentSecurityPolicy: false }),
+      swaggerUi.serve,
+      swaggerUi.setup(document),
+    );
+  }
+
+  app.use(helmet());
+  app.use(originGuard(env.CORS_ALLOWED_ORIGINS));
+  app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
+
+  const v1 = express.Router();
+  // Domain modules (auth, users, interviews, ...) mount here from Phase 1 onward.
+  v1.use((req, _res, next) => {
+    next(
+      new AppError(404, 'NOT_FOUND', `Route ${req.method} ${API_V1_PREFIX}${req.path} not found`),
+    );
+  });
+  app.use(API_V1_PREFIX, v1);
+
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}

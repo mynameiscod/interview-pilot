@@ -1,0 +1,31 @@
+{
+  "name": "@cbi/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BullMQ background workers for CareerPilot Interview",
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env --conditions=@cbi/source src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@cbi/config": "workspace:*",
+    "@cbi/db": "workspace:*",
+    "@cbi/shared-types": "workspace:*",
+    "bullmq": "6.3.8"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "tsx": "4.23.15",
+    "vitest": "5.0.1"
+  }
+}

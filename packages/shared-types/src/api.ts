@@ -1,0 +1,44 @@
+import { z } from 'zod';
+
+/**
+ * Stable machine-readable error codes. Clients branch on `code`, never on `message`.
+ * Add new codes here; never repurpose an existing one.
+ */
+export const ErrorCode = z.enum([
+  'BAD_REQUEST',
+  'VALIDATION_FAILED',
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'CONFLICT',
+  'PAYLOAD_TOO_LARGE',
+  'RATE_LIMITED',
+  'ORIGIN_NOT_ALLOWED',
+  'SERVICE_UNAVAILABLE',
+  'INTERNAL_ERROR',
+]);
+export type ErrorCode = z.infer<typeof ErrorCode>;
+
+export const ApiErrorBody = z.object({
+  error: z.object({
+    code: ErrorCode,
+    message: z.string(),
+    details: z.unknown().optional(),
+    requestId: z.string().optional(),
+  }),
+});
+export type ApiErrorBody = z.infer<typeof ApiErrorBody>;
+
+/** Success envelope: `{ data, meta? }`. */
+export const apiSuccess = <T extends z.ZodType>(data: T) =>
+  z.object({
+    data,
+    meta: z.record(z.string(), z.unknown()).optional(),
+  });
+
+export type ApiSuccess<T> = { data: T; meta?: Record<string, unknown> };
+
+export const API_V1_PREFIX = '/api/v1' as const;
+
+/** Header carrying the request correlation id, echoed on every response. */
+export const REQUEST_ID_HEADER = 'x-request-id' as const;

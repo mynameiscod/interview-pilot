@@ -1,0 +1,30 @@
+{
+  "name": "@cbi/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MongoDB and Redis connectivity, Mongoose models, indexes and migrations",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@cbi/config": "workspace:*",
+    "ioredis": "6.0.0",
+    "mongoose": "9.10.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6"
+  }
+}

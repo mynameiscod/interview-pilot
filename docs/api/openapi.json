@@ -1,0 +1,190 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CareerPilot Interview API",
+    "version": "0.0.0-dev",
+    "description": "REST API for CareerPilot Interview by CodeBegun. Versioned business endpoints live under /api/v1."
+  },
+  "servers": [
+    {
+      "url": "https://api.interview.codebegun.com"
+    }
+  ],
+  "components": {
+    "schemas": {},
+    "parameters": {}
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Liveness probe",
+        "responses": {
+          "200": {
+            "description": "Process is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "service": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "uptimeSec": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "service",
+                    "version",
+                    "uptimeSec"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "Operations"
+        ],
+        "summary": "Readiness probe (MongoDB, Redis, draining state)",
+        "responses": {
+          "200": {
+            "description": "Ready to receive traffic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "not_ready"
+                      ]
+                    },
+                    "env": {
+                      "type": "string",
+                      "enum": [
+                        "development",
+                        "test",
+                        "staging",
+                        "production"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "down"
+                            ]
+                          },
+                          "latencyMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "env",
+                    "checks"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready; a dependency is down or the process is draining",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "not_ready"
+                      ]
+                    },
+                    "env": {
+                      "type": "string",
+                      "enum": [
+                        "development",
+                        "test",
+                        "staging",
+                        "production"
+                      ]
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "up",
+                              "down"
+                            ]
+                          },
+                          "latencyMs": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "reason": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "status"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "env",
+                    "checks"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}
