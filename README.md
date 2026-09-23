@@ -12,11 +12,12 @@ This is a standalone product. It shares no database or code with other CodeBegun
 
 ## Status
 
-| Phase                          | Status                                                                                                                                                                                                                                                                   |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **0 — Foundation**             | Done: monorepo, typed config, structured logging, API/worker with health, readiness and graceful shutdown, design tokens, i18n (English, Telugu, Hindi), Docker images, CI                                                                                               |
-| **1 — Authentication & users** | Done: email/mobile OTP and Google sign-in, rotating refresh tokens with replay detection, account linking, onboarding, admin roles and permissions, admin user management, append-only audit log. See [docs/security/authentication.md](docs/security/authentication.md) |
-| 2 — AI provider layer          | Next                                                                                                                                                                                                                                                                     |
+| Phase                          | Status                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **0 — Foundation**             | Done: monorepo, typed config, structured logging, API/worker with health, readiness and graceful shutdown, design tokens, i18n (English, Telugu, Hindi), Docker images, CI                                                                                                                                                                                                                 |
+| **1 — Authentication & users** | Done: email/mobile OTP and Google sign-in, rotating refresh tokens with replay detection, account linking, onboarding, admin roles and permissions, admin user management, append-only audit log. See [docs/security/authentication.md](docs/security/authentication.md)                                                                                                                   |
+| **2 — AI provider layer**      | Done: feature-based routing with fallback chains, retries, circuit breaker and concurrency limits; OpenAI, Anthropic, Gemini and dev-only mock adapters; encrypted provider keys with rotation; per-call usage metering with price snapshots; versioned prompt registry; admin AI providers, usage & cost, and prompts screens. See [docs/ai/provider-layer.md](docs/ai/provider-layer.md) |
+| 3 — Inputs & roles             | Next                                                                                                                                                                                                                                                                                                                                                                                       |
 
 The full design and phase plan: [docs/architecture/00-mvp-design-proposal.md](docs/architecture/00-mvp-design-proposal.md).
 
@@ -35,7 +36,8 @@ packages/
   config/              Typed env loading, structured logging, readiness checks
   db/                  MongoDB/Redis connectivity, Mongoose models, index management
   auth-core/           Access tokens, OTP/refresh-token crypto, email/phone normalization
-  provider-adapters/   Email (SES, SMTP) and SMS (MSG91) adapters; AI, storage, payments later
+  ai-core/             AI router (fallback, retries, circuit breaker), cost calculator, secret box, prompt rendering
+  provider-adapters/   Email (SES, SMTP), SMS (MSG91) and LLM (OpenAI, Anthropic, Gemini, mock) adapters; storage, payments later
   design-system/       Design tokens, Bootstrap theme, brand components
   web-core/            Browser API client, session manager, auth context, shared sign-in UI
 infrastructure/
@@ -44,7 +46,7 @@ infrastructure/
 docs/                  Architecture, API (OpenAPI), deployment, product, security
 ```
 
-Packages for later phases (`interview-engine`, `ai-core`, `scoring-core`) are created in the phase that implements them, not as empty stubs.
+Packages for later phases (`interview-engine`, `scoring-core`) are created in the phase that implements them, not as empty stubs.
 
 ## Quick start
 

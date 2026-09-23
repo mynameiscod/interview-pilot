@@ -42,6 +42,10 @@ pnpm --filter @cbi/api admin:seed --email you@codebegun.com
 
 In a deployed container: `docker compose exec api node dist/scripts/seed-super-admin.js --email you@codebegun.com`. Further admins are invited from **Admin users** in the console.
 
+### AI providers locally
+
+With `AI_MOCK_MODE=true` (the `.env.example` default), every AI feature is served by the deterministic `mock` provider. Its replies start with `[mock]`, and it sits last in each route. To try a real model, add its API key in the admin console under **AI providers → Providers & keys** (or set `AI_BOOTSTRAP_ANTHROPIC_API_KEY` etc. before first start), then press **Test** on the model. Real calls are billed by the provider. Usage and cost show under **AI usage & cost**. The example `AI_SECRETS_MASTER_KEY` is refused in staging and production. Details: [AI provider layer](../ai/provider-layer.md).
+
 ### Why ports 27018 and 6380?
 
 The dev stack avoids the default ports so it can run alongside other local MongoDB/Redis installs. To change them, set `CBI_MONGO_HOST_PORT` / `CBI_REDIS_HOST_PORT` before `pnpm infra:up` and update `.env` to match.
@@ -85,9 +89,11 @@ docker compose down -v   # removes the mongo-data volume
 
 ## Troubleshooting
 
-| Symptom                                            | Fix                                                                                      |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `ports are not available` on 27018/6380            | Something else uses the port. Set `CBI_MONGO_HOST_PORT` / `CBI_REDIS_HOST_PORT`          |
-| API exits with `Invalid environment configuration` | The message names each invalid variable. Compare `.env` with `.env.example`              |
-| `/readyz` returns 503 with `mongo: unreachable`    | Run `docker compose ps`. MongoDB must be `healthy`, which takes about 10 s on first boot |
-| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | Use Node.js 24 LTS (`.nvmrc`)                                                            |
+| Symptom                                            | Fix                                                                                                                 |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `ports are not available` on 27018/6380            | Something else uses the port. Set `CBI_MONGO_HOST_PORT` / `CBI_REDIS_HOST_PORT`                                     |
+| API exits with `Invalid environment configuration` | The message names each invalid variable. Compare `.env` with `.env.example`                                         |
+| `/readyz` returns 503 with `mongo: unreachable`    | Run `docker compose ps`. MongoDB must be `healthy`, which takes about 10 s on first boot                            |
+| `ERR_PNPM_UNSUPPORTED_ENGINE`                      | Use Node.js 24 LTS (`.nvmrc`)                                                                                       |
+| `ERR_PNPM_VIRTUAL_STORE_DIR_MAX_LENGTH_DIFF`       | A different pnpm version is on your PATH. Run `corepack enable` (or `corepack pnpm …`) to use the pinned one        |
+| AI feature returns `503 AI_UNAVAILABLE`            | Check **AI providers → Routing** and **Health**. The API log line `ai unavailable` lists why each model was skipped |

@@ -554,6 +554,12 @@ Resolved on 2026-09-23 (design approved; Phase 0 started):
 | P1-3 | Admin enumeration     | Admin OTP requests for non-admins return an identical response and a never-verifiable challenge; nothing is sent                                                                                  |
 | P1-4 | Shared web logic      | New `@cbi/web-core` package (API client, session manager, auth context, shared sign-in UI) used by both web apps                                                                                  |
 | P1-5 | Indexes in production | `autoIndex` off everywhere; `ensureIndexes()` runs at API start (idempotent, never drops)                                                                                                         |
+| P2-1 | Money precision       | AI cost and prices are integer **micro-units** (`costMicros`, `pricePerUnitMicros`) instead of `costMinor`: most calls cost less than one cent                                                    |
+| P2-2 | SDKs                  | Official SDKs for all three providers (`@anthropic-ai/sdk`, `openai` Responses API with `store: false`, `@google/genai`), with SDK retries disabled so the router owns retries and fallback       |
+| P2-3 | Refusal fallback      | Claude Opus 5 / Fable 5 calls send `fallbacks: "default"` so a safety-classifier decline is re-run server-side. The model that answered is stored as `servedModel`                                |
+| P2-4 | Default catalog       | Seeded at boot and never overwritten: Anthropic models with prices; routes Opus 5 → Sonnet 5 (→ mock in dev). OpenAI/Gemini models are added by admins with current ids and prices                |
+| P2-5 | Breaker state         | Live failure counts in Redis (best-effort, fail-open); `providerHealth` is the worker's 5-minute rollup for the admin health view                                                                 |
+| P2-6 | AI permissions        | `ai.read`, `ai.manage` (super only), `ai_usage.read` (+ operations, finance), `prompts.read`/`prompts.manage` (+ content)                                                                         |
 
 Still open:
 
