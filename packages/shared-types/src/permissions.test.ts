@@ -22,6 +22,22 @@ describe('admin permission matrix', () => {
     }
   });
 
+  it('reserves AI provider secrets and routing to SUPER_ADMIN', () => {
+    for (const role of AdminRole.options.filter((r) => r !== 'SUPER_ADMIN')) {
+      expect(hasPermission([role], 'ai.manage')).toBe(false);
+    }
+  });
+
+  it('lets finance see AI cost without seeing provider configuration', () => {
+    expect(hasPermission(['FINANCE_ADMIN'], 'ai_usage.read')).toBe(true);
+    expect(hasPermission(['FINANCE_ADMIN'], 'ai.read')).toBe(false);
+  });
+
+  it('lets content admins manage prompts', () => {
+    expect(hasPermission(['CONTENT_ADMIN'], 'prompts.manage')).toBe(true);
+    expect(hasPermission(['OPERATIONS_ADMIN'], 'prompts.manage')).toBe(false);
+  });
+
   it('unions permissions across roles', () => {
     const perms = permissionsFor(['SUPPORT_ADMIN', 'FINANCE_ADMIN']);
     expect(perms.has('candidates.read')).toBe(true);

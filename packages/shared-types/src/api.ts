@@ -26,6 +26,9 @@ export const ErrorCode = z.enum([
   'ACCOUNT_SUSPENDED',
   'FEATURE_DISABLED',
   'PROVIDER_UNAVAILABLE',
+  // AI provider layer (Phase 2)
+  /** Every model in the feature's route failed, was unhealthy or is unconfigured. */
+  'AI_UNAVAILABLE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

@@ -19,15 +19,28 @@ export const Permission = z.enum([
   'admin_users.manage',
   'audit.read',
   'candidates.read',
+  // AI provider layer (Phase 2)
+  'ai.read',
+  'ai.manage',
+  'ai_usage.read',
+  'prompts.read',
+  'prompts.manage',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
 export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>> = {
   SUPER_ADMIN: Permission.options,
-  OPERATIONS_ADMIN: ['admin_users.read', 'audit.read', 'candidates.read'],
-  CONTENT_ADMIN: [],
+  OPERATIONS_ADMIN: [
+    'admin_users.read',
+    'audit.read',
+    'candidates.read',
+    'ai.read',
+    'ai_usage.read',
+    'prompts.read',
+  ],
+  CONTENT_ADMIN: ['prompts.read', 'prompts.manage'],
   SUPPORT_ADMIN: ['candidates.read'],
-  FINANCE_ADMIN: ['audit.read'],
+  FINANCE_ADMIN: ['audit.read', 'ai_usage.read'],
 };
 
 export function permissionsFor(roles: readonly AdminRole[]): Set<Permission> {

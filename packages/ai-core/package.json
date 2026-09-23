@@ -1,0 +1,32 @@
+{
+  "name": "@cbi/ai-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI provider interfaces, router with fallback and circuit breaker, prompt rendering, secrets, usage metering and cost calculation",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cbi/shared-types": "workspace:*",
+    "ioredis": "6.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "vitest": "5.0.1"
+  }
+}
