@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Adapters for external providers (email, SMS; AI, storage, payments, judge in later phases)",
+  "description": "Adapters for external providers: email, SMS and LLMs (OpenAI, Anthropic, Gemini, mock); storage, payments and judge in later phases",
   "exports": {
     ".": {
       "@cbi/source": "./src/index.ts",
@@ -26,8 +26,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
     "@aws-sdk/client-sesv2": "3.1138.0",
-    "nodemailer": "10.0.10"
+    "@cbi/ai-core": "workspace:*",
+    "@google/genai": "2.24.0",
+    "nodemailer": "10.0.10",
+    "openai": "7.23.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

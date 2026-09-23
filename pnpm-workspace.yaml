@@ -11,3 +11,7 @@ ignoredBuiltDependencies:
   - '@scarf/scarf'
   # Optional native msgpack accelerator for BullMQ; the pure-JS fallback is used.
   - msgpackr-extract
+  # Gemini SDK: its install script is a no-op echo.
+  - '@google/genai'
+  # Transitive (Gemini SDK): postinstall only checks for the optional protobufjs CLI.
+  - protobufjs
