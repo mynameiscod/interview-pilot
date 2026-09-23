@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Brand assets (release blocker report)
+        run: pnpm brand:check --report
+
+  integration:
+    name: Integration tests (MongoDB replica set + Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      MONGODB_URI: mongodb://localhost:27017/cbi_interview_ci?directConnection=true
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Start MongoDB single-node replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval \
+              "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }" \
+              && break
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && exit 0
+            sleep 2
+          done
+          echo "MongoDB replica set did not become primary" && exit 1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:integration
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: verify
+    strategy:
+      matrix:
+        include:
+          - { name: api, dockerfile: node-service.Dockerfile, args: 'SERVICE=api' }
+          - { name: worker, dockerfile: node-service.Dockerfile, args: 'SERVICE=worker' }
+          - {
+              name: candidate-web,
+              dockerfile: web.Dockerfile,
+              args: "APP=candidate-web\nVITE_API_URL=https://api.interview.codebegun.com",
+            }
+          - {
+              name: admin-web,
+              dockerfile: web.Dockerfile,
+              args: "APP=admin-web\nVITE_API_URL=https://api.interview.codebegun.com",
+            }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/${{ matrix.dockerfile }}
+          build-args: ${{ matrix.args }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
