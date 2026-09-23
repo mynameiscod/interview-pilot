@@ -1,0 +1,33 @@
+{
+  "app": {
+    "productName": "CareerPilot Interview",
+    "consoleName": "Admin console",
+    "homeLink": "Admin console home"
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "adminNavigation": "Admin sections",
+    "toggleNavigation": "Toggle navigation"
+  },
+  "env": {
+    "development": "Development",
+    "test": "Test",
+    "staging": "Staging",
+    "production": "Production"
+  },
+  "nav": {
+    "dashboard": "Dashboard"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "emptyTitle": "Admin modules are not available yet",
+    "emptyBody": "Admin sign-in and role-based access arrive in Phase 1. Candidates, interviews, roles, campaigns, AI providers, plans and system health follow in later phases."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "home": "Back to dashboard"
+  },
+  "common": {
+    "loading": "Loading…"
+  }
+}

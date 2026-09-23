@@ -1,0 +1,57 @@
+{
+  "app": {
+    "productName": "CareerPilot Interview",
+    "endorsement": "by CodeBegun",
+    "homeLink": "CareerPilot Interview home"
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "primaryNavigation": "Primary"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "te": "తెలుగు (Telugu)",
+    "hi": "हिन्दी (Hindi)"
+  },
+  "landing": {
+    "hero": {
+      "title": "Know exactly where you stand before the real interview.",
+      "subtitle": "Upload your resume. Add the job description. Take a realistic AI interview. See where you are strong, where you are weak and what to improve.",
+      "howItWorksCta": "See how it works"
+    },
+    "how": {
+      "title": "How it works",
+      "step1Title": "Share your target",
+      "step1Body": "Add your resume and the job description, or choose the role you are preparing for.",
+      "step2Title": "Take a realistic interview",
+      "step2Body": "A structured interview that goes deeper based on your answers, just like a real interviewer.",
+      "step3Title": "Get your readiness report",
+      "step3Body": "Evidence-backed strengths and gaps, with a 24-hour, 3-day and 7-day improvement plan."
+    },
+    "fair": {
+      "title": "Assessed on what you say and build",
+      "body": "Your answers, reasoning and code are what count. Accent, appearance and facial expressions are never scored."
+    }
+  },
+  "footer": {
+    "copyright": "© {{year}} CodeBegun"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you are looking for does not exist or has moved.",
+    "home": "Go to home"
+  },
+  "error": {
+    "title": "Something went wrong",
+    "body": "Please reload the page. If the problem continues, try again later.",
+    "reload": "Reload page"
+  },
+  "unsupported": {
+    "title": "Your browser is not supported",
+    "body": "Please open CareerPilot Interview in the latest version of Chrome, Edge, Firefox or Safari."
+  },
+  "common": {
+    "loading": "Loading…"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.web.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "include": ["src", "vitest.config.ts", "vitest.setup.ts"]
+}

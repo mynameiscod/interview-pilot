@@ -1,0 +1,93 @@
+// Global stylesheet for CodeBegun web apps: tokens → Bootstrap theme → base.
+// Components use var(--cb-*) or Bootstrap utilities; never raw colours.
+
+@use 'tokens' as *;
+
+// ---- Bootstrap theme (mapped from tokens) -------------------------------
+$primary: cb-token('primary');
+$secondary: cb-token('secondary');
+$success: cb-token('success');
+$warning: cb-token('warning');
+$danger: cb-token('danger');
+$info: cb-token('info');
+$light: cb-token('surface-muted');
+$body-bg: cb-token('background');
+$body-color: cb-token('text-primary');
+$body-secondary-color: cb-token('text-secondary');
+$border-color: cb-token('border');
+$link-color: cb-token('primary');
+
+// Calm, minimal: no gradients or decorative shadows by default.
+$enable-gradients: false;
+$enable-shadows: false;
+$enable-reduced-motion: true;
+// Typography: system font stack until an approved CodeBegun font is supplied.
+
+// Bootstrap 5.3 still uses @import internally.
+@import 'bootstrap/scss/bootstrap';
+
+// ---- Tokens as CSS custom properties -----------------------------------
+:root {
+  @include cb-emit-custom-properties;
+}
+
+// ---- Base ---------------------------------------------------------------
+body {
+  background-color: var(--cb-background);
+  color: var(--cb-text-primary);
+}
+
+// Always-visible keyboard focus (WCAG 2.4.7).
+:focus-visible {
+  outline: 3px solid var(--cb-secondary);
+  outline-offset: 2px;
+}
+
+.cb-skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  top: -3rem;
+  z-index: 1080;
+  padding: 0.5rem 1rem;
+  background: var(--cb-primary);
+  color: var(--cb-background);
+  border-radius: 0.375rem;
+
+  &:focus {
+    top: 0.5rem;
+  }
+}
+
+.cb-surface-muted {
+  background-color: var(--cb-surface-muted);
+}
+
+.cb-text-secondary {
+  color: var(--cb-text-secondary);
+}
+
+.cb-border {
+  border-color: var(--cb-border) !important;
+}
+
+.cb-brand-logo {
+  display: inline-block;
+  height: 2rem;
+  width: auto;
+}
+
+// Development placeholder for missing brand assets. Deliberately looks like a
+// "missing asset" marker, not like any logo.
+.cb-brand-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px dashed var(--cb-text-secondary);
+  border-radius: 0.25rem;
+  color: var(--cb-text-secondary);
+  font-size: 0.75rem;
+  font-family: var(--bs-font-monospace);
+  white-space: nowrap;
+}

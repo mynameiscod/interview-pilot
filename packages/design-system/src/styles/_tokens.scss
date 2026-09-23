@@ -1,0 +1,47 @@
+// CodeBegun design tokens — the ONLY place raw colour values may appear.
+//
+// $cb-approved    — supplied by CodeBegun: Primary Navy, Accent Teal, Background.
+// $cb-provisional — neutral engineering defaults pending the official CodeBegun
+//                   System Style Guide. Do not treat as brand rules. See
+//                   docs/product/brand-assets-required.md (item 10).
+//
+// Accessibility note: accent teal (#359AAD) on white is ~3.3:1, below the
+// WCAG AA 4.5:1 requirement for body text. Use it for accents, borders,
+// icons and large text only; body text uses text-primary / text-secondary.
+
+@use 'sass:map';
+
+$cb-approved: (
+  'primary': #051d64,
+  'secondary': #359aad,
+  'background': #ffffff,
+);
+
+// Contrast notes: text-primary ~17:1, text-secondary ~7.5:1 on background.
+// Status colours are Bootstrap defaults; warning and info need dark text.
+$cb-provisional: (
+  'surface': #ffffff,
+  'surface-muted': #f4f6fa,
+  'text-primary': #0f172a,
+  'text-secondary': #475569,
+  'border': #dee2e6,
+  'success': #198754,
+  'warning': #ffc107,
+  'danger': #dc3545,
+  'info': #0dcaf0,
+);
+
+$cb-tokens: map.merge($cb-approved, $cb-provisional);
+
+@function cb-token($name) {
+  @if not map.has-key($cb-tokens, $name) {
+    @error 'Unknown design token: #{$name}';
+  }
+  @return map.get($cb-tokens, $name);
+}
+
+@mixin cb-emit-custom-properties {
+  @each $name, $value in $cb-tokens {
+    --cb-#{$name}: #{$value};
+  }
+}
