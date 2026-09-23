@@ -1,26 +1,67 @@
 import type { RouteObject } from 'react-router';
 import { AdminLayout } from './AdminLayout';
-
-function RouteLoading() {
-  return (
-    <div className="p-5 d-flex justify-content-center" role="status">
-      <div className="spinner-border text-primary" aria-hidden="true" />
-    </div>
-  );
-}
+import { RedirectIfSignedIn, RequireAdmin, RequirePermission, RouteLoading } from './guards';
 
 export const routes: RouteObject[] = [
   {
-    element: <AdminLayout />,
     HydrateFallback: RouteLoading,
     children: [
       {
-        index: true,
-        lazy: async () => ({ Component: (await import('../pages/DashboardPage')).DashboardPage }),
+        element: <RedirectIfSignedIn />,
+        children: [
+          {
+            path: 'login',
+            lazy: async () => ({
+              Component: (await import('../features/auth/LoginPage')).LoginPage,
+            }),
+          },
+        ],
       },
       {
-        path: '*',
-        lazy: async () => ({ Component: (await import('../pages/NotFoundPage')).NotFoundPage }),
+        element: <RequireAdmin />,
+        children: [
+          {
+            element: <AdminLayout />,
+            children: [
+              {
+                index: true,
+                lazy: async () => ({
+                  Component: (await import('../pages/DashboardPage')).DashboardPage,
+                }),
+              },
+              {
+                path: 'admins',
+                element: <RequirePermission permission="admin_users.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/admins/AdminUsersPage')).AdminUsersPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'audit',
+                element: <RequirePermission permission="audit.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/audit/AuditLogPage')).AuditLogPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: '*',
+                lazy: async () => ({
+                  Component: (await import('../pages/NotFoundPage')).NotFoundPage,
+                }),
+              },
+            ],
+          },
+        ],
       },
     ],
   },

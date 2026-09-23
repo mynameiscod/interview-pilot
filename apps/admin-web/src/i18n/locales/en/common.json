@@ -16,12 +16,121 @@
     "production": "Production"
   },
   "nav": {
-    "dashboard": "Dashboard"
+    "dashboard": "Dashboard",
+    "admins": "Admin users",
+    "audit": "Audit log",
+    "signOut": "Sign out"
+  },
+  "roles": {
+    "SUPER_ADMIN": "Super admin",
+    "OPERATIONS_ADMIN": "Operations",
+    "CONTENT_ADMIN": "Content",
+    "SUPPORT_ADMIN": "Support",
+    "FINANCE_ADMIN": "Finance"
+  },
+  "auth": {
+    "loginTitle": "Sign in to the admin console",
+    "loginSubtitle": "Use the work email your access was granted to. We will send you a one-time code.",
+    "staffOnly": "For CodeBegun staff only. Access is granted by a super admin.",
+    "channelLabel": "Sign in with",
+    "emailTab": "Email",
+    "mobileTab": "Mobile",
+    "emailLabel": "Work email",
+    "emailPlaceholder": "you@codebegun.com",
+    "mobileLabel": "Mobile number",
+    "mobilePlaceholder": "98765 43210",
+    "mobileHint": "Indian numbers can be entered without +91.",
+    "sendCode": "Send code",
+    "sending": "Sending…",
+    "googleUnavailable": "Google sign-in could not be loaded. Please use email instead.",
+    "verifyTitle": "Enter your code",
+    "verifySubtitle": "If {{destination}} has admin access, a 6-digit code is on its way.",
+    "codeLabel": "6-digit code",
+    "codeFormat": "Enter the 6-digit code.",
+    "verify": "Verify and sign in",
+    "verifying": "Verifying…",
+    "resend": "Resend code",
+    "resendIn": "Resend in {{seconds}}s",
+    "codeResent": "A new code has been sent.",
+    "changeDestination": "Use a different email"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Could not reach the server. Check your connection and try again.",
+    "otpInvalid": "That code is not correct.",
+    "otpInvalidRemaining_one": "That code is not correct. {{count}} attempt left.",
+    "otpInvalidRemaining_other": "That code is not correct. {{count}} attempts left.",
+    "otpExpired": "That code has expired. Request a new one.",
+    "otpTooManyAttempts": "Too many incorrect attempts. Request a new code.",
+    "otpCooldown": "Please wait {{seconds}} seconds before requesting another code.",
+    "rateLimited": "Too many attempts. Please wait a few minutes and try again.",
+    "providerUnavailable": "We could not send your code right now. Please try again in a moment.",
+    "featureDisabled": "This sign-in method is not available.",
+    "identityInUse": "This is already linked to another account.",
+    "accountSuspended": "This account is suspended.",
+    "validation": "Please check the details and try again.",
+    "sessionEnded": "Your session has ended. Please sign in again.",
+    "invalidEmail": "Enter a valid email address.",
+    "invalidMobile": "Enter a valid mobile number."
+  },
+  "forbidden": {
+    "title": "You do not have access to this section",
+    "body": "Ask a super admin if you need this access."
   },
   "dashboard": {
     "title": "Dashboard",
-    "emptyTitle": "Admin modules are not available yet",
-    "emptyBody": "Admin sign-in and role-based access arrive in Phase 1. Candidates, interviews, roles, campaigns, AI providers, plans and system health follow in later phases."
+    "signedInAs": "Signed in as {{email}} ({{roles}}).",
+    "emptyTitle": "Operational modules arrive in later phases",
+    "emptyBody": "Candidates, interviews, roles, campaigns, AI providers, plans, payments and system health are added as each phase is delivered."
+  },
+  "admins": {
+    "title": "Admin users",
+    "listLabel": "Admin accounts",
+    "inviteTitle": "Invite an admin",
+    "inviteHint": "They sign in with this email and a one-time code. Every change is recorded in the audit log.",
+    "email": "Work email",
+    "roles": "Roles",
+    "rolesRequired": "Choose at least one role.",
+    "invite": "Send invite",
+    "invited": "{{email}} now has admin access and has been emailed.",
+    "invitedNoEmail": "{{email}} now has admin access, but the invitation email could not be sent. Let them know directly.",
+    "person": "Person",
+    "lastSignIn": "Last sign-in",
+    "actions": "Actions",
+    "never": "Never",
+    "pendingFirstSignIn": "Not signed in yet",
+    "editRoles": "Edit roles",
+    "saveRoles": "Save roles",
+    "revoke": "Revoke access",
+    "revokeExplain": "{{email}} will lose admin access and be signed out of the admin console. Their candidate account is not affected.",
+    "confirmRevoke": "Revoke admin access",
+    "reason": "Reason (recorded in the audit log)",
+    "cancel": "Cancel",
+    "you": "You"
+  },
+  "audit": {
+    "title": "Audit log",
+    "subtitle": "Security events and admin actions, newest first. Entries cannot be edited or deleted.",
+    "actionFilter": "Action",
+    "apply": "Filter",
+    "empty": "No entries match.",
+    "time": "Time",
+    "action": "Action",
+    "actor": "Actor",
+    "resource": "Resource",
+    "outcome": "Outcome",
+    "details": "Details",
+    "loadMore": "Load older entries",
+    "actorTypes": {
+      "USER": "User",
+      "ADMIN": "Admin",
+      "SYSTEM": "System",
+      "ANONYMOUS": "Anonymous"
+    },
+    "outcomes": {
+      "SUCCESS": "Success",
+      "FAILURE": "Failure"
+    }
   },
   "notFound": {
     "title": "Page not found",

@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router';
+import { RedirectIfSignedIn, RequireAuth, RequireOnboarded } from './guards';
 import { PublicLayout } from './PublicLayout';
 import { RouteError, RouteLoading } from './RouteStates';
 
@@ -15,6 +16,46 @@ export const routes: RouteObject[] = [
       {
         index: true,
         lazy: async () => ({ Component: (await import('../pages/LandingPage')).LandingPage }),
+      },
+      {
+        element: <RedirectIfSignedIn />,
+        children: [
+          {
+            path: 'login',
+            lazy: async () => ({
+              Component: (await import('../features/auth/LoginPage')).LoginPage,
+            }),
+          },
+        ],
+      },
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            path: 'onboarding',
+            lazy: async () => ({
+              Component: (await import('../features/profile/OnboardingPage')).OnboardingPage,
+            }),
+          },
+          {
+            path: 'app',
+            element: <RequireOnboarded />,
+            children: [
+              {
+                index: true,
+                lazy: async () => ({
+                  Component: (await import('../features/dashboard/DashboardPage')).DashboardPage,
+                }),
+              },
+              {
+                path: 'profile',
+                lazy: async () => ({
+                  Component: (await import('../features/profile/ProfilePage')).ProfilePage,
+                }),
+              },
+            ],
+          },
+        ],
       },
       {
         path: '*',

@@ -31,7 +31,7 @@ describe('candidate routes', () => {
   });
 
   it('renders the landing page in Telugu', async () => {
-    await renderRoute('/', 'te');
+    await renderRoute('/', { lng: 'te' });
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent(
       'అసలు ఇంటర్వ్యూకి ముందే',
     );

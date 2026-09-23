@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 const STEPS = [
   { key: 'step1', icon: 'bi-file-earmark-person' },
@@ -16,9 +17,14 @@ export function LandingPage() {
             <div className="col-lg-8">
               <h1 className="display-6 fw-semibold text-primary">{t('landing.hero.title')}</h1>
               <p className="lead cb-text-secondary mt-3">{t('landing.hero.subtitle')}</p>
-              <a href="#how-it-works" className="btn btn-primary btn-lg mt-3">
-                {t('landing.hero.howItWorksCta')}
-              </a>
+              <div className="d-flex flex-wrap gap-2 mt-3">
+                <Link to="/login" className="btn btn-primary btn-lg">
+                  {t('landing.hero.getStarted')}
+                </Link>
+                <a href="#how-it-works" className="btn btn-outline-primary btn-lg">
+                  {t('landing.hero.howItWorksCta')}
+                </a>
+              </div>
             </div>
           </div>
         </div>

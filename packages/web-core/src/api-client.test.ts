@@ -51,3 +51,45 @@ describe('createApiClient', () => {
     expect(init.headers['Content-Type']).toBe('application/json');
   });
 });
+
+describe('session refresh', () => {
+  it('refreshes once on 401 and retries with the new token', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } }))
+      .mockResolvedValueOnce(json(200, { data: { ok: true } }));
+    const refreshAccessToken = vi.fn().mockResolvedValue('fresh');
+    const client = createApiClient({
+      baseUrl: '',
+      fetchImpl,
+      getAccessToken: () => 'stale',
+      refreshAccessToken,
+    });
+    await expect(client.get('/users/me')).resolves.toEqual({ ok: true });
+    expect(refreshAccessToken).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[1]![1].headers.Authorization).toBe('Bearer fresh');
+  });
+
+  it('propagates the 401 when refresh fails', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(json(401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } }));
+    const client = createApiClient({
+      baseUrl: '',
+      fetchImpl,
+      getAccessToken: () => 'stale',
+      refreshAccessToken: vi.fn().mockResolvedValue(null),
+    });
+    await expect(client.get('/users/me')).rejects.toMatchObject({ code: 'UNAUTHENTICATED' });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('sends the CSRF header only when asked', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const client = createApiClient({ baseUrl: '', fetchImpl });
+    await client.post('/auth/logout', undefined, { csrf: true });
+    expect(fetchImpl.mock.calls[0]![1].headers['x-cb-csrf']).toBe('1');
+    await client.post('/auth/otp/request', {});
+    expect(fetchImpl.mock.calls[1]![1].headers['x-cb-csrf']).toBeUndefined();
+  });
+});

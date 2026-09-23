@@ -14,10 +14,17 @@
     "te": "తెలుగు (Telugu)",
     "hi": "हिन्दी (Hindi)"
   },
+  "nav": {
+    "signIn": "Sign in",
+    "dashboard": "Dashboard",
+    "profile": "Profile",
+    "signOut": "Sign out"
+  },
   "landing": {
     "hero": {
       "title": "Know exactly where you stand before the real interview.",
       "subtitle": "Upload your resume. Add the job description. Take a realistic AI interview. See where you are strong, where you are weak and what to improve.",
+      "getStarted": "Get started",
       "howItWorksCta": "See how it works"
     },
     "how": {
@@ -33,6 +40,111 @@
       "title": "Assessed on what you say and build",
       "body": "Your answers, reasoning and code are what count. Accent, appearance and facial expressions are never scored."
     }
+  },
+  "auth": {
+    "loginTitle": "Sign in or create your account",
+    "loginSubtitle": "Use your email, mobile number or Google account. We will send you a one-time code.",
+    "noPassword": "No password needed. New here? Signing in creates your account.",
+    "channelLabel": "Sign in with",
+    "emailTab": "Email",
+    "mobileTab": "Mobile",
+    "emailLabel": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "mobileLabel": "Mobile number",
+    "mobilePlaceholder": "98765 43210",
+    "mobileHint": "Indian numbers can be entered without +91.",
+    "sendCode": "Send code",
+    "sending": "Sending…",
+    "or": "or",
+    "googleUnavailable": "Google sign-in could not be loaded. Please use email or mobile instead.",
+    "verifyTitle": "Enter your code",
+    "verifySubtitle": "We sent a 6-digit code to {{destination}}.",
+    "codeLabel": "6-digit code",
+    "codeFormat": "Enter the 6-digit code.",
+    "verify": "Verify and continue",
+    "verifying": "Verifying…",
+    "resend": "Resend code",
+    "resendIn": "Resend in {{seconds}}s",
+    "codeResent": "A new code has been sent.",
+    "changeDestination": "Use a different email or number"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Could not reach the server. Check your connection and try again.",
+    "otpInvalid": "That code is not correct.",
+    "otpInvalidRemaining_one": "That code is not correct. {{count}} attempt left.",
+    "otpInvalidRemaining_other": "That code is not correct. {{count}} attempts left.",
+    "otpExpired": "That code has expired. Request a new one.",
+    "otpTooManyAttempts": "Too many incorrect attempts. Request a new code.",
+    "otpCooldown": "Please wait {{seconds}} seconds before requesting another code.",
+    "rateLimited": "Too many attempts. Please wait a few minutes and try again.",
+    "providerUnavailable": "We could not send your code right now. Please try again in a moment.",
+    "featureDisabled": "This sign-in method is not available yet.",
+    "identityInUse": "This is already linked to another account.",
+    "accountSuspended": "This account is suspended. Please contact support.",
+    "validation": "Please check the details and try again.",
+    "sessionEnded": "Your session has ended. Please sign in again.",
+    "invalidEmail": "Enter a valid email address.",
+    "invalidMobile": "Enter a valid mobile number."
+  },
+  "onboarding": {
+    "title": "Tell us a little about you",
+    "subtitle": "This helps us tailor your interviews. You can change it any time.",
+    "save": "Continue",
+    "saving": "Saving…"
+  },
+  "profileForm": {
+    "displayName": "Your name",
+    "displayNameRequired": "Please enter your name.",
+    "interviewLanguage": "Preferred interview language",
+    "interviewLanguageHint": "Auto-detect follows the language you speak during the interview.",
+    "experienceLevel": "Experience level (optional)",
+    "currentRole": "Current role (optional)",
+    "currentRolePlaceholder": "e.g. Final-year B.Tech student",
+    "notSpecified": "Prefer not to say",
+    "productUpdates": "Email me product updates and interview tips",
+    "languages": {
+      "auto": "Auto-detect",
+      "en": "English",
+      "hi": "Hindi",
+      "te": "Telugu"
+    },
+    "experience": {
+      "STUDENT": "Student",
+      "FRESHER": "Fresher (0–1 years)",
+      "EARLY_CAREER": "1–3 years",
+      "MID_LEVEL": "3–7 years",
+      "SENIOR": "7+ years"
+    }
+  },
+  "dashboard": {
+    "greeting": "Welcome, {{name}}",
+    "subtitle": "Your interview practice space.",
+    "nextTitle": "Interview practice is coming next",
+    "nextBody": "Resume and job description upload, role analysis and your first AI interview are being built. We will let you know when they are ready.",
+    "profileLink": "Review your profile"
+  },
+  "profile": {
+    "title": "Profile",
+    "details": "Your details",
+    "save": "Save changes",
+    "saved": "Your profile has been saved.",
+    "signInMethods": "Sign-in methods",
+    "signInMethodsHint": "Add another email or mobile number so you can always get back into your account.",
+    "providers": {
+      "EMAIL": "Email",
+      "MOBILE": "Mobile",
+      "GOOGLE": "Google"
+    },
+    "verified": "Verified",
+    "addMethod": "Add a sign-in method",
+    "confirmLink": "Verify and add",
+    "linkedSuccess": "Added to your account.",
+    "cancel": "Cancel",
+    "security": "Security",
+    "signOutEverywhereHint": "Ends your session on every phone and computer, including this one.",
+    "signOutEverywhere": "Sign out of all devices",
+    "confirmSignOutEverywhere": "Yes, sign out everywhere"
   },
   "footer": {
     "copyright": "© {{year}} CodeBegun"

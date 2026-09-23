@@ -1,7 +1,44 @@
 import { BrandLogo } from '@cbi/design-system';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet } from 'react-router';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useCandidateAuth } from './session';
+
+function AccountNav() {
+  const { t } = useTranslation();
+  const { status, signOut } = useCandidateAuth();
+  const navigate = useNavigate();
+
+  if (status === 'loading') return null;
+  if (status === 'signedOut') {
+    return (
+      <Link to="/login" className="btn btn-primary btn-sm">
+        {t('nav.signIn')}
+      </Link>
+    );
+  }
+  return (
+    <div className="d-flex align-items-center gap-1 gap-sm-2">
+      <NavLink to="/app" end className="btn btn-link btn-sm">
+        {t('nav.dashboard')}
+      </NavLink>
+      <NavLink to="/app/profile" className="btn btn-link btn-sm">
+        {t('nav.profile')}
+      </NavLink>
+      <button
+        type="button"
+        className="btn btn-outline-secondary btn-sm"
+        onClick={async () => {
+          await signOut().catch(() => undefined);
+          // Guards on protected pages also send an explicitly signed-out user home.
+          await navigate('/', { replace: true });
+        }}
+      >
+        {t('nav.signOut')}
+      </button>
+    </div>
+  );
+}
 
 export function PublicLayout() {
   const { t } = useTranslation();
@@ -26,7 +63,10 @@ export function PublicLayout() {
               <span className="small cb-text-secondary">{t('app.endorsement')}</span>
             </span>
           </Link>
-          <LanguageSwitcher />
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <AccountNav />
+            <LanguageSwitcher />
+          </div>
         </nav>
       </header>
       <main id="main" tabIndex={-1}>
