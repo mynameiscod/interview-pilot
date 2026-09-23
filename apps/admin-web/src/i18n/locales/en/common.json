@@ -19,7 +19,10 @@
     "dashboard": "Dashboard",
     "admins": "Admin users",
     "audit": "Audit log",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "ai": "AI providers",
+    "aiUsage": "AI usage & cost",
+    "prompts": "Prompts"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -81,7 +84,7 @@
     "title": "Dashboard",
     "signedInAs": "Signed in as {{email}} ({{roles}}).",
     "emptyTitle": "Operational modules arrive in later phases",
-    "emptyBody": "Candidates, interviews, roles, campaigns, AI providers, plans, payments and system health are added as each phase is delivered."
+    "emptyBody": "Candidates, interviews, roles, campaigns, plans, payments and system health are added as each phase is delivered. AI providers, AI usage and prompts are available now."
   },
   "admins": {
     "title": "Admin users",
@@ -138,5 +141,217 @@
   },
   "common": {
     "loading": "Loading…"
+  },
+  "ai": {
+    "title": "AI providers",
+    "subtitle": "Which models serve each product feature, their keys, prices and health. Changes apply to every server immediately and are recorded in the audit log.",
+    "tabsLabel": "AI sections",
+    "tabs": {
+      "providers": "Providers & keys",
+      "models": "Models & pricing",
+      "routes": "Routing",
+      "health": "Health"
+    },
+    "status": "Status",
+    "actions": "Actions",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "cancel": "Cancel",
+    "reason": "Reason (recorded in the audit log)",
+    "providers": {
+      "provider": "Provider",
+      "key": "API key",
+      "noKey": "No key",
+      "mockNoKey": "No key needed (development only)",
+      "keyEnding": "Key ending {{last4}}",
+      "keyUpdated": "Updated {{date}} · encryption key {{keyId}}",
+      "setKey": "Add key",
+      "replaceKey": "Replace key",
+      "removeKey": "Remove key",
+      "saveKey": "Save key",
+      "confirmRemoveKey": "Remove key",
+      "apiKey": "{{name}} API key",
+      "keyHint": "Stored encrypted. After saving, only the last 4 characters are ever shown again.",
+      "removeExplain": "Models from {{name}} will be skipped until a new key is added. Calls fall back to the next model in each route.",
+      "disableExplain": "While {{name}} is disabled its models are skipped and calls fall back to the next model.",
+      "enableExplain": "{{name}} models will serve calls again."
+    },
+    "models": {
+      "model": "Model",
+      "pricing": "Price in force",
+      "limits": "Limits",
+      "unpriced": "No price — cost recorded as 0",
+      "inputPrice": "Input {{price}} / 1M tokens",
+      "outputPrice": "Output {{price}} / 1M tokens",
+      "cachedPrice": "Cached input {{price}} / 1M tokens",
+      "upcoming_one": "{{count}} scheduled price change",
+      "upcoming_other": "{{count}} scheduled price changes",
+      "paramsSummary": "Timeout {{timeout}} s · {{retries}} retries · {{concurrency}} concurrent · max output {{maxOutput}} tokens",
+      "test": "Test",
+      "testing": "Testing…",
+      "testOk": "Connected in {{latency}} ms ({{model}}): “{{sample}}”",
+      "testFailed": "Test failed ({{outcome}}). {{message}}",
+      "editParams": "Edit limits",
+      "saveParams": "Save limits",
+      "addPrice": "Add price",
+      "savePrice": "Add price",
+      "unit": "Pricing unit",
+      "amount": "Price ({{currency}})",
+      "effectiveFrom": "Effective from (optional, defaults to now)",
+      "priceHint": "Prices are never edited in place: this adds a new entry. Calls already recorded keep the price that applied at the time.",
+      "disableExplain": "Disabled models are skipped in every route.",
+      "enableExplain": "This model will serve calls in the routes that include it.",
+      "add": "Add model",
+      "addTitle": "Add a model",
+      "modelId": "Provider model id",
+      "displayName": "Display name",
+      "capabilities": "Capabilities",
+      "addHint": "Use the exact model id from the provider’s documentation. Add its prices before routing traffic to it.",
+      "create": "Add model",
+      "params": {
+        "maxOutputTokens": "Max output tokens",
+        "timeoutMs": "Timeout (ms)",
+        "retries": "Retries",
+        "concurrency": "Max concurrent calls",
+        "temperature": "Temperature",
+        "temperatureUnset": "Not sent",
+        "hint": "Leave temperature empty for models that reject sampling parameters (current Claude models)."
+      }
+    },
+    "routes": {
+      "feature": "Feature",
+      "chain": "Fallback chain (first healthy model serves)",
+      "edit": "Edit",
+      "save": "Save route",
+      "active": "Route active",
+      "inactive": "Inactive",
+      "notConfigured": "No models",
+      "empty": "No models in this chain.",
+      "addModel": "Add a model…",
+      "add": "Add",
+      "deletedModel": "Deleted model",
+      "chainLabel": "Models for {{feature}}, in order",
+      "moveUp": "Move {{model}} up",
+      "moveDown": "Move {{model}} down",
+      "remove": "Remove {{model}}",
+      "hint": "Calls try each model in order, skipping models that are disabled, have no key or are failing. If every model fails, the feature reports that AI is unavailable; it never makes up an answer."
+    },
+    "features": {
+      "role_analyze": "Detect role, seniority and skills",
+      "resume_structure": "Structure a resume",
+      "jd_structure": "Structure a job description",
+      "blueprint_generate": "Generate an interview blueprint",
+      "interview_question": "Ask the next interview question",
+      "interview_assessTurn": "Assess an answer and decide on follow-ups",
+      "evaluation_extractEvidence": "Extract evidence from a round",
+      "evaluation_scoreDimension": "Score one dimension from evidence",
+      "report_recommendations": "Write the improvement plan",
+      "stt_live": "Live speech-to-text (Phase 7)",
+      "tts_live": "Live text-to-speech (Phase 7)",
+      "ocr_document": "Read scanned documents (Phase 3)"
+    },
+    "units": {
+      "PER_1M_INPUT_TOKENS": "per 1M input tokens",
+      "PER_1M_CACHED_INPUT_TOKENS": "per 1M cached input tokens",
+      "PER_1M_OUTPUT_TOKENS": "per 1M output tokens",
+      "PER_MINUTE": "per minute",
+      "PER_AUDIO_MINUTE": "per audio minute",
+      "PER_STT_HOUR": "per hour of transcribed audio",
+      "PER_1M_CHARACTERS": "per 1M characters",
+      "PER_IMAGE": "per image",
+      "PER_REQUEST": "per request"
+    },
+    "health": {
+      "explain": "Status is the latest 5-minute window (refreshes every 30 seconds). An open circuit means the model failed repeatedly; it is skipped for a short time, then one test call is let through.",
+      "breaker": "Circuit",
+      "calls": "Calls (5 min)",
+      "errorRate": "Error rate",
+      "p50": "Median latency",
+      "p95": "95th percentile",
+      "ms": "{{value}} ms",
+      "status": {
+        "HEALTHY": "Healthy",
+        "DEGRADED": "Degraded",
+        "DOWN": "Down",
+        "IDLE": "No recent calls"
+      },
+      "breakerState": {
+        "CLOSED": "Closed",
+        "OPEN": "Open (skipped)",
+        "HALF_OPEN": "Testing recovery"
+      }
+    },
+    "usage": {
+      "title": "AI usage & cost",
+      "subtitle": "Every provider call is metered with the price that applied at the time, including failed and retried calls.",
+      "range": "Period",
+      "ranges": {
+        "24h": "Last 24 hours",
+        "7d": "Last 7 days",
+        "30d": "Last 30 days"
+      },
+      "groupBy": "Group by",
+      "groups": {
+        "feature": "Feature",
+        "model": "Model",
+        "day": "Day (UTC)"
+      },
+      "totalCost": "Cost",
+      "totalCalls": "Calls",
+      "totalFailures": "Failed calls",
+      "totalTokens": "Tokens",
+      "tokens": "{{input}} in · {{output}} out",
+      "breakdown": "Usage breakdown",
+      "calls": "Calls",
+      "failures": "Failures",
+      "inputTokens": "Input tokens",
+      "outputTokens": "Output tokens",
+      "avgLatency": "Avg latency",
+      "cost": "Cost",
+      "empty": "No AI calls in this period.",
+      "recent": "Recent calls",
+      "time": "Time",
+      "outcome": "Outcome",
+      "latency": "Latency",
+      "servedBy": "served by {{model}}",
+      "attempt": "attempt {{n}}",
+      "loadMore": "Load older calls"
+    }
+  },
+  "prompts": {
+    "title": "Prompts",
+    "subtitle": "Versioned prompt templates. A version’s text can never change after it is saved; activate a new version instead. Interviews record the exact version they used.",
+    "new": "New prompt",
+    "newTitle": "New prompt version",
+    "newVersion": "New version",
+    "key": "Key",
+    "locale": "Locale",
+    "feature": "Feature",
+    "notes": "Notes (optional)",
+    "roles": {
+      "system": "System instructions",
+      "user": "User message"
+    },
+    "variablesHint": "Use {{example}} placeholders. Text supplied by candidates is inserted inside protected data blocks automatically.",
+    "saveDraft": "Save as draft",
+    "version": "v{{n}}",
+    "versionHeader": "Version",
+    "created": "Created",
+    "status": {
+      "ACTIVE": "Active",
+      "DRAFT": "Draft",
+      "RETIRED": "Retired"
+    },
+    "view": "View",
+    "hide": "Hide",
+    "activate": "Activate",
+    "rollback": "Roll back to this",
+    "confirmActivate": "Activate v{{n}}",
+    "activateExplain": "v{{n}} becomes the version used for {{key}}; the current active version is retired.",
+    "variables": "Variables: {{list}}",
+    "hash": "content {{hash}}",
+    "empty": "No prompts yet. Prompts arrive with the features that use them (Phase 3 onward)."
   }
 }

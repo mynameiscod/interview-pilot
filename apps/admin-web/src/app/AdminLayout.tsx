@@ -10,6 +10,9 @@ import { useAdminAuth } from './session';
 const NAV_ITEMS: { to: string; key: string; icon: string; permission?: Permission }[] = [
   { to: '/', key: 'nav.dashboard', icon: 'bi-speedometer2' },
   { to: '/admins', key: 'nav.admins', icon: 'bi-people', permission: 'admin_users.read' },
+  { to: '/ai', key: 'nav.ai', icon: 'bi-cpu', permission: 'ai.read' },
+  { to: '/ai-usage', key: 'nav.aiUsage', icon: 'bi-graph-up', permission: 'ai_usage.read' },
+  { to: '/prompts', key: 'nav.prompts', icon: 'bi-chat-square-text', permission: 'prompts.read' },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];
 

@@ -54,6 +54,67 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'ai',
+                element: <RequirePermission permission="ai.read" />,
+                children: [
+                  {
+                    lazy: async () => ({
+                      Component: (await import('../features/ai/AiSectionLayout')).AiSectionLayout,
+                    }),
+                    children: [
+                      {
+                        index: true,
+                        lazy: async () => ({
+                          Component: (await import('../features/ai/ProvidersPage')).ProvidersPage,
+                        }),
+                      },
+                      {
+                        path: 'models',
+                        lazy: async () => ({
+                          Component: (await import('../features/ai/ModelsPage')).ModelsPage,
+                        }),
+                      },
+                      {
+                        path: 'routes',
+                        lazy: async () => ({
+                          Component: (await import('../features/ai/RoutesPage')).RoutesPage,
+                        }),
+                      },
+                      {
+                        path: 'health',
+                        lazy: async () => ({
+                          Component: (await import('../features/ai/HealthPage')).HealthPage,
+                        }),
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                path: 'ai-usage',
+                element: <RequirePermission permission="ai_usage.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/ai/UsagePage')).UsagePage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'prompts',
+                element: <RequirePermission permission="prompts.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/prompts/PromptsPage')).PromptsPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: '*',
                 lazy: async () => ({
                   Component: (await import('../pages/NotFoundPage')).NotFoundPage,
