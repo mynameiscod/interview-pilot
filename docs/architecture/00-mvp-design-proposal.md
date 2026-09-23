@@ -1,6 +1,6 @@
 # CodeBegun AI Interview Platform — MVP Design Proposal
 
-Status: **APPROVED 2026-09-23.** Phase 0 (Foundation) implemented. See the decision log in §17.
+Status: **APPROVED 2026-09-23.** Phase 0 (Foundation) and Phase 1 (Authentication & users) implemented. See the decision log in §17.
 Date: 2026-09-23
 
 ---
@@ -139,13 +139,13 @@ Conventions: `_id: ObjectId`, `createdAt/updatedAt` on everything, and `schemaVe
 
 ### 4.1 Identity & access
 
-| Collection       | Key fields                                                                                                                                   | Indexes                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `users`          | type (`CANDIDATE`/`ADMIN`), roles[], status, primaryEmail, primaryMobile, emailVerifiedAt, mobileVerifiedAt, locale, deletedAt, tokenVersion | unique sparse `primaryEmail`; unique sparse `primaryMobile`; `{type,status,createdAt}` |
-| `userProfiles`   | userId, displayName, experienceLevel, currentRole, preferredInterviewLanguage, consentPreferences                                            | unique `userId`                                                                        |
-| `authIdentities` | userId, provider (`GOOGLE`/`EMAIL`/`MOBILE`), providerSubject (normalized), verifiedAt                                                       | **unique `{provider, providerSubject}`**; `userId`                                     |
-| `refreshTokens`  | userId, familyId, tokenHash (SHA-256), audience (`candidate`/`admin`), parentId, usedAt, revokedAt, expiresAt, device/UA/ip hash             | unique `tokenHash`; `{familyId}`; `{userId, revokedAt}`; **TTL `expiresAt`**           |
-| `otpChallenges`  | channel, destinationHash, codeHash (argon2/HMAC), attempts, maxAttempts, purpose, expiresAt, consumedAt                                      | `{destinationHash, purpose, createdAt}`; **TTL `expiresAt`**                           |
+| Collection       | Key fields                                                                                                                                                                                       | Indexes                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `users`          | adminRoles[] (empty for candidates; one person can be both), status, primaryEmail, primaryMobile, emailVerifiedAt, mobileVerifiedAt, tokenVersion, lastLoginAt, onboardingCompletedAt, invitedBy | unique partial `primaryEmail`; unique partial `primaryMobile`; `adminRoles`; `createdAt` |
+| `userProfiles`   | userId, displayName, experienceLevel, currentRole, preferredInterviewLanguage, consentPreferences                                                                                                | unique `userId`                                                                          |
+| `authIdentities` | userId, provider (`GOOGLE`/`EMAIL`/`MOBILE`), providerSubject (normalized), verifiedAt                                                                                                           | **unique `{provider, providerSubject}`**; `userId`                                       |
+| `refreshTokens`  | userId, familyId, tokenHash (SHA-256), audience (`candidate`/`admin`), parentId, usedAt, revokedAt, expiresAt, device/UA/ip hash                                                                 | unique `tokenHash`; `{familyId}`; `{userId, revokedAt}`; **TTL `expiresAt`**             |
+| `otpChallenges`  | channel, destinationHash, codeHash (argon2/HMAC), attempts, maxAttempts, purpose, expiresAt, consumedAt                                                                                          | `{destinationHash, purpose, createdAt}`; **TTL `expiresAt`**                             |
 
 Account linking: when a user signs in with a new verified identity whose email or mobile matches an existing verified identity, the identity is attached to that user. It is never auto-linked from an _unverified_ claim. Google's `email_verified=true` counts as verified.
 
@@ -539,16 +539,21 @@ Each phase ends with lint, unit tests, integration tests, build, a report, docs 
 
 Resolved on 2026-09-23 (design approved; Phase 0 started):
 
-| #   | Question              | Decision                                                                                                                                                                                          |
-| --- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D4  | Voice architecture    | **Approved: cascaded STT → engine → TTS.** Realtime speech-to-speech stays a pluggable option for later                                                                                           |
-| D3  | MongoDB in production | **Self-hosted** single-node replica set on the VPS, with authentication, keyfile, no public port, and encrypted off-box backups (Phase 12)                                                        |
-| D9  | Code judge            | **No CodeBegun Judge API exists yet.** Build `JudgeAdapter` with an interim self-hosted Judge0-compatible judge on a **separate** host. Switch to CodeBegun Judge by configuration when it exists |
-| —   | AI / speech providers | **All accounts available**: OpenAI, Anthropic, Gemini, Deepgram, ElevenLabs                                                                                                                       |
-| —   | Email                 | **AWS SES**                                                                                                                                                                                       |
-| —   | Branding              | Official logos and style guide **not yet available**. Proceed on the approved baseline (§15). This is a **release blocker** for production UI sign-off                                            |
-| D1  | pnpm + Turborepo      | Adopted in Phase 0 (pnpm 10.34, Turborepo 2.11)                                                                                                                                                   |
-| D2  | Toolchain pins        | Node 24 LTS. **TypeScript 6.0.3**, because typescript-eslint 8.x does not support TypeScript 7 yet. jsdom 29 (jsdom 30 needs Node ≥ 24.15)                                                        |
+| #    | Question              | Decision                                                                                                                                                                                          |
+| ---- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D4   | Voice architecture    | **Approved: cascaded STT → engine → TTS.** Realtime speech-to-speech stays a pluggable option for later                                                                                           |
+| D3   | MongoDB in production | **Self-hosted** single-node replica set on the VPS, with authentication, keyfile, no public port, and encrypted off-box backups (Phase 12)                                                        |
+| D9   | Code judge            | **No CodeBegun Judge API exists yet.** Build `JudgeAdapter` with an interim self-hosted Judge0-compatible judge on a **separate** host. Switch to CodeBegun Judge by configuration when it exists |
+| —    | AI / speech providers | **All accounts available**: OpenAI, Anthropic, Gemini, Deepgram, ElevenLabs                                                                                                                       |
+| —    | Email                 | **AWS SES**                                                                                                                                                                                       |
+| —    | Branding              | Official logos and style guide **not yet available**. Proceed on the approved baseline (§15). This is a **release blocker** for production UI sign-off                                            |
+| D1   | pnpm + Turborepo      | Adopted in Phase 0 (pnpm 10.34, Turborepo 2.11)                                                                                                                                                   |
+| D2   | Toolchain pins        | Node 24 LTS. **TypeScript 6.0.3**, because typescript-eslint 8.x does not support TypeScript 7 yet. jsdom 29 (jsdom 30 needs Node ≥ 24.15)                                                        |
+| P1-1 | Admin identity        | One `users` collection; admin capability = non-empty `adminRoles` (replaces the proposed `type` field) so staff can also use the candidate app with the same verified email                       |
+| P1-2 | Local OTP delivery    | Mailpit inbox for email; `dev-mailbox` SMS provider delivers mobile codes to Mailpit. Refused in staging/production                                                                               |
+| P1-3 | Admin enumeration     | Admin OTP requests for non-admins return an identical response and a never-verifiable challenge; nothing is sent                                                                                  |
+| P1-4 | Shared web logic      | New `@cbi/web-core` package (API client, session manager, auth context, shared sign-in UI) used by both web apps                                                                                  |
+| P1-5 | Indexes in production | `autoIndex` off everywhere; `ensureIndexes()` runs at API start (idempotent, never drops)                                                                                                         |
 
 Still open:
 

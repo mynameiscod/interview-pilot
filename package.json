@@ -8,7 +8,7 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo run dev",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
@@ -18,7 +18,8 @@
     "format:check": "prettier --check .",
     "openapi:generate": "pnpm --filter @cbi/api openapi:generate",
     "brand:check": "node infrastructure/scripts/brand-check.mjs",
-    "infra:up": "docker compose up -d mongo redis",
+    "smoke:boot": "node infrastructure/scripts/boot-smoke.mjs",
+    "infra:up": "docker compose up -d mongo redis mailpit",
     "infra:down": "docker compose down"
   },
   "devDependencies": {

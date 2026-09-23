@@ -6,7 +6,7 @@
 corepack enable
 pnpm install
 cp .env.example .env
-pnpm infra:up
+pnpm infra:up   # MongoDB, Redis and the Mailpit inbox
 pnpm dev
 ```
 
@@ -20,6 +20,27 @@ pnpm dev
 | Admin app     | http://localhost:5174                                           |
 | MongoDB       | `mongodb://localhost:27018/cbi_interview?directConnection=true` |
 | Redis         | `redis://localhost:6380`                                        |
+| Mailpit inbox | http://localhost:8025                                           |
+
+`pnpm infra:up` starts MongoDB, Redis and the Mailpit inbox.
+
+### Signing in locally
+
+No real email or SMS is sent in development:
+
+- **Email codes** go to the Mailpit inbox at http://localhost:8025.
+- **Mobile codes** (`SMS_PROVIDER=dev-mailbox`) also appear in Mailpit, as messages to `sms-<number>@dev-sms.local` with the subject `[DEV SMS] to +91…`. This provider is refused in staging and production.
+- **Google** is off until you set `GOOGLE_CLIENT_ID` (API) and `VITE_GOOGLE_CLIENT_ID` (web apps) to an OAuth _Web_ client id whose authorized JavaScript origins include `http://localhost:5173` and `http://localhost:5174`. No client secret is needed.
+
+### Admin access
+
+Admins cannot sign up. Create the first super admin, then sign in to http://localhost:5174 with that email (the code arrives in Mailpit):
+
+```bash
+pnpm --filter @cbi/api admin:seed --email you@codebegun.com
+```
+
+In a deployed container: `docker compose exec api node dist/scripts/seed-super-admin.js --email you@codebegun.com`. Further admins are invited from **Admin users** in the console.
 
 ### Why ports 27018 and 6380?
 
@@ -47,11 +68,14 @@ These are the production images (non-root, compiled output) running in developme
 
 ```bash
 pnpm test               # unit + component, no services needed
-pnpm infra:up
+pnpm infra:up   # MongoDB, Redis and the Mailpit inbox
 MONGODB_URI="mongodb://localhost:27018/cbi_interview_test?directConnection=true" \
 REDIS_URL="redis://localhost:6380" \
 pnpm test:integration   # fails loudly if services are not reachable
+pnpm build && pnpm smoke:boot   # boots the compiled API and worker under plain Node
 ```
+
+Integration tests use Redis logical database 15 and wipe it (and the test MongoDB database) between tests, so they never touch your development data. Set `TEST_LOG_LEVEL=error` to see server-side errors while debugging a failing test.
 
 ## Resetting local data
 

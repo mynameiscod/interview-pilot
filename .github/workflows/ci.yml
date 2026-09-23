@@ -75,6 +75,8 @@ jobs:
           echo "MongoDB replica set did not become primary" && exit 1
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
+      - name: Boot compiled API and worker under plain Node
+        run: pnpm build && pnpm smoke:boot
 
   docker:
     name: Docker images build
