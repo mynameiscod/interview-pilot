@@ -2,6 +2,7 @@ import { createLogger } from '@cbi/config';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
+import { buildTestApp } from './test-support/harness.js';
 import {
   connectMongo,
   createRedis,
@@ -57,15 +58,9 @@ describe('infrastructure connectivity', () => {
   });
 
   it('/readyz reports ready against real dependencies', async () => {
+    const { container } = await buildTestApp({ redis });
     const app = createApp({
-      env: {
-        APP_ENV: 'test',
-        APP_VERSION: 'integration',
-        CORS_ALLOWED_ORIGINS: ['http://localhost:5173'],
-        TRUST_PROXY_HOPS: 0,
-        REQUEST_BODY_LIMIT: '1mb',
-        API_DOCS_ENABLED: false,
-      },
+      container,
       logger,
       probes: { mongo: pingMongo, redis: () => pingRedis(redis) },
       isDraining: () => false,

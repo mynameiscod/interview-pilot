@@ -3,5 +3,5 @@
   "compilerOptions": {
     "customConditions": []
   },
-  "exclude": ["src/**/*.test.ts", "src/openapi/generate.ts"]
+  "exclude": ["src/**/*.test.ts", "src/test-support/**", "src/openapi/generate.ts"]
 }

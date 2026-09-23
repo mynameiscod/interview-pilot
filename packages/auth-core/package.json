@@ -1,0 +1,33 @@
+{
+  "name": "@cbi/auth-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure authentication primitives: access tokens, OTP and refresh-token crypto, identity normalization",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cbi/shared-types": "workspace:*",
+    "jose": "6.2.12",
+    "libphonenumber-js": "1.13.13",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "vitest": "5.0.1"
+  }
+}

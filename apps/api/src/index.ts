@@ -1,6 +1,14 @@
 import { apiEnvSchema, createLogger, loadEnv } from '@cbi/config';
 import { createApp, SERVICE_NAME } from './app.js';
-import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
+import { buildContainer } from './container.js';
+import {
+  connectMongo,
+  createRedis,
+  disconnectMongo,
+  ensureIndexes,
+  pingMongo,
+  pingRedis,
+} from '@cbi/db';
 
 const env = loadEnv(apiEnvSchema);
 const logger = createLogger({
@@ -21,14 +29,17 @@ async function main(): Promise<void> {
   await Promise.all([
     connectMongo({
       uri: env.MONGODB_URI,
-      autoIndex: env.APP_ENV !== 'production',
+      autoIndex: false,
       logger,
     }),
     redis.connect(),
   ]);
+  await ensureIndexes();
 
+  const container = buildContainer({ env, logger, redis, rateLimitRedis: redis });
+  logger.info(container.providers, 'providers configured');
   const app = createApp({
-    env,
+    container,
     logger,
     probes: { mongo: pingMongo, redis: () => pingRedis(redis) },
     isDraining: () => draining,

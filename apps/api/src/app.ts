@@ -1,36 +1,32 @@
-import type { ApiEnv, Logger } from '@cbi/config';
+import type { DependencyProbe, Logger } from '@cbi/config';
 import { API_V1_PREFIX } from '@cbi/shared-types';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
+import type { Container } from './container.js';
 import { AppError } from './lib/errors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { originGuard } from './middleware/origin-guard.js';
 import { resolveRequestId } from './middleware/request-id.js';
+import { adminRouter } from './modules/admin/admin.routes.js';
+import { authRouter } from './modules/auth/auth.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
-import type { DependencyProbe } from '@cbi/config';
+import { usersRouter } from './modules/users/users.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
 
 export interface AppDependencies {
-  env: Pick<
-    ApiEnv,
-    | 'APP_ENV'
-    | 'APP_VERSION'
-    | 'CORS_ALLOWED_ORIGINS'
-    | 'TRUST_PROXY_HOPS'
-    | 'REQUEST_BODY_LIMIT'
-    | 'API_DOCS_ENABLED'
-  >;
+  container: Container;
   logger: Logger;
   probes: Record<string, DependencyProbe>;
   isDraining: () => boolean;
 }
 
 export function createApp(deps: AppDependencies): Express {
-  const { env, logger } = deps;
+  const { container: c, logger } = deps;
+  const env = c.env;
   const app = express();
 
   app.disable('x-powered-by');
@@ -83,7 +79,11 @@ export function createApp(deps: AppDependencies): Express {
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
 
   const v1 = express.Router();
-  // Domain modules (auth, users, interviews, ...) mount here from Phase 1 onward.
+  v1.use(c.limiters.public);
+  v1.use('/auth', authRouter('candidate', c));
+  v1.use('/users', usersRouter(c));
+  v1.use('/admin/auth', authRouter('admin', c));
+  v1.use('/admin', adminRouter(c));
   v1.use((req, _res, next) => {
     next(
       new AppError(404, 'NOT_FOUND', `Route ${req.method} ${API_V1_PREFIX}${req.path} not found`),

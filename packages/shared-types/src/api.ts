@@ -16,6 +16,16 @@ export const ErrorCode = z.enum([
   'ORIGIN_NOT_ALLOWED',
   'SERVICE_UNAVAILABLE',
   'INTERNAL_ERROR',
+  // Authentication (Phase 1)
+  'CSRF_REJECTED',
+  'OTP_INVALID',
+  'OTP_EXPIRED',
+  'OTP_TOO_MANY_ATTEMPTS',
+  'OTP_COOLDOWN',
+  'IDENTITY_IN_USE',
+  'ACCOUNT_SUSPENDED',
+  'FEATURE_DISABLED',
+  'PROVIDER_UNAVAILABLE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
