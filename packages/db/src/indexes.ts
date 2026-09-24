@@ -7,6 +7,8 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
+import { CreditAccountModel, CreditLedgerModel } from './models/credits.js';
+import { InterviewTurnModel } from './models/interview-turn.js';
 import { JobTargetModel, ResumeModel } from './models/inputs.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import {
@@ -41,6 +43,9 @@ const MODELS = [
   RoleBlueprintModel,
   InterviewTemplateModel,
   InterviewSessionModel,
+  InterviewTurnModel,
+  CreditLedgerModel,
+  CreditAccountModel,
 ];
 
 /**

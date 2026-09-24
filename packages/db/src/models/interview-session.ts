@@ -11,7 +11,16 @@ import type {
   InterviewMode as InterviewModeT,
   InterviewState as InterviewStateT,
 } from '@cbi/shared-types';
+import type { PlannerState } from '@cbi/interview-engine';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
+
+export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED';
+
+export interface SessionClockRecord {
+  budgetMs: number;
+  activeMs: number;
+  runningSince: Date | null;
+}
 
 export interface InterviewSessionRecord {
   _id: Types.ObjectId;
@@ -31,6 +40,24 @@ export interface InterviewSessionRecord {
   analysis: RoleAnalysis | null;
   analysisAttempts: number;
   failure: { code: AnalysisFailureCodeT; at: Date } | null;
+
+  // ---- Live interview (Phase 4) ----
+  /** True while in an in-progress state; a partial unique index allows one per user. */
+  live: boolean;
+  clock: SessionClockRecord | null;
+  planner: PlannerState | null;
+  /** Where RECONNECTING/PAUSED return to. */
+  resumeTo: 'ACTIVE' | 'ROUND_TRANSITION' | null;
+  credit: { status: CreditStatus; lotId: Types.ObjectId | null };
+  /** Highest turn seq issued. */
+  lastSeq: number;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  endReason: string | null;
+  /** Last heartbeat or message from the candidate's room. */
+  lastSeenAt: Date | null;
+  disconnectedAt: Date | null;
+  pausedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,11 +105,50 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
       ),
       default: null,
     },
+    live: { type: Boolean, default: false },
+    clock: {
+      type: new Schema(
+        {
+          budgetMs: { type: Number, required: true },
+          activeMs: { type: Number, required: true },
+          runningSince: { type: Date, default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    planner: { type: Schema.Types.Mixed, default: null },
+    resumeTo: { type: String, enum: ['ACTIVE', 'ROUND_TRANSITION', null], default: null },
+    credit: {
+      type: new Schema(
+        {
+          status: {
+            type: String,
+            enum: ['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED'],
+            required: true,
+          },
+          lotId: { type: Schema.Types.ObjectId, default: null },
+        },
+        { _id: false },
+      ),
+      default: () => ({ status: 'NONE', lotId: null }),
+    },
+    lastSeq: { type: Number, default: 0 },
+    startedAt: { type: Date, default: null },
+    endedAt: { type: Date, default: null },
+    endReason: { type: String, default: null },
+    lastSeenAt: { type: Date, default: null },
+    disconnectedAt: { type: Date, default: null },
+    pausedAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'interviewSessions', minimize: false },
 );
 sessionSchema.index({ userId: 1, createdAt: -1 });
 sessionSchema.index({ state: 1, updatedAt: 1 });
+sessionSchema.index(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { live: true }, name: 'one_live_interview_per_user' },
+);
 
 export const InterviewSessionModel: Model<InterviewSessionRecord> =
   (mongoose.models.InterviewSession as Model<InterviewSessionRecord> | undefined) ??
