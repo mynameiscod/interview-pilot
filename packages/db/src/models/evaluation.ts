@@ -110,6 +110,8 @@ export interface ScoreDimensionRecord {
   fallback: boolean;
   rationale: string | null;
   evidenceIds: string[];
+  /** A reviewer's note when a manual review changed this dimension. */
+  reviewNote?: string | null;
 }
 
 export interface InterviewScoreRecord {

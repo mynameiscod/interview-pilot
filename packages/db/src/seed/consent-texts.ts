@@ -27,6 +27,15 @@ export const SEED_CONSENT_TEXTS: { type: ConsentType; title: string; body: strin
     ].join('\n\n'),
   },
   {
+    type: 'CAMPAIGN_SHARING',
+    title: 'Sharing your results with the company',
+    body: [
+      'You joined this interview through an invitation from a company. Your interview transcript, scores and report are shared with the people at that company who run this campaign, and with authorised CodeBegun staff.',
+      'Every candidate in the campaign is assessed on the same role, questions format and rules. The company decides whether you can see your own report.',
+      'If you do not agree, do not start the interview. You can still practise on your own without sharing anything.',
+    ].join('\n\n'),
+  },
+  {
     type: 'INTEGRITY',
     title: 'Session observations',
     body: [

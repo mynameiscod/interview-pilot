@@ -20,7 +20,7 @@ import type {
 import type { PlannerState } from '@cbi/interview-engine';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
-export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED';
+export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED' | 'SPONSORED';
 
 /** A dimension scored by the pipeline, kept until the score revision is written. */
 export interface DraftDimensionScore {
@@ -99,6 +99,19 @@ export interface InterviewSessionRecord {
   consents: SessionConsentRecord[];
   /** Video recording, decided at start from the template policy and the RECORDING consent. */
   recording: { enabled: boolean } | null;
+
+  // ---- Campaigns and review (Phase 10) ----
+  /** The campaign this interview belongs to (fixed role, template and rules). */
+  campaignId: Types.ObjectId | null;
+  /** The campaign paid for it (set at start when its sponsored budget had room). */
+  sponsored: boolean;
+  /** Flagged for manual review by an admin. */
+  review: {
+    flagged: boolean;
+    reason: string | null;
+    by: Types.ObjectId | null;
+    at: Date | null;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -202,7 +215,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
         {
           status: {
             type: String,
-            enum: ['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED'],
+            enum: ['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED', 'SPONSORED'],
             required: true,
           },
           lotId: { type: Schema.Types.ObjectId, default: null },
@@ -239,6 +252,20 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
       type: new Schema({ enabled: { type: Boolean, required: true } }, { _id: false }),
       default: null,
     },
+    campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', default: null },
+    sponsored: { type: Boolean, default: false },
+    review: {
+      type: new Schema(
+        {
+          flagged: { type: Boolean, required: true },
+          reason: { type: String, default: null },
+          by: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+          at: { type: Date, default: null },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
   },
   { timestamps: true, collection: 'interviewSessions', minimize: false },
 );
@@ -249,6 +276,9 @@ sessionSchema.index(
   { userId: 1 },
   { unique: true, partialFilterExpression: { live: true }, name: 'one_live_interview_per_user' },
 );
+
+sessionSchema.index({ campaignId: 1, state: 1 });
+sessionSchema.index({ 'review.flagged': 1, updatedAt: -1 });
 
 export const InterviewSessionModel: Model<InterviewSessionRecord> =
   (mongoose.models.InterviewSession as Model<InterviewSessionRecord> | undefined) ??

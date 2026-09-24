@@ -128,6 +128,10 @@ export const ReportContent = z.object({
   integrity: IntegritySummary.nullable().optional(),
   /** Coding problems and their results (Phase 9); absent in older reports. */
   coding: z.array(CodingReportItem).optional(),
+  /** Set on revisions made by a manual review. */
+  review: z
+    .object({ revision: z.number().int(), reviewedAt: z.iso.datetime(), note: z.string() })
+    .optional(),
   header: z.object({
     title: z.string(),
     companyName: z.string().nullable(),

@@ -86,7 +86,14 @@ export const RoleAnalysis = z.object({
 });
 export type RoleAnalysis = z.infer<typeof RoleAnalysis>;
 
-export const InterviewCreditStatus = z.enum(['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED']);
+/** SPONSORED: a campaign pays for the interview; the candidate's credits are not used. */
+export const InterviewCreditStatus = z.enum([
+  'NONE',
+  'RESERVED',
+  'CONSUMED',
+  'REFUNDED',
+  'SPONSORED',
+]);
 export type InterviewCreditStatus = z.infer<typeof InterviewCreditStatus>;
 
 export const InterviewSummary = z.object({
@@ -115,6 +122,10 @@ export const InterviewSummary = z.object({
   voice: VoiceReadiness.nullable(),
   /** Consents the interview asks for that still need a decision (any mode). */
   consentsPending: z.boolean(),
+  /** A campaign interview (fixed role, template and rules; results shared with the company). */
+  campaign: z
+    .object({ id: z.string(), name: z.string(), companyName: z.string(), sponsored: z.boolean() })
+    .nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

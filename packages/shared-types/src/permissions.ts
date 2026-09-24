@@ -38,6 +38,11 @@ export const Permission = z.enum([
   'media.manage',
   'consent.read',
   'consent.manage',
+  // Campaigns, results and manual review (Phase 10)
+  'campaigns.read',
+  'campaigns.manage',
+  'interviews.read',
+  'interviews.review',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
@@ -56,6 +61,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'media.read',
     'media.manage',
     'consent.read',
+    'campaigns.read',
+    'campaigns.manage',
+    'interviews.read',
+    'interviews.review',
   ],
   CONTENT_ADMIN: [
     'prompts.read',
@@ -64,7 +73,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'library.manage',
     'consent.read',
   ],
-  SUPPORT_ADMIN: ['candidates.read', 'payments.read'],
+  SUPPORT_ADMIN: ['candidates.read', 'payments.read', 'campaigns.read', 'interviews.read'],
   FINANCE_ADMIN: ['audit.read', 'ai_usage.read', 'payments.read', 'payments.manage'],
 };
 

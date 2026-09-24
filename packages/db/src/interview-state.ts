@@ -182,14 +182,22 @@ export async function applySessionEvent(input: ApplyEventInput): Promise<ApplyEv
     for (const effect of result.effects) {
       switch (effect.type) {
         case 'RESERVE_CREDIT': {
-          const { lotId } = await reserveCredit(s.userId, s._id, { session: tx, now });
-          $set.credit = { status: 'RESERVED', lotId };
+          const sponsored = input.set?.sponsored ?? s.sponsored;
+          if (sponsored) {
+            // A campaign pays: the candidate's credits are not touched (nothing to settle later).
+            $set.credit = { status: 'SPONSORED', lotId: null };
+          } else {
+            const { lotId } = await reserveCredit(s.userId, s._id, { session: tx, now });
+            $set.credit = { status: 'RESERVED', lotId };
+          }
           $set.startedAt = now;
           break;
         }
         case 'CONSUME_CREDIT':
         case 'REFUND_CREDIT': {
           const refund = effect.type === 'REFUND_CREDIT';
+          // Sponsored interviews never touched the candidate's credits: nothing to settle.
+          if (s.credit?.status === 'SPONSORED') break;
           await settleCredit(s.userId, s._id, refund ? 'REFUND' : 'CONSUME', {
             session: tx,
             reason: input.reason ?? null,

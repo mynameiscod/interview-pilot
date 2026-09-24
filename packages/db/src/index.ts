@@ -1,6 +1,7 @@
 export * from './ai-runtime.js';
 export * from './models/ai.js';
 export * from './models/audit-log.js';
+export * from './models/campaign.js';
 export * from './models/coding.js';
 export * from './models/commerce.js';
 export * from './models/consent.js';
