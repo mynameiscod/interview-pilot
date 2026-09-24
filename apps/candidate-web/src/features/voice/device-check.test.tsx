@@ -3,6 +3,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeApi, makeSession, ok } from '@cbi/web-core/testing';
+import { decide, makeConsentItem, makeConsents } from '../../test/consent-fixtures';
 import { installFakeMedia, type FakeMedia } from '../../test/fake-media';
 import { makeInterview } from '../../test/interview-fixtures';
 import { renderRoute } from '../../test/render';
@@ -28,21 +29,26 @@ describe('voice device check', () => {
   it('checks the browser, microphone, speaker and connection, then records consent and enables Start', async () => {
     fake = installFakeMedia();
     let voice: VoiceReadiness | null = null;
+    let consents = makeConsents([makeConsentItem('VOICE_PROCESSING')]);
     const api = fakeApi({
       ...signedIn,
-      'GET /interviews/int1': () => ok(makeInterview({ mode: 'VOICE', voice })),
+      'GET /interviews/int1': () =>
+        ok(makeInterview({ mode: 'VOICE', voice, consentsPending: !consents.complete })),
       'GET /voice/health': () => ok({ stt: 'AVAILABLE', tts: 'DEGRADED' }),
       'POST /interviews/int1/device-check': (body) => {
         voice = {
           deviceCheck: { ...(body as DeviceCheckBody), at: AT, passed: true },
-          consentAt: null,
+          consentsComplete: false,
+          recording: false,
           ready: false,
         };
         return ok(voice);
       },
-      'POST /interviews/int1/voice-consent': () => {
-        voice = { ...voice!, consentAt: AT, ready: true };
-        return ok(voice);
+      'GET /interviews/int1/consents': () => ok(consents),
+      'POST /interviews/int1/consents': (body) => {
+        consents = decide(consents, body);
+        voice = { ...voice!, consentsComplete: consents.complete, ready: consents.complete };
+        return ok(consents);
       },
       'GET /credits/balance': () => ok({ available: 1, reserved: 0, lots: [] }),
     });
@@ -73,9 +79,11 @@ describe('voice device check', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save and continue' }));
     expect(
-      await screen.findByRole('heading', { name: 'How we use your voice' }),
+      await screen.findByRole('heading', { name: 'Your choices for this interview' }),
     ).toBeInTheDocument();
+    // The notice text comes from the server, one paragraph per blank-line block.
     expect(screen.getByText('Your audio is not stored.')).toBeInTheDocument();
+    expect(screen.getByText('Required')).toBeInTheDocument();
     const posted = api.calls.find((c) => c.key === 'POST /interviews/int1/device-check')!
       .body as DeviceCheckBody;
     expect(posted).toMatchObject({
@@ -85,14 +93,17 @@ describe('voice device check', () => {
       network: 'PASS',
       speechService: 'PASS',
       mimeType: 'audio/webm;codecs=opus',
+      camera: null,
+      videoMimeType: null,
     });
     expect(posted.rttMs).toEqual(expect.any(Number));
 
-    await user.click(screen.getByRole('button', { name: 'I agree' }));
+    expect(screen.getByRole('button', { name: 'Save my choices' })).toBeDisabled();
+    await user.click(screen.getByRole('radio', { name: 'I agree' }));
+    await user.click(screen.getByRole('button', { name: 'Save my choices' }));
     expect(await screen.findByRole('heading', { name: 'You are ready' })).toHaveFocus();
-    expect(api.calls.find((c) => c.key === 'POST /interviews/int1/voice-consent')!.body).toEqual({
-      accepted: true,
-      version: 'voice-2026-09',
+    expect(api.calls.find((c) => c.key === 'POST /interviews/int1/consents')!.body).toEqual({
+      decisions: [{ consentTextId: 'ct-voice_processing', accepted: true }],
     });
 
     await user.click(screen.getByRole('link', { name: 'Continue' }));
@@ -153,6 +164,137 @@ describe('voice device check', () => {
     });
     const { router } = await renderRoute(CHECK, { api });
     await waitFor(() => expect(router.state.location.pathname).toBe('/app/interviews/int1/start'));
+  });
+});
+
+describe('video device check', () => {
+  const VIDEO_CHECK = '/app/interviews/int1/device-check';
+
+  function videoApi(extra: Parameters<typeof fakeApi>[0] = {}) {
+    return fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () =>
+        ok(
+          makeInterview({
+            mode: 'VIDEO',
+            consentsPending: true,
+            template: {
+              id: 'tpl1',
+              name: 'Standard practice',
+              creditCost: 1,
+              modes: ['TEXT', 'VOICE', 'VIDEO'],
+              totalDurationSec: 1800,
+            },
+          }),
+        ),
+      'GET /voice/health': () => ok({ stt: 'AVAILABLE', tts: 'AVAILABLE' }),
+      'GET /credits/balance': () => ok({ available: 1, reserved: 0, lots: [] }),
+      ...extra,
+    });
+  }
+
+  it('explains a blocked camera and how to allow it', async () => {
+    fake = installFakeMedia({
+      cameraError: new DOMException('Permission denied', 'NotAllowedError'),
+    });
+    await renderRoute(VIDEO_CHECK, { api: videoApi() });
+    const user = userEvent.setup();
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: 'Check your camera, microphone and speaker',
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Test camera' }));
+    const camera = checkItem('Camera');
+    expect(await within(camera).findByText('Failed')).toBeInTheDocument();
+    expect(within(camera).getByText(/Camera access is blocked/)).toBeInTheDocument();
+    expect(within(camera).getByRole('button', { name: 'Test again' })).toBeInTheDocument();
+    expect(fake.getUserMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ video: expect.anything(), audio: expect.anything() }),
+    );
+
+    // Everything else passes, but a failed camera still blocks a video interview.
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }));
+    await screen.findByText('We can hear you clearly.');
+    await user.click(screen.getByRole('button', { name: 'Play test sound' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, I heard it' }));
+    await screen.findByText(/Your connection is good/);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /camera, microphone or browser cannot be used for a video interview/,
+    );
+  });
+
+  it('shows the camera, posts the camera result and video format, then asks for consent', async () => {
+    fake = installFakeMedia();
+    let consents = makeConsents([
+      makeConsentItem('VOICE_PROCESSING'),
+      makeConsentItem('RECORDING'),
+    ]);
+    const api = videoApi({
+      'POST /interviews/int1/device-check': (body) =>
+        ok({
+          deviceCheck: { ...(body as DeviceCheckBody), at: AT, passed: true },
+          consentsComplete: false,
+          recording: false,
+          ready: false,
+        } satisfies VoiceReadiness),
+      'GET /interviews/int1/consents': () => ok(consents),
+      'POST /interviews/int1/consents': (body) => {
+        consents = decide(consents, body);
+        return ok(consents);
+      },
+    });
+    await renderRoute(VIDEO_CHECK, { api });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Test camera' }));
+    expect(await within(checkItem('Camera')).findByText('Passed')).toBeInTheDocument();
+    expect(screen.getByText('Your camera works.')).toBeInTheDocument();
+    const preview = screen.getByLabelText('Your camera preview') as HTMLVideoElement;
+    expect(preview).toBeVisible();
+    expect(preview.muted).toBe(true);
+    expect(within(checkItem('Browser')).getByText(/can record video/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Test microphone' }));
+    await screen.findByText('We can hear you clearly.');
+    await user.click(screen.getByRole('button', { name: 'Play test sound' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, I heard it' }));
+    await screen.findByText(/Your connection is good/);
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    const posted = api.calls.find((c) => c.key === 'POST /interviews/int1/device-check')!
+      .body as DeviceCheckBody;
+    expect(posted).toMatchObject({
+      microphone: 'PASS',
+      recorder: 'PASS',
+      camera: 'PASS',
+      videoMimeType: 'video/webm;codecs=vp9,opus',
+      mimeType: 'audio/webm;codecs=opus',
+    });
+    // The camera is released once the check is saved.
+    expect(fake.media.tracks.every((t) => t.stopped)).toBe(true);
+
+    await screen.findByRole('heading', { name: 'Your choices for this interview' });
+    const recording = screen.getByRole('group', { name: /Recording/ });
+    expect(within(recording).getByText('Optional')).toBeInTheDocument();
+    expect(within(recording).getByText(/You can delete the recording at any time/)).toBeVisible();
+    await user.click(
+      within(recording).getByRole('radio', { name: 'Do not record this interview' }),
+    );
+    const voice = screen.getByRole('group', { name: /Voice processing/ });
+    await user.click(within(voice).getByRole('radio', { name: 'I agree' }));
+    await user.click(screen.getByRole('button', { name: 'Save my choices' }));
+
+    expect(await screen.findByRole('heading', { name: 'You are ready' })).toBeInTheDocument();
+    expect(screen.getByText(/Your camera, microphone and speaker are checked/)).toBeInTheDocument();
+    expect(api.calls.find((c) => c.key === 'POST /interviews/int1/consents')!.body).toEqual({
+      decisions: [
+        { consentTextId: 'ct-voice_processing', accepted: true },
+        { consentTextId: 'ct-recording', accepted: false },
+      ],
+    });
   });
 });
 

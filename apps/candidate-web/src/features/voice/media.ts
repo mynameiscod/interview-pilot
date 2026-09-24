@@ -1,7 +1,8 @@
 /**
- * Browser audio helpers for voice interviews: format choice, microphone
- * access, a live input level and a test tone. Everything here releases what
- * it opens (tracks, AudioContexts) through the returned `close`/`stop`.
+ * Browser media helpers for voice and video interviews: format choice,
+ * microphone and camera access, a live input level and a test tone.
+ * Everything here releases what it opens (tracks, AudioContexts) through the
+ * returned `close`/`stop`.
  */
 
 /** MediaRecorder formats the speech service accepts, in order of preference. */
@@ -9,6 +10,14 @@ export const RECORDER_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/ogg;codecs=opus',
   'audio/mp4',
+] as const;
+
+/** MediaRecorder formats for video recordings, in order of preference (Safari records MP4). */
+export const VIDEO_MIME_TYPES = [
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/mp4;codecs=avc1,mp4a',
+  'video/mp4',
 ] as const;
 
 type AudioContextCtor = typeof AudioContext;
@@ -44,6 +53,18 @@ export function pickMimeType(): string | null {
   const recorder = globalThis.MediaRecorder;
   if (typeof recorder?.isTypeSupported !== 'function') return null;
   return RECORDER_MIME_TYPES.find((type) => recorder.isTypeSupported(type)) ?? null;
+}
+
+/** The first video recording format the browser supports, or null. */
+export function pickVideoMimeType(): string | null {
+  const recorder = globalThis.MediaRecorder;
+  if (typeof recorder?.isTypeSupported !== 'function') return null;
+  return VIDEO_MIME_TYPES.find((type) => recorder.isTypeSupported(type)) ?? null;
+}
+
+/** The container a recorder produces, without codecs: the Content-Type of uploaded segments. */
+export function containerType(mimeType: string): 'video/webm' | 'video/mp4' {
+  return mimeType.split(';')[0]!.trim().toLowerCase() === 'video/mp4' ? 'video/mp4' : 'video/webm';
 }
 
 /** Browser name and major version for support (no other detail). */
@@ -91,6 +112,14 @@ export function micProblem(err: unknown): MicProblem {
 /** Asks for the microphone with the processing that suits speech. */
 export function openMicrophone(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+}
+
+/** Asks for the camera and microphone together (video interviews). */
+export function openCamera(): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 30 } },
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
 }

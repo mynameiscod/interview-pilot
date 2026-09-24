@@ -151,6 +151,8 @@ export function makeSnapshot(overrides: Partial<InterviewSnapshot> = {}): Interv
     state: 'ACTIVE',
     mode: 'TEXT',
     voiceEnabled: false,
+    recording: false,
+    integrityTracking: false,
     language: 'auto',
     title: 'Backend Developer',
     rounds: [

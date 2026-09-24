@@ -1,7 +1,10 @@
 import {
   ANSWER_LIMITS,
+  isSpokenMode,
   RtEvent,
   type DegradedEvent,
+  type IntegrityEventPayload,
+  type IntegrityEventType,
   type InterviewMode,
   type InterviewSnapshot,
   type InterviewState,
@@ -48,8 +51,14 @@ export type SendResult = 'sent' | 'stale' | 'rejected';
 export type RoomProblem =
   'notFound' | 'notStarted' | 'signedOut' | 'stale' | 'sendFailed' | 'endFailed' | 'modeFailed';
 
-/** Answering mode in the room (video is not offered). */
-export type AnswerMode = Extract<InterviewMode, 'TEXT' | 'VOICE'>;
+/** Answering mode in the room: typed, spoken, or spoken on camera. */
+export type AnswerMode = InterviewMode;
+
+/** The spoken mode an interview was set up with (where "Answer by voice" switches back to). */
+export type SpokenMode = Exclude<InterviewMode, 'TEXT'>;
+
+/** Integrity observations waiting for the connection (oldest dropped beyond this). */
+const MAX_BUFFERED_OBSERVATIONS = 100;
 
 /** Speech features currently failing (speech-to-text, text-to-speech). */
 export type SpeechKind = DegradedEvent['kind'];
@@ -62,8 +71,14 @@ export interface RoomState {
   state: InterviewState | null;
   /** How the candidate answers right now. */
   mode: AnswerMode;
-  /** Set up for voice: the candidate can switch between voice and text. */
+  /** Set up for voice or video: the candidate can switch between speaking and typing. */
   voiceEnabled: boolean;
+  /** The interview's own spoken mode (VOICE or VIDEO), for switching back from text. */
+  spokenMode: SpokenMode;
+  /** The camera is being recorded (video interviews that allow it, with consent). */
+  recording: boolean;
+  /** Browser observations (tab switches, pastes …) are noted for this interview. */
+  integrityTracking: boolean;
   /** Speech features the server reported as unavailable (cleared on dismiss or mode change). */
   degraded: Record<SpeechKind, boolean>;
   switchingMode: boolean;
@@ -109,6 +124,9 @@ export const initialRoomState: RoomState = {
   state: null,
   mode: 'TEXT',
   voiceEnabled: false,
+  spokenMode: 'VOICE',
+  recording: false,
+  integrityTracking: false,
   degraded: { STT: false, TTS: false },
   switchingMode: false,
   rounds: [],
@@ -182,8 +200,12 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         joined: true,
         title: s.title,
         state: s.state,
-        mode: s.mode === 'VOICE' ? 'VOICE' : 'TEXT',
+        mode: s.mode,
         voiceEnabled: s.voiceEnabled,
+        // Only video interviews are recorded, so a recorded one typed in text mode is video.
+        spokenMode: isSpokenMode(s.mode) ? s.mode : s.recording ? 'VIDEO' : state.spokenMode,
+        recording: s.recording,
+        integrityTracking: s.integrityTracking,
         rounds: s.rounds,
         roundIdx: Math.max(s.roundIdx, question?.roundIdx ?? -1),
         budgetMs: s.budgetMs,
@@ -236,9 +258,14 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
     case 'sending':
       return { ...state, sending: action.sending };
     case 'mode': {
-      const mode: AnswerMode = action.mode === 'VOICE' ? 'VOICE' : 'TEXT';
+      const mode = action.mode;
       if (mode === state.mode) return state;
-      return { ...state, mode, degraded: { STT: false, TTS: false } };
+      return {
+        ...state,
+        mode,
+        spokenMode: isSpokenMode(mode) ? mode : state.spokenMode,
+        degraded: { STT: false, TTS: false },
+      };
     }
     case 'switchingMode':
       return { ...state, switchingMode: action.switching };
@@ -288,6 +315,19 @@ function subscribeOnline(onChange: () => void) {
 const isOnline = () => navigator.onLine;
 const alwaysOnline = () => true;
 
+const spokenModeKey = (sessionId: string) => `cbi.room.spokenMode.${sessionId}`;
+
+/** The spoken mode seen earlier in this tab (a reload while typing still knows it). */
+function initRoomState(sessionId: string): RoomState {
+  let stored: string | null = null;
+  try {
+    stored = sessionStorage.getItem(spokenModeKey(sessionId));
+  } catch {
+    // Storage blocked: the default applies.
+  }
+  return { ...initialRoomState, spokenMode: stored === 'VIDEO' ? 'VIDEO' : 'VOICE' };
+}
+
 /**
  * The live text interview over Socket.IO: joins (and re-joins after every
  * reconnect with the highest seq already shown), keeps a heartbeat, follows
@@ -299,13 +339,25 @@ export function useInterviewRoom(sessionId: string) {
   const { manager } = useCandidateAuth();
   const api = useInterviewsApi();
   const voice = useVoiceApi();
-  const [state, dispatch] = useReducer(roomReducer, initialRoomState);
+  const [state, dispatch] = useReducer(roomReducer, sessionId, initRoomState);
   const online = useSyncExternalStore(subscribeOnline, isOnline, alwaysOnline);
 
   const pendingRef = useRef<PendingAnswer | null>(null);
   /** Sends the pending answer when connected and joined; set by the connection effect. */
   const flushRef = useRef<() => void>(() => undefined);
   const retryNowRef = useRef<() => void>(() => undefined);
+  /** Integrity observations not yet sent (sent once joined; fire-and-forget). */
+  const observationsRef = useRef<IntegrityEventPayload[]>([]);
+  const flushObservationsRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    if (!state.joined || !state.voiceEnabled) return;
+    try {
+      sessionStorage.setItem(spokenModeKey(sessionId), state.spokenMode);
+    } catch {
+      // Storage blocked: nothing to remember.
+    }
+  }, [sessionId, state.joined, state.voiceEnabled, state.spokenMode]);
 
   useEffect(() => {
     let disposed = false;
@@ -390,6 +442,13 @@ export function useInterviewRoom(sessionId: string) {
       if (FINISHED_STATES.includes(snapshot.state)) finish(snapshot.state);
     }
 
+    /** Observations are notes, not requests: sent without waiting and never retried. */
+    function flushObservations() {
+      if (!joined || !socket.connected || disposed) return;
+      const events = observationsRef.current.splice(0);
+      for (const event of events) request(RtEvent.INTEGRITY, event).catch(() => undefined);
+    }
+
     function settle(pending: PendingAnswer, result: SendResult) {
       if (pendingRef.current !== pending) return;
       pendingRef.current = null;
@@ -421,6 +480,7 @@ export function useInterviewRoom(sessionId: string) {
       if (ack.snapshot && FINISHED_STATES.includes(ack.snapshot.state)) return;
       startHeartbeat();
       void flush();
+      flushObservations();
     }
 
     async function flush() {
@@ -566,6 +626,7 @@ export function useInterviewRoom(sessionId: string) {
 
     flushRef.current = () => void flush();
     retryNowRef.current = reconnectNow;
+    flushObservationsRef.current = flushObservations;
     socket.connect();
 
     return () => {
@@ -577,6 +638,7 @@ export function useInterviewRoom(sessionId: string) {
       socket.disconnect();
       flushRef.current = () => undefined;
       retryNowRef.current = () => undefined;
+      flushObservationsRef.current = () => undefined;
     };
   }, [factory, manager, sessionId]);
 
@@ -621,7 +683,28 @@ export function useInterviewRoom(sessionId: string) {
     [],
   );
 
-  /** Switches between voice and text answers; the server also tells every open tab. */
+  /**
+   * Notes a browser observation (tab hidden, paste …) for the interview.
+   * Sent in the background, queued while offline; never shown or judged here.
+   */
+  const reportIntegrity = useCallback(
+    (type: IntegrityEventType, value?: number) => {
+      const buffer = observationsRef.current;
+      buffer.push({
+        sessionId,
+        type,
+        at: new Date().toISOString(),
+        ...(value === undefined
+          ? {}
+          : { value: Math.min(24 * 3600_000, Math.max(0, Math.round(value))) }),
+      });
+      if (buffer.length > MAX_BUFFERED_OBSERVATIONS) buffer.shift();
+      flushObservationsRef.current();
+    },
+    [sessionId],
+  );
+
+  /** Switches between speaking and typing; the server also tells every open tab. */
   const switchMode = useCallback(
     async (mode: AnswerMode, reason: ModeSwitchReason): Promise<boolean> => {
       dispatch({ type: 'problem', problem: null });
@@ -680,6 +763,7 @@ export function useInterviewRoom(sessionId: string) {
     switchMode,
     reportDegraded,
     dismissDegraded,
+    reportIntegrity,
   };
 }
 

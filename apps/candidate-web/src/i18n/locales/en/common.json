@@ -493,7 +493,9 @@
       "body": "Next, review the interview rules and start when you are ready.",
       "change": "Change settings",
       "continue": "Continue",
-      "voiceBody": "Next, check your microphone and speaker, then review the interview rules and start when you are ready."
+      "voiceBody": "Next, check your microphone and speaker, then review the interview rules and start when you are ready.",
+      "videoBody": "Next, check your camera, microphone and speaker, then review the interview rules and start when you are ready.",
+      "consentBody": "Next, read how this interview is observed and make your choices, then start when you are ready."
     },
     "cancel": {
       "title": "Cancel this interview",
@@ -508,6 +510,14 @@
       "readAloud": "Questions are read aloud and also shown on screen.",
       "switch": "You can switch to typing at any time.",
       "check": "Before you start, we check your microphone and speaker."
+    },
+    "notOffered": "Not offered for this interview",
+    "videoInfo": {
+      "title": "How a video interview works",
+      "camera": "Your camera is on, and you see yourself in a small window during the interview.",
+      "speak": "Questions are read aloud and shown on screen, and you answer by speaking.",
+      "recording": "The interview is recorded only if you agree, and only when this interview allows recording.",
+      "check": "Before you start, we check your camera, microphone and speaker."
     }
   },
   "credits": {
@@ -529,7 +539,8 @@
       "ownWords": "Answer in your own words, as you would in a real interview. The interviewer may ask follow-up questions.",
       "noScores": "You will not see scores during the interview. Your readiness report comes afterwards.",
       "connection": "If you lose connection, your progress is saved and the clock stops. You have 10 minutes to reconnect; after that the interview is paused and you can resume it within 24 hours.",
-      "voice": "This is a voice interview: each question is read aloud and you answer by speaking. You can switch to typing at any time."
+      "voice": "This is a voice interview: each question is read aloud and you answer by speaking. You can switch to typing at any time.",
+      "video": "This is a video interview: your camera is on, each question is read aloud and you answer by speaking. You can switch to typing at any time."
     },
     "roundsTitle": "Rounds",
     "creditTitle": "Credits",
@@ -545,7 +556,8 @@
       "noCredits": "You have no credits left, so this interview cannot start. Buy credits to continue.",
       "inProgress": "You already have an interview in progress. Finish or end it before starting a new one.",
       "invalidState": "This interview cannot be started now. Check its status on your dashboard.",
-      "voiceNotReady": "Check your microphone and speaker (and agree to the voice notice) before starting this voice interview."
+      "voiceNotReady": "Check your microphone and speaker (and agree to the voice notice) before starting this voice interview.",
+      "consentNotReady": "Make your choices about this interview before starting it."
     },
     "buyCredits": "See plans and buy credits",
     "voice": {
@@ -553,7 +565,18 @@
       "ready": "Your microphone and speaker are checked and you have agreed to how your audio is used.",
       "checkAgain": "Run the check again",
       "needed": "Before you start, check your microphone and speaker and agree to how your audio is used.",
-      "check": "Check microphone and speaker"
+      "check": "Check microphone and speaker",
+      "videoTitle": "Camera, microphone and speaker",
+      "videoReady": "Your camera, microphone and speaker are checked and you have made your choices.",
+      "videoNeeded": "Before you start, check your camera, microphone and speaker and make your choices about this interview.",
+      "videoCheck": "Check camera, microphone and speaker",
+      "recordingOn": "This interview will be recorded.",
+      "recordingOff": "This interview will not be recorded."
+    },
+    "consent": {
+      "title": "Your choices",
+      "needed": "Before you start, read how this interview works and make your choices.",
+      "action": "Review and make choices"
     }
   },
   "room": {
@@ -612,7 +635,8 @@
     },
     "dismiss": "Dismiss",
     "notFound": "This interview could not be found.",
-    "noScoresNote": "No scores are shown during the interview. Answer as you would in a real one."
+    "noScoresNote": "No scores are shown during the interview. Answer as you would in a real one.",
+    "observationsOn": "Session observations are on."
   },
   "complete": {
     "processing": {
@@ -808,6 +832,23 @@
       "submit": "Send feedback",
       "update": "Update feedback",
       "sending": "Sending…"
+    },
+    "observations": {
+      "title": "Session observations",
+      "none": "Nothing was noted.",
+      "types": {
+        "TAB_HIDDEN": "Switched to another tab or app",
+        "WINDOW_BLUR": "The interview window was not in focus",
+        "PASTE": "Pasted text into an answer",
+        "FULLSCREEN_EXIT": "Left full screen",
+        "CAMERA_LOST": "The camera stopped",
+        "MICROPHONE_LOST": "The microphone stopped"
+      },
+      "times_one": "{{formatted}} time",
+      "times_other": "{{formatted}} times",
+      "seconds_one": "{{formatted}} second",
+      "seconds_other": "{{formatted}} seconds",
+      "away": "Time away from the interview page: about {{away}}."
     }
   },
   "history": {
@@ -979,7 +1020,9 @@
         "title": "Browser",
         "pass": "Your browser can record spoken answers.",
         "noRecorder": "This browser cannot record audio. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview.",
-        "noFormat": "This browser cannot record audio in a format we support. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview."
+        "noFormat": "This browser cannot record audio in a format we support. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview.",
+        "videoPass": "Your browser can record video and spoken answers.",
+        "noVideoFormat": "This browser cannot record video in a format we support. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview."
       },
       "mic": {
         "title": "Microphone",
@@ -1027,22 +1070,32 @@
       "done": {
         "title": "You are ready",
         "body": "Your microphone and speaker are checked. Next, review the rules and start your interview.",
-        "continue": "Continue"
+        "continue": "Continue",
+        "videoBody": "Your camera, microphone and speaker are checked. Next, review the rules and start your interview."
       },
       "failed": {
         "title": "Voice answers will not work on this device yet",
         "body": "We could not use your microphone to record answers. Fix the problem and try again, or switch to a text interview.",
-        "retry": "Try the checks again"
+        "retry": "Try the checks again",
+        "videoBody": "We could not use your camera or microphone for a video interview. Fix the problem and try again, or switch to a text interview."
+      },
+      "videoTitle": "Check your camera, microphone and speaker",
+      "videoIntro": "A quick check makes sure your camera works, the interviewer can hear you and you can hear the questions. It takes about a minute.",
+      "requiredFailedVideo": "Your camera, microphone or browser cannot be used for a video interview right now. Fix the problem above and test again, or switch to a text interview.",
+      "camera": {
+        "title": "Camera",
+        "intro": "Press Test camera and allow the camera and microphone when your browser asks. You will see yourself here.",
+        "test": "Test camera",
+        "waiting": "Opening your camera…",
+        "pass": "Your camera works.",
+        "preview": "Your camera preview",
+        "denied": "Camera access is blocked. Click the lock or camera icon in your browser's address bar, allow the camera and microphone for this site, then press Test again.",
+        "noDevice": "We could not find a camera. Connect a camera, then press Test again.",
+        "inUse": "Your camera is being used by another app. Close other apps that use it (video calls, recorders), then press Test again.",
+        "unsupported": "This browser cannot use a camera here. Use the latest Chrome, Edge, Firefox or Safari.",
+        "other": "We could not open your camera. Check that it is connected and allowed, then press Test again.",
+        "noPicture": "Your camera opened but we did not get a picture. Check that it is not covered or used by another app, then press Test again."
       }
-    },
-    "consent": {
-      "title": "How we use your voice",
-      "providers": "Your recorded answers are sent to our speech providers to turn them into text, and each question is sent to be read aloud.",
-      "notStored": "Your audio is not stored.",
-      "transcript": "The text of your answers is used for your interview report.",
-      "switch": "You can switch to typing at any time during the interview.",
-      "agree": "I agree",
-      "saving": "Saving…"
     },
     "room": {
       "speaking": "Speaking…",
@@ -1076,7 +1129,8 @@
       },
       "modeNow": {
         "TEXT": "You are now answering by typing.",
-        "VOICE": "You are now answering by voice."
+        "VOICE": "You are now answering by voice.",
+        "VIDEO": "You are now answering by speaking, on camera."
       },
       "sttDown": {
         "title": "We cannot turn speech into text right now",
@@ -1102,5 +1156,73 @@
         "failed": "We could not process your recording. Please try again."
       }
     }
+  },
+  "consent": {
+    "pageTitle": "Before you start",
+    "title": "Your choices for this interview",
+    "intro": "Please read each notice and make a choice. Required notices must be accepted before the interview can start.",
+    "required": "Required",
+    "optional": "Optional",
+    "accept": "I agree",
+    "decline": "I do not agree",
+    "recording": {
+      "accept": "Record this interview",
+      "decline": "Do not record this interview",
+      "optionalHint": "Recording is optional. If you choose not to record, the video interview runs normally without a recording."
+    },
+    "requiredDeclined": "This interview cannot start unless you agree to this notice.",
+    "blocked": "You did not agree to a required notice, so this interview cannot start. Change your choice above, or go back to setup and choose another way to take the interview.",
+    "save": "Save my choices",
+    "saving": "Saving…",
+    "chooseAll": "Make a choice for each notice to continue.",
+    "nothingNeeded": "This interview does not ask for any consents.",
+    "continue": "Continue",
+    "retry": "Try again"
+  },
+  "video": {
+    "recording": "Recording",
+    "selfView": {
+      "label": "Your camera",
+      "starting": "Starting your camera…",
+      "unavailable": "Your camera is not available. The interview continues.",
+      "lost": "Your camera stopped. The interview continues."
+    },
+    "uploads": {
+      "waiting_one": "Saving recording…",
+      "waiting_other": "Saving recording… {{count}} parts waiting"
+    },
+    "room": {
+      "answerOnCamera": "Answer on camera"
+    }
+  },
+  "recording": {
+    "title": "Interview recording",
+    "status": {
+      "RECORDING": "Still being saved",
+      "COMPLETE": "Complete",
+      "PARTIAL": "Partial — some parts could not be saved",
+      "FAILED": "Failed — the recording could not be saved"
+    },
+    "retention": "Kept until {{date}}, then deleted automatically.",
+    "watch": "Watch",
+    "opening": "Opening…",
+    "player": "Interview recording",
+    "delete": "Delete recording",
+    "confirmTitle": "Delete this recording?",
+    "confirmBody": "The video is deleted for good. Your report is not affected.",
+    "confirmDelete": "Yes, delete it",
+    "deleting": "Deleting…",
+    "keep": "Keep it",
+    "deleted": "This recording was deleted."
+  },
+  "privacy": {
+    "consentsTitle": "Consent history",
+    "consentsHint": "Your choices about voice processing, recording and session observations, with the notice version each one applied to.",
+    "consentsEmpty": "You have not made any consent choices yet.",
+    "consentsError": "We could not load your consent history.",
+    "accepted": "Agreed",
+    "declined": "Declined",
+    "entryMeta": "{{date}} · version {{version}}",
+    "interview": "Interview"
   }
 }

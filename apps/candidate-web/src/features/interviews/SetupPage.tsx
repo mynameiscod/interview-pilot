@@ -10,12 +10,25 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
-import { formatMinutes, inputErrorMessage, interviewPath, isEnded, isLive } from './messages';
+import {
+  formatMinutes,
+  inputErrorMessage,
+  interviewPath,
+  isEnded,
+  isLive,
+  nextStepPath,
+} from './messages';
 
 const MODE_ICON = { TEXT: 'bi-keyboard', VOICE: 'bi-mic', VIDEO: 'bi-camera-video' } as const;
 
 const isModeSelectable = (interview: InterviewSummary, mode: InterviewMode) =>
   AVAILABLE_INTERVIEW_MODES.includes(mode) && interview.template.modes.includes(mode);
+
+const READY_BODY = {
+  TEXT: 'setup.ready.body',
+  VOICE: 'setup.ready.voiceBody',
+  VIDEO: 'setup.ready.videoBody',
+} as const;
 
 function SetupForm({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
@@ -53,7 +66,11 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
             <i className="bi bi-check-circle text-success me-2" aria-hidden="true" />
             {t('setup.ready.title')}
           </h2>
-          <p>{mode === 'VOICE' ? t('setup.ready.voiceBody') : t('setup.ready.body')}</p>
+          <p>
+            {mode === 'TEXT' && interview.consentsPending
+              ? t('setup.ready.consentBody')
+              : t(READY_BODY[mode])}
+          </p>
         </div>
         <dl className="row mb-3">
           <dt className="col-sm-4">{t('setup.modeTitle')}</dt>
@@ -64,14 +81,7 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
           <dd className="col-sm-8">{formatMinutes(t, duration)}</dd>
         </dl>
         <div className="d-flex flex-wrap gap-2">
-          <Link
-            to={
-              mode === 'VOICE' && interview.voice?.ready !== true
-                ? `/app/interviews/${interview.id}/device-check`
-                : `/app/interviews/${interview.id}/start`
-            }
-            className="btn btn-primary btn-lg"
-          >
+          <Link to={nextStepPath(interview)} className="btn btn-primary btn-lg">
             {t('setup.ready.continue')}
           </Link>
           <button
@@ -126,13 +136,28 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
                       </label>
                     </div>
                     <p id={`${inputId}-desc`} className="small cb-text-secondary mb-0 mt-1">
-                      {selectable ? t(`setup.modes.${option}.body`) : t('setup.comingSoon')}
+                      {selectable
+                        ? t(`setup.modes.${option}.body`)
+                        : AVAILABLE_INTERVIEW_MODES.includes(option)
+                          ? t('setup.notOffered')
+                          : t('setup.comingSoon')}
                     </p>
                   </div>
                 </div>
               );
             })}
           </div>
+          {mode === 'VIDEO' && (
+            <div className="mt-3 p-3 rounded-3 cb-surface-muted" aria-live="polite">
+              <p className="fw-semibold mb-2">{t('setup.videoInfo.title')}</p>
+              <ul className="small mb-0">
+                <li>{t('setup.videoInfo.camera')}</li>
+                <li>{t('setup.videoInfo.speak')}</li>
+                <li>{t('setup.videoInfo.recording')}</li>
+                <li>{t('setup.videoInfo.check')}</li>
+              </ul>
+            </div>
+          )}
           {mode === 'VOICE' && (
             <div className="mt-3 p-3 rounded-3 cb-surface-muted" aria-live="polite">
               <p className="fw-semibold mb-2">{t('setup.voiceInfo.title')}</p>

@@ -1,24 +1,35 @@
 import { vi } from 'vitest';
 
 /**
- * Minimal stand-ins for the browser audio APIs jsdom lacks (getUserMedia,
+ * Minimal stand-ins for the browser media APIs jsdom lacks (getUserMedia,
  * MediaRecorder, AudioContext, object URLs, HTMLMediaElement.play) so voice
- * pages can be tested. `level` sets the microphone input level (0–1) the
- * analyser reports. Call `uninstall` after each test.
+ * and video pages can be tested. `level` sets the microphone input level
+ * (0–1) the analyser reports. A request with `video` gets a camera track
+ * (640 px wide unless `videoWidth` says otherwise) and a microphone track.
+ * Call `uninstall` after each test.
  */
 export function installFakeMedia(
   opts: {
     micError?: Error;
+    /** Makes camera requests (getUserMedia with video) fail. */
+    cameraError?: Error;
+    /** Width the camera track reports (0: no picture). */
+    videoWidth?: number;
     level?: number;
     mimeTypes?: string[];
     /** Makes HTMLMediaElement.play() reject (autoplay blocked). */
     playRejects?: boolean;
   } = {},
 ) {
-  const supported = opts.mimeTypes ?? ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus'];
+  const supported = opts.mimeTypes ?? [
+    'audio/webm;codecs=opus',
+    'audio/ogg;codecs=opus',
+    'video/webm;codecs=vp9,opus',
+  ];
   const media = {
     level: opts.level ?? 0.5,
     tracks: [] as FakeTrack[],
+    streams: [] as FakeStream[],
     recorders: [] as FakeMediaRecorder[],
     contexts: [] as FakeAudioContext[],
     played: [] as HTMLMediaElement[],
@@ -26,20 +37,43 @@ export function installFakeMedia(
     revoked: [] as string[],
   };
 
-  class FakeTrack {
+  class FakeTrack extends EventTarget {
     stopped = false;
+    readyState: 'live' | 'ended' = 'live';
+    constructor(readonly kind: 'audio' | 'video') {
+      super();
+    }
     stop() {
       this.stopped = true;
+      this.readyState = 'ended';
+    }
+    getSettings() {
+      return this.kind === 'video' ? { width: opts.videoWidth ?? 640, height: 480 } : {};
+    }
+    /** The browser ends the track by itself (device unplugged, permission revoked). */
+    end() {
+      this.readyState = 'ended';
+      this.dispatchEvent(new Event('ended'));
     }
   }
 
   class FakeStream {
-    private readonly tracks = [new FakeTrack()];
-    constructor() {
+    private readonly tracks: FakeTrack[];
+    constructor(video: boolean) {
+      this.tracks = video
+        ? [new FakeTrack('video'), new FakeTrack('audio')]
+        : [new FakeTrack('audio')];
       media.tracks.push(...this.tracks);
+      media.streams.push(this);
     }
     getTracks() {
       return this.tracks;
+    }
+    getVideoTracks() {
+      return this.tracks.filter((t) => t.kind === 'video');
+    }
+    getAudioTracks() {
+      return this.tracks.filter((t) => t.kind === 'audio');
     }
   }
 
@@ -63,10 +97,15 @@ export function installFakeMedia(
     }
     stop() {
       this.state = 'inactive';
+      const last = this.mimeType.startsWith('video') ? 'last-segment' : 'spoken-answer';
       queueMicrotask(() => {
-        this.ondataavailable?.({ data: new Blob(['spoken-answer'], { type: this.mimeType }) });
+        this.ondataavailable?.({ data: new Blob([last], { type: this.mimeType }) });
         this.onstop?.();
       });
+    }
+    /** A timeslice elapsed: hands over a chunk as the browser would. */
+    emit(data: string) {
+      this.ondataavailable?.({ data: new Blob([data], { type: this.mimeType }) });
     }
   }
 
@@ -115,9 +154,11 @@ export function installFakeMedia(
     }
   }
 
-  const getUserMedia = vi.fn(async () => {
+  const getUserMedia = vi.fn(async (constraints: MediaStreamConstraints = {}) => {
+    const video = Boolean(constraints.video);
+    if (video && opts.cameraError) throw opts.cameraError;
     if (opts.micError) throw opts.micError;
-    return new FakeStream();
+    return new FakeStream(video);
   });
   Object.defineProperty(navigator, 'mediaDevices', {
     value: { getUserMedia },

@@ -1,10 +1,10 @@
 import {
   API_V1_PREFIX,
   ApiErrorBody,
-  VOICE_CONSENT_VERSION,
   type DeviceCheckBody,
   type InterviewMode,
   type ModeSwitchReason,
+  type SwitchModeBody,
   type VoiceHealth,
   type VoiceReadiness,
   type VoiceTranscript,
@@ -19,14 +19,9 @@ const path = (id: string) => `/interviews/${encodeURIComponent(id)}`;
 function voiceApi(api: ApiClient) {
   return {
     health: () => api.get<VoiceHealth>('/voice/health'),
-    /** Records the browser's device check (voice interviews, before starting). */
+    /** Records the browser's device check (voice and video interviews, before starting). */
     deviceCheck: (id: string, body: DeviceCheckBody) =>
       api.post<VoiceReadiness>(`${path(id)}/device-check`, body),
-    consent: (id: string) =>
-      api.post<VoiceReadiness>(`${path(id)}/voice-consent`, {
-        accepted: true,
-        version: VOICE_CONSENT_VERSION,
-      }),
     /** Sends a recorded answer to be turned into text (not yet the answer). */
     transcribe: (id: string, questionId: string, audio: Blob, durationMs: number) => {
       const form = new FormData();
@@ -36,7 +31,8 @@ function voiceApi(api: ApiClient) {
       form.append('audio', audio, `answer.${extensionFor(audio.type)}`);
       return api.post<VoiceTranscript>(`${path(id)}/voice/transcribe`, form);
     },
-    switchMode: (id: string, mode: Exclude<InterviewMode, 'VIDEO'>, reason: ModeSwitchReason) =>
+    /** To text, or back to the interview's own spoken mode (voice or video). */
+    switchMode: (id: string, mode: SwitchModeBody['mode'], reason: ModeSwitchReason) =>
       api.post<{ mode: InterviewMode }>(`${path(id)}/mode`, { mode, reason }),
   };
 }

@@ -117,7 +117,7 @@ describe('interview setup page', () => {
     expect(await screen.findByRole('radio', { name: 'Text' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Voice' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Video' })).toBeDisabled();
-    expect(screen.getAllByText('Coming soon')).toHaveLength(1);
+    expect(screen.getAllByText('Not offered for this interview')).toHaveLength(1);
     expect(screen.queryByText('How a voice interview works')).not.toBeInTheDocument();
     expect(screen.getByText('Uses 1 credit')).toBeInTheDocument();
     expect(screen.getByText('25 minutes')).toBeInTheDocument();
@@ -137,6 +137,45 @@ describe('interview setup page', () => {
       mode: 'TEXT',
       language: 'hi',
     });
+  });
+
+  it('explains video interviews and continues to the camera check', async () => {
+    const template = {
+      id: 'tpl1',
+      name: 'Standard practice',
+      creditCost: 1,
+      modes: ['TEXT', 'VOICE', 'VIDEO'] as const,
+      totalDurationSec: 1800,
+    };
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () =>
+        ok(makeInterview({ template: { ...template, modes: [...template.modes] } })),
+      'PATCH /interviews/int1/setup': (body) =>
+        ok(
+          makeInterview({
+            ...(body as object),
+            template: { ...template, modes: [...template.modes] },
+            consentsPending: true,
+          }),
+        ),
+    });
+    await renderRoute('/app/interviews/int1/setup', { api });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('radio', { name: 'Video' }));
+    expect(screen.getByText('How a video interview works')).toBeInTheDocument();
+    expect(screen.getByText(/you see yourself in a small window/)).toBeInTheDocument();
+    expect(screen.getByText(/recorded only if you agree/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+
+    expect(
+      await screen.findByText(/check your camera, microphone and speaker/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Continue' })).toHaveAttribute(
+      'href',
+      '/app/interviews/int1/device-check',
+    );
   });
 
   it('cancels the interview after an in-page confirmation', async () => {

@@ -1,4 +1,4 @@
-import type { InterviewSummary } from '@cbi/shared-types';
+import { isSpokenMode, type InterviewSummary } from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -43,35 +43,75 @@ function CreditSummary({ interview }: { interview: InterviewSummary }) {
   );
 }
 
-/** Voice interviews: the device check and consent must be done before starting. */
+/** Voice and video interviews: the device check and consents must be done before starting. */
 function VoiceReadinessCard({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
-  const ready = interview.voice?.ready === true;
+  const voice = interview.voice;
+  const ready = voice?.ready === true;
+  const isVideo = interview.mode === 'VIDEO';
   const checkPath = `/app/interviews/${interview.id}/device-check`;
+  // A passing check that only lacks consents goes straight to the consent step.
+  const needsConsentOnly = !ready && voice?.deviceCheck?.passed === true && !voice.consentsComplete;
   return (
     <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="start-voice">
       <h2 id="start-voice" className="h5">
-        <i className="bi bi-mic me-2 text-secondary" aria-hidden="true" />
-        {t('start.voice.title')}
+        <i
+          className={`bi ${isVideo ? 'bi-camera-video' : 'bi-mic'} me-2 text-secondary`}
+          aria-hidden="true"
+        />
+        {isVideo ? t('start.voice.videoTitle') : t('start.voice.title')}
       </h2>
       {ready ? (
         <>
           <p className="mb-2">
             <i className="bi bi-check-circle-fill text-success me-2" aria-hidden="true" />
-            {t('start.voice.ready')}
+            {isVideo ? t('start.voice.videoReady') : t('start.voice.ready')}
           </p>
+          {isVideo && (
+            <p className="mb-2">
+              <i
+                className={`bi ${voice?.recording ? 'bi-record-circle' : 'bi-camera-video-off'} me-2 text-secondary`}
+                aria-hidden="true"
+              />
+              {voice?.recording ? t('start.voice.recordingOn') : t('start.voice.recordingOff')}
+            </p>
+          )}
           <Link to={checkPath} className="small">
             {t('start.voice.checkAgain')}
           </Link>
         </>
+      ) : needsConsentOnly ? (
+        <>
+          <p className="mb-3">{t('start.consent.needed')}</p>
+          <Link to={`/app/interviews/${interview.id}/consent`} className="btn btn-primary">
+            {t('start.consent.action')}
+          </Link>
+        </>
       ) : (
         <>
-          <p className="mb-3">{t('start.voice.needed')}</p>
+          <p className="mb-3">{isVideo ? t('start.voice.videoNeeded') : t('start.voice.needed')}</p>
           <Link to={checkPath} className="btn btn-primary">
-            {t('start.voice.check')}
+            {isVideo ? t('start.voice.videoCheck') : t('start.voice.check')}
           </Link>
         </>
       )}
+    </section>
+  );
+}
+
+/** Text interviews that ask for consents (session observations): agree before starting. */
+function ConsentCard({ interview }: { interview: InterviewSummary }) {
+  const { t } = useTranslation();
+  return (
+    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="start-consent">
+      <h2 id="start-consent" className="h5">
+        <i className="bi bi-shield-lock me-2 text-secondary" aria-hidden="true" />
+        {t('start.consent.title')}
+      </h2>
+      <p className="mb-3">{t('start.consent.needed')}</p>
+      <Link to={`/app/interviews/${interview.id}/consent`} className="btn btn-primary">
+        {t('start.consent.action')}
+      </Link>
     </section>
   );
 }
@@ -89,8 +129,9 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
     voiceNotReady: boolean;
   } | null>(null);
   const rounds = interview.analysis?.plannedRounds ?? [];
-  const isVoice = interview.mode === 'VOICE';
-  const voiceBlocked = isVoice && interview.voice?.ready !== true;
+  const isVoice = isSpokenMode(interview.mode);
+  const voiceBlocked = isVoice ? interview.voice?.ready !== true : interview.consentsPending;
+  const blockedBy = isVoice ? 'start-voice' : 'start-consent';
 
   async function start() {
     setStarting(true);
@@ -102,11 +143,15 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.credits });
       await navigate(`/app/interviews/${interview.id}/room`);
     } catch (err) {
-      // A voice interview without a recent device check or consent is refused.
-      const voiceNotReady =
-        isVoice && err instanceof ApiClientError && err.code === 'INVALID_STATE';
+      // Without a recent device check (voice/video) or the consents, the start is refused.
+      const notReady = err instanceof ApiClientError && err.code === 'INVALID_STATE';
+      const voiceNotReady = notReady && (isVoice || interview.consentsPending);
       setError({
-        message: voiceNotReady ? t('start.errors.voiceNotReady') : startErrorMessage(t, err),
+        message: voiceNotReady
+          ? isVoice
+            ? t('start.errors.voiceNotReady')
+            : t('start.errors.consentNotReady')
+          : startErrorMessage(t, err),
         inProgress: err instanceof ApiClientError && err.code === 'CONFLICT',
         noCredits: err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS',
         voiceNotReady,
@@ -127,7 +172,9 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
           {t('start.rulesTitle')}
         </h2>
         <ul className="mb-3">
-          <li>{isVoice ? t('start.rules.voice') : t('start.rules.text')}</li>
+          <li>
+            {t(`start.rules.${interview.mode === 'VIDEO' ? 'video' : isVoice ? 'voice' : 'text'}`)}
+          </li>
           <li>
             {t('start.rules.duration', {
               duration: formatMinutes(t, interview.template.totalDurationSec),
@@ -156,6 +203,7 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       </section>
 
       {isVoice && <VoiceReadinessCard interview={interview} />}
+      {!isVoice && interview.consentsPending && <ConsentCard interview={interview} />}
 
       <CreditSummary interview={interview} />
 
@@ -173,8 +221,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
             </Link>
           )}
           {error.voiceNotReady && (
-            <Link to={`/app/interviews/${interview.id}/device-check`} className="alert-link">
-              {t('start.voice.check')}
+            <Link
+              to={`/app/interviews/${interview.id}/${isVoice ? 'device-check' : 'consent'}`}
+              className="alert-link"
+            >
+              {isVoice ? t('start.voice.check') : t('start.consent.action')}
             </Link>
           )}
         </div>
@@ -185,7 +236,7 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
           type="button"
           className="btn btn-primary btn-lg"
           disabled={starting || voiceBlocked}
-          aria-describedby={voiceBlocked ? 'start-voice' : undefined}
+          aria-describedby={voiceBlocked ? blockedBy : undefined}
           onClick={() => void start()}
         >
           <i className="bi bi-play-fill me-1" aria-hidden="true" />

@@ -1,14 +1,16 @@
-import type {
-  DeviceCheckStatus,
-  InterviewSummary,
-  VoiceHealth,
-  VoiceReadiness,
+import {
+  isSpokenMode,
+  type DeviceCheckStatus,
+  type InterviewSummary,
+  type VoiceHealth,
+  type VoiceReadiness,
 } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { ConsentStep } from '../consent/ConsentStep';
 import { queryKeys, useInterview, useInterviewsApi } from '../interviews/interviews-api';
 import { inputErrorMessage, interviewPath, isEnded, isLive } from '../interviews/messages';
 import {
@@ -16,7 +18,9 @@ import {
   createLevelMeter,
   detectVoiceSupport,
   micProblem,
+  openCamera,
   openMicrophone,
+  pickVideoMimeType,
   playTestTone,
   stopStream,
   type LevelMeter,
@@ -32,6 +36,8 @@ const MIC_QUIET_LEVEL = 0.03;
 /** How long to listen for speech before giving up. */
 export const MIC_LISTEN_MS = 10_000;
 const MIC_TICK_MS = 100;
+/** How long to wait for the first camera picture. */
+export const CAMERA_WAIT_MS = 5_000;
 /** Round trips to the API used to judge the connection. */
 const RTT_SAMPLES = 3;
 const RTT_GOOD_MS = 800;
@@ -46,6 +52,7 @@ interface Check<P extends string = string> {
 }
 
 type MicCheckProblem = MicProblem | 'quiet' | 'silent' | 'noMeter';
+type CameraProblem = MicProblem | 'noPicture';
 type NetworkProblem = 'slow' | 'verySlow' | 'failed';
 type SpeechProblem = 'stt' | 'tts' | 'both' | 'failed';
 type Stage = 'checks' | 'saving' | 'failed' | 'consent' | 'done';
@@ -164,80 +171,34 @@ function SwitchToText({ interview }: { interview: InterviewSummary }) {
   );
 }
 
-function Consent({
-  interview,
-  onDone,
-}: {
-  interview: InterviewSummary;
-  onDone: (readiness: VoiceReadiness) => void;
-}) {
-  const { t } = useTranslation();
-  const voice = useVoiceApi();
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => headingRef.current?.focus(), []);
-
-  async function agree() {
-    setSaving(true);
-    setError(null);
-    try {
-      onDone(await voice.consent(interview.id));
-    } catch (err) {
-      setError(inputErrorMessage(t, err));
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="consent-title">
-      <h2 id="consent-title" ref={headingRef} tabIndex={-1} className="h5">
-        <i className="bi bi-shield-lock me-2 text-secondary" aria-hidden="true" />
-        {t('voice.consent.title')}
-      </h2>
-      <ul>
-        <li>{t('voice.consent.providers')}</li>
-        <li>{t('voice.consent.notStored')}</li>
-        <li>{t('voice.consent.transcript')}</li>
-        <li>{t('voice.consent.switch')}</li>
-      </ul>
-      {error && (
-        <div className="alert alert-danger" role="alert">
-          {error}
-        </div>
-      )}
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={saving}
-        onClick={() => void agree()}
-      >
-        {saving ? t('voice.consent.saving') : t('voice.consent.agree')}
-      </button>
-    </section>
-  );
-}
-
 function DeviceCheck({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
   const voice = useVoiceApi();
   const queryClient = useQueryClient();
   const doneRef = useRef<HTMLHeadingElement>(null);
 
+  const isVideo = interview.mode === 'VIDEO';
   const [support] = useState(detectVoiceSupport);
-  const recorderOk = support.getUserMedia && support.mediaRecorder && support.mimeType !== null;
-  const recorder: Check<'noRecorder' | 'noFormat'> = recorderOk
-    ? { status: 'PASS' }
-    : {
-        status: 'FAIL',
-        problem: support.getUserMedia && support.mediaRecorder ? 'noFormat' : 'noRecorder',
-      };
+  const [videoMimeType] = useState(() =>
+    isVideo && support.mediaRecorder ? pickVideoMimeType() : null,
+  );
+  const canRecord = support.getUserMedia && support.mediaRecorder;
+  const recorder: Check<'noRecorder' | 'noFormat' | 'noVideoFormat'> = !canRecord
+    ? { status: 'FAIL', problem: 'noRecorder' }
+    : support.mimeType === null
+      ? { status: 'FAIL', problem: 'noFormat' }
+      : isVideo && videoMimeType === null
+        ? { status: 'FAIL', problem: 'noVideoFormat' }
+        : { status: 'PASS' };
 
   const [mic, setMic] = useState<Check<MicCheckProblem>>(() =>
     support.getUserMedia ? { status: 'PENDING' } : { status: 'FAIL', problem: 'unsupported' },
   );
   const [level, setLevel] = useState(0);
+  const [camera, setCamera] = useState<Check<CameraProblem>>(() =>
+    support.getUserMedia ? { status: 'PENDING' } : { status: 'FAIL', problem: 'unsupported' },
+  );
+  const [previewing, setPreviewing] = useState(false);
   const [speaker, setSpeaker] = useState<Check<'noAnswer' | 'noAudio'> & { played?: boolean }>(
     () => (support.audioContext ? { status: 'PENDING' } : { status: 'WARN', problem: 'noAudio' }),
   );
@@ -250,6 +211,8 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
 
   const micRef = useRef<{ stream: MediaStream; meter: LevelMeter; timer: number } | null>(null);
   const toneRef = useRef<{ stop: () => void } | null>(null);
+  const cameraRef = useRef<{ stream: MediaStream; timer: number | undefined } | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const mountedRef = useRef(true);
 
   const stopMic = useCallback(() => {
@@ -261,16 +224,27 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
     stopStream(active.stream);
   }, []);
 
-  // Release the microphone and any test tone when leaving the page.
+  const stopCamera = useCallback(() => {
+    const active = cameraRef.current;
+    if (!active) return;
+    cameraRef.current = null;
+    window.clearInterval(active.timer);
+    stopStream(active.stream);
+    const video = videoRef.current;
+    if (video) video.srcObject = null;
+  }, []);
+
+  // Release the microphone, camera and any test tone when leaving the page.
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       stopMic();
+      stopCamera();
       toneRef.current?.stop();
       toneRef.current = null;
     };
-  }, [stopMic]);
+  }, [stopMic, stopCamera]);
 
   // Connection and speech services: time a few requests to /voice/health.
   useEffect(() => {
@@ -345,6 +319,48 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
     micRef.current = { stream, meter, timer };
   }
 
+  /** Opens the camera (with the microphone, as in the interview) and waits for a picture. */
+  async function testCamera() {
+    stopCamera();
+    setPreviewing(false);
+    setCamera({ status: 'RUNNING' });
+    let stream: MediaStream;
+    try {
+      stream = await openCamera();
+    } catch (err) {
+      setCamera({ status: 'FAIL', problem: micProblem(err) });
+      return;
+    }
+    if (!mountedRef.current) {
+      stopStream(stream);
+      return;
+    }
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = stream;
+      // Older browsers return undefined instead of a promise; a muted preview may autoplay.
+      void Promise.resolve(video.play()).catch(() => undefined);
+    }
+    setPreviewing(true);
+    const started = performance.now();
+    const active: { stream: MediaStream; timer: number | undefined } = { stream, timer: undefined };
+    cameraRef.current = active;
+    active.timer = window.setInterval(() => {
+      const track = stream.getVideoTracks()[0];
+      const width = track?.getSettings?.().width ?? 0;
+      const picture =
+        (videoRef.current?.videoWidth ?? 0) > 0 || (track?.readyState !== 'ended' && width > 0);
+      if (picture) {
+        window.clearInterval(active.timer);
+        setCamera({ status: 'PASS' });
+      } else if (performance.now() - started >= CAMERA_WAIT_MS) {
+        stopCamera();
+        setPreviewing(false);
+        setCamera({ status: 'FAIL', problem: 'noPicture' });
+      }
+    }, MIC_TICK_MS);
+  }
+
   function playTone() {
     toneRef.current?.stop();
     const tone = playTestTone();
@@ -361,12 +377,14 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
 
   function applyReadiness(readiness: VoiceReadiness) {
     queryClient.setQueryData<InterviewSummary>(queryKeys.interview(interview.id), (old) =>
-      old ? { ...old, voice: readiness } : old,
+      old ? { ...old, voice: readiness, consentsPending: !readiness.consentsComplete } : old,
     );
   }
 
   async function save() {
     stopMic();
+    stopCamera();
+    setPreviewing(false);
     setStage('saving');
     setSaveError(null);
     try {
@@ -377,6 +395,8 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
         network: network.status as DeviceCheckStatus,
         speechService: speech.status as DeviceCheckStatus,
         mimeType: support.mimeType,
+        camera: isVideo ? (camera.status as DeviceCheckStatus) : null,
+        videoMimeType: isVideo ? videoMimeType : null,
         rttMs: network.rttMs ?? null,
         browser: browserLabel(),
       });
@@ -389,22 +409,21 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
     }
   }
 
-  function consented(readiness: VoiceReadiness) {
-    applyReadiness(readiness);
-    setStage('done');
-  }
-
   useEffect(() => {
     if (stage === 'done' || stage === 'failed') doneRef.current?.focus();
   }, [stage]);
 
-  const allDecided = [recorder, mic, speaker, network, speech].every(decided);
-  const requiredFailed = recorder.status === 'FAIL' || mic.status === 'FAIL';
+  const checks = isVideo
+    ? [recorder, camera, mic, speaker, network, speech]
+    : [recorder, mic, speaker, network, speech];
+  const allDecided = checks.every(decided);
+  const requiredFailed =
+    recorder.status === 'FAIL' || mic.status === 'FAIL' || (isVideo && camera.status === 'FAIL');
 
   if (stage === 'consent') {
     return (
       <>
-        <Consent interview={interview} onDone={consented} />
+        <ConsentStep sessionId={interview.id} onDone={() => setStage('done')} />
         <SwitchToText interview={interview} />
       </>
     );
@@ -418,7 +437,7 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
             <i className="bi bi-check-circle text-success me-2" aria-hidden="true" />
             {t('voice.check.done.title')}
           </h2>
-          <p>{t('voice.check.done.body')}</p>
+          <p>{isVideo ? t('voice.check.done.videoBody') : t('voice.check.done.body')}</p>
           <Link to={`/app/interviews/${interview.id}/start`} className="btn btn-primary btn-lg">
             {t('voice.check.done.continue')}
           </Link>
@@ -439,7 +458,7 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
             <i className="bi bi-x-circle text-danger me-2" aria-hidden="true" />
             {t('voice.check.failed.title')}
           </h2>
-          <p>{t('voice.check.failed.body')}</p>
+          <p>{isVideo ? t('voice.check.failed.videoBody') : t('voice.check.failed.body')}</p>
           <button
             type="button"
             className="btn btn-outline-primary"
@@ -455,6 +474,14 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
 
   const guidance = {
     recorder: recorder.problem ? t(`voice.check.recorder.${recorder.problem}`) : null,
+    camera:
+      camera.status === 'PASS'
+        ? t('voice.check.camera.pass')
+        : camera.status === 'RUNNING'
+          ? t('voice.check.camera.waiting')
+          : camera.problem
+            ? t(`voice.check.camera.${camera.problem}`)
+            : t('voice.check.camera.intro'),
     mic:
       mic.status === 'PASS'
         ? t('voice.check.mic.pass')
@@ -487,14 +514,47 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
 
   return (
     <>
-      <p className="mb-4">{t('voice.check.intro')}</p>
+      <p className="mb-4">{isVideo ? t('voice.check.videoIntro') : t('voice.check.intro')}</p>
       <ul className="list-unstyled d-flex flex-column gap-3 mb-4">
         <CheckItem
           icon="bi-browser-chrome"
           title={t('voice.check.recorder.title')}
           check={recorder}
-          guidance={guidance.recorder ?? t('voice.check.recorder.pass')}
+          guidance={
+            guidance.recorder ??
+            (isVideo ? t('voice.check.recorder.videoPass') : t('voice.check.recorder.pass'))
+          }
         />
+        {isVideo && (
+          <CheckItem
+            icon="bi-camera-video"
+            title={t('voice.check.camera.title')}
+            check={camera}
+            guidance={guidance.camera}
+          >
+            <video
+              ref={videoRef}
+              className="d-block rounded-3 bg-dark mb-2 cb-self-view-mirror"
+              style={{ width: '100%', maxWidth: '20rem', aspectRatio: '4 / 3' }}
+              muted
+              playsInline
+              autoPlay
+              hidden={!previewing}
+              aria-label={t('voice.check.camera.preview')}
+            />
+            {support.getUserMedia && camera.status !== 'RUNNING' && (
+              <button
+                type="button"
+                className={`btn btn-sm ${camera.status === 'PENDING' ? 'btn-primary' : 'btn-outline-primary'}`}
+                onClick={() => void testCamera()}
+              >
+                {camera.status === 'PENDING'
+                  ? t('voice.check.camera.test')
+                  : t('voice.check.testAgain')}
+              </button>
+            )}
+          </CheckItem>
+        )}
         <CheckItem
           icon="bi-mic"
           title={t('voice.check.mic.title')}
@@ -587,7 +647,7 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
 
       {allDecided && requiredFailed && (
         <div className="alert alert-warning" role="alert">
-          {t('voice.check.requiredFailed')}
+          {isVideo ? t('voice.check.requiredFailedVideo') : t('voice.check.requiredFailed')}
         </div>
       )}
       {saveError && (
@@ -613,7 +673,7 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
   );
 }
 
-/** Screen 14: device check and voice consent before a voice interview can start. */
+/** Screen 14: device check and consents before a voice or video interview can start. */
 export function DeviceCheckPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
@@ -636,14 +696,18 @@ export function DeviceCheckPage() {
   if (['DRAFT', 'ROLE_ANALYSIS', 'FAILED'].includes(data.state)) {
     return <Navigate to={`/app/interviews/${data.id}/analysis`} replace />;
   }
-  if (data.mode !== 'VOICE') return <Navigate to={`/app/interviews/${data.id}/start`} replace />;
+  if (!isSpokenMode(data.mode)) {
+    return <Navigate to={`/app/interviews/${data.id}/start`} replace />;
+  }
 
   const preStart = ['READY', 'DEVICE_CHECK', 'CONSENT_REQUIRED', 'READY_TO_START'].includes(
     data.state,
   );
   return (
     <div className="container py-5" style={{ maxWidth: '48rem' }}>
-      <h1 className="h3">{t('voice.check.title')}</h1>
+      <h1 className="h3">
+        {data.mode === 'VIDEO' ? t('voice.check.videoTitle') : t('voice.check.title')}
+      </h1>
       <p className="cb-text-secondary">{data.title}</p>
       {preStart ? (
         <DeviceCheck interview={data} />

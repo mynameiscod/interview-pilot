@@ -6,6 +6,7 @@ import {
   useId,
   useRef,
   useState,
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
@@ -13,10 +14,13 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { queryKeys } from '../interviews/interviews-api';
+import { useCameraStream, useInterviewRecording, type TrackKind } from '../media/video-hooks';
 import { clearDraft, loadDraft, saveDraft } from './drafts';
+import { useIntegrityObservations } from './integrity';
 import { ConnectionPill, InterviewerPanel, RoundStepper, RoomTimer, Transcript } from './RoomParts';
 import { useInterviewRoom, type InterviewRoom } from './useInterviewRoom';
 import { VoiceAnswer } from './VoiceAnswer';
+import { SelfView } from './SelfView';
 import { useQuestionAudio } from './voice-hooks';
 import '../voice/voice.scss';
 
@@ -79,21 +83,32 @@ function QuestionAudioControls({ audio, recording }: { audio: QuestionAudio; rec
   }
 }
 
-/** "Type instead" in a voice interview; "Answer by voice" to go back when it was set up for voice. */
+/**
+ * "Type instead" in a voice or video interview; "Answer by voice" (or "on
+ * camera") to go back to the interview's own spoken mode.
+ */
 function ModeSwitch({ room }: { room: InterviewRoom }) {
   const { t } = useTranslation();
-  const voice = room.mode === 'VOICE';
-  if (!voice && !room.voiceEnabled) return null;
+  const spoken = room.mode !== 'TEXT';
+  if (!spoken && !room.voiceEnabled) return null;
+  const video = room.spokenMode === 'VIDEO';
   return (
     <div className="d-flex justify-content-end">
       <button
         type="button"
         className="btn btn-link btn-sm p-0"
         disabled={room.switchingMode}
-        onClick={() => void room.switchMode(voice ? 'TEXT' : 'VOICE', 'CANDIDATE_CHOICE')}
+        onClick={() => void room.switchMode(spoken ? 'TEXT' : room.spokenMode, 'CANDIDATE_CHOICE')}
       >
-        <i className={`bi ${voice ? 'bi-keyboard' : 'bi-mic'} me-1`} aria-hidden="true" />
-        {voice ? t('voice.room.typeInstead') : t('voice.room.answerByVoice')}
+        <i
+          className={`bi ${spoken ? 'bi-keyboard' : video ? 'bi-camera-video' : 'bi-mic'} me-1`}
+          aria-hidden="true"
+        />
+        {spoken
+          ? t('voice.room.typeInstead')
+          : video
+            ? t('video.room.answerOnCamera')
+            : t('voice.room.answerByVoice')}
       </button>
     </div>
   );
@@ -154,6 +169,13 @@ function AnswerForm({ room, sessionId }: { room: InterviewRoom; sessionId: strin
     }
   }
 
+  /** With session observations on, a paste is noted by its length only (never its text). */
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (!room.integrityTracking) return;
+    const pasted = e.clipboardData?.getData('text') ?? '';
+    room.reportIntegrity('PASTE', pasted.length);
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
@@ -188,6 +210,7 @@ function AnswerForm({ room, sessionId }: { room: InterviewRoom; sessionId: strin
         aria-invalid={tooLong || undefined}
         onChange={(e) => update(e.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
       <div className="d-flex flex-wrap justify-content-between gap-2 mt-1 small">
         <span id={`${id}-hint`} className="cb-text-secondary">
@@ -326,9 +349,31 @@ export function RoomPage() {
   const completePath = `/app/interviews/${id}/complete`;
   const finished = room.finished;
 
-  // Voice: the current question is read aloud (stopped and released in text mode).
-  const voiceMode = room.joined && room.mode === 'VOICE' && !finished;
-  const { reportDegraded } = room;
+  // Voice and video: the current question is read aloud (stopped and released in text mode).
+  const voiceMode = room.joined && room.mode !== 'TEXT' && !finished;
+  const videoMode = room.joined && room.mode === 'VIDEO' && !finished;
+  const { reportDegraded, reportIntegrity, integrityTracking } = room;
+  const observing = room.joined && integrityTracking && !finished;
+
+  // Video: the camera for the self-view and (with consent) the recording.
+  const [cameraLost, setCameraLost] = useState(false);
+  const onTrackEnded = useCallback(
+    (kind: TrackKind) => {
+      if (kind === 'video') setCameraLost(true);
+      if (observing) reportIntegrity(kind === 'video' ? 'CAMERA_LOST' : 'MICROPHONE_LOST');
+    },
+    [observing, reportIntegrity],
+  );
+  const camera = useCameraStream(videoMode, onTrackEnded);
+  const uploads = useInterviewRecording({
+    sessionId: id,
+    stream: camera.stream,
+    active: videoMode && room.recording,
+    // Over, or no longer on camera: stop, upload what is left, then finalize.
+    ended: Boolean(finished) || (room.joined && room.mode !== 'VIDEO'),
+  });
+  useIntegrityObservations(observing, reportIntegrity);
+
   const onTtsDown = useCallback(() => reportDegraded('TTS'), [reportDegraded]);
   const audio = useQuestionAudio(
     id,
@@ -401,6 +446,12 @@ export function RoomPage() {
           <RoundStepper rounds={room.rounds} current={room.roundIdx} />
           <EndInterview room={room} />
         </div>
+        {room.integrityTracking && (
+          <p className="small cb-text-secondary mb-0">
+            <i className="bi bi-info-circle me-1" aria-hidden="true" />
+            {t('room.observationsOn')}
+          </p>
+        )}
       </header>
 
       {problemKey && (
@@ -454,6 +505,21 @@ export function RoomPage() {
           <Transcript turns={earlier} />
         </div>
       </div>
+
+      {videoMode && (
+        <SelfView
+          stream={camera.stream}
+          unavailable={camera.problem !== null}
+          cameraLost={cameraLost}
+          recording={uploads.recording}
+          uploads={uploads}
+        />
+      )}
+      {!videoMode && uploads.waiting > 0 && (
+        <p className="small cb-text-secondary mt-3 mb-0" role="status">
+          {t('video.uploads.waiting', { count: uploads.waiting })}
+        </p>
+      )}
 
       {room.connection !== 'connected' && <ReconnectingOverlay room={room} />}
     </div>

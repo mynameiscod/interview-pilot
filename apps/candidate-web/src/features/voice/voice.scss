@@ -48,3 +48,18 @@
     transition: none;
   }
 }
+
+// Video interviews: the candidate's own picture is mirrored, like a mirror (the recording is not).
+.cb-self-view-mirror {
+  transform: scaleX(-1);
+  object-fit: cover;
+}
+
+.cb-self-view {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1040;
+  width: 11rem;
+  max-width: 35vw;
+}

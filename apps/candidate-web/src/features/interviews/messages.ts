@@ -1,4 +1,4 @@
-import type { InterviewState, InterviewSummary } from '@cbi/shared-types';
+import { isSpokenMode, type InterviewState, type InterviewSummary } from '@cbi/shared-types';
 import { ApiClientError, errorMessage } from '@cbi/web-core';
 import type { TFunction } from 'i18next';
 
@@ -100,4 +100,19 @@ export function formatDate(lng: string | undefined, iso: string): string {
   } catch {
     return new Date(iso).toDateString();
   }
+}
+
+/**
+ * The next step before starting: voice and video interviews check the
+ * devices (and ask for consent there); any interview with consents still
+ * pending asks for them; otherwise straight to the start screen.
+ */
+export function nextStepPath(
+  interview: Pick<InterviewSummary, 'id' | 'mode' | 'voice' | 'consentsPending'>,
+): string {
+  const base = `/app/interviews/${interview.id}`;
+  if (isSpokenMode(interview.mode) && interview.voice?.ready !== true)
+    return `${base}/device-check`;
+  if (interview.consentsPending) return `${base}/consent`;
+  return `${base}/start`;
 }

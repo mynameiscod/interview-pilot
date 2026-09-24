@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
+import { RecordingCard } from '../media/RecordingCard';
 import { DimensionBars } from './components/DimensionBars';
 import { FeedbackCard } from './components/FeedbackCard';
 import { OverallReadiness } from './components/OverallReadiness';
@@ -15,6 +16,7 @@ import {
   RoundsAndCoverage,
   StrengthsAndGaps,
 } from './components/ReportSections';
+import { SessionObservations } from './components/SessionObservations';
 import { FEEDBACK_ANCHOR, useReport } from './reports-api';
 
 function ReportHeader({ report }: { report: ReportSummary }) {
@@ -67,6 +69,8 @@ function ReportView({ report }: { report: ReportSummary }) {
       <RoundsAndCoverage content={content} />
       <PlanTabs plan={content.plan} />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />
+      <RecordingCard sessionId={report.sessionId} />
+      {content.integrity && <SessionObservations integrity={content.integrity} />}
       {content.transcript && <ReportTranscript transcript={content.transcript} />}
       <FeedbackCard sessionId={report.sessionId} />
     </div>

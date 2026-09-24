@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router';
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
 import { useAuthProviders, useCandidateApi } from '../auth/auth-api';
+import { ConsentHistory } from '../consent/ConsentHistory';
 import { ProfileForm } from './ProfileForm';
 
 const PROVIDER_ICON = { EMAIL: 'bi-envelope', MOBILE: 'bi-phone', GOOGLE: 'bi-google' } as const;
@@ -221,6 +222,8 @@ export function ProfilePage() {
               </button>
             )}
           </section>
+
+          <ConsentHistory />
         </div>
       </div>
     </div>
