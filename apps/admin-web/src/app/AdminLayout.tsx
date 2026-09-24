@@ -11,13 +11,30 @@ type NavItem = {
   key: string;
   icon: string;
   permission?: Permission;
+  /** Hidden from admins who have this permission (they see another entry instead). */
+  hiddenWith?: Permission;
   /** Consecutive items with the same group render under one labelled heading. */
-  group?: 'library' | 'payments' | 'privacy' | 'review';
+  group?: 'analytics' | 'library' | 'payments' | 'privacy' | 'review' | 'system';
 };
 
 // Sections are added here as each phase delivers its admin module.
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', key: 'nav.dashboard', icon: 'bi-speedometer2' },
+  // Admins with analytics see the dashboard under Analytics; everyone else keeps a plain link.
+  { to: '/', key: 'nav.dashboard', icon: 'bi-speedometer2', hiddenWith: 'analytics.read' },
+  {
+    to: '/',
+    key: 'nav.dashboard',
+    icon: 'bi-speedometer2',
+    permission: 'analytics.read',
+    group: 'analytics',
+  },
+  {
+    to: '/analytics/costs',
+    key: 'nav.costs',
+    icon: 'bi-currency-rupee',
+    permission: 'analytics.read',
+    group: 'analytics',
+  },
   { to: '/admins', key: 'nav.admins', icon: 'bi-people', permission: 'admin_users.read' },
   { to: '/ai', key: 'nav.ai', icon: 'bi-cpu', permission: 'ai.read' },
   { to: '/ai-usage', key: 'nav.aiUsage', icon: 'bi-graph-up', permission: 'ai_usage.read' },
@@ -99,6 +116,34 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'interviews.read',
     group: 'review',
   },
+  {
+    to: '/system/health',
+    key: 'nav.health',
+    icon: 'bi-heart-pulse',
+    permission: 'system.read',
+    group: 'system',
+  },
+  {
+    to: '/system/queues',
+    key: 'nav.queues',
+    icon: 'bi-stack',
+    permission: 'system.read',
+    group: 'system',
+  },
+  {
+    to: '/system/flags',
+    key: 'nav.flags',
+    icon: 'bi-toggles',
+    permission: 'system.read',
+    group: 'system',
+  },
+  {
+    to: '/system/settings',
+    key: 'nav.settings',
+    icon: 'bi-sliders',
+    permission: 'system.read',
+    group: 'system',
+  },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];
 
@@ -125,7 +170,9 @@ export function AdminLayout() {
   const { user, signOut } = useAdminAuth();
   const [navOpen, setNavOpen] = useState(false);
   const items = NAV_ITEMS.filter(
-    (item) => !item.permission || user?.permissions.includes(item.permission),
+    (item) =>
+      (!item.permission || user?.permissions.includes(item.permission)) &&
+      !(item.hiddenWith && user?.permissions.includes(item.hiddenWith)),
   );
 
   return (

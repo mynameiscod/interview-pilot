@@ -38,8 +38,15 @@
       "library": "Library",
       "payments": "Payments",
       "privacy": "Privacy & recordings",
-      "review": "Campaigns & review"
-    }
+      "review": "Campaigns & review",
+      "analytics": "Analytics",
+      "system": "System"
+    },
+    "costs": "Costs & margin",
+    "health": "System health",
+    "queues": "Queues",
+    "flags": "Feature flags",
+    "settings": "Settings"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -100,8 +107,8 @@
   "dashboard": {
     "title": "Dashboard",
     "signedInAs": "Signed in as {{email}} ({{roles}}).",
-    "emptyTitle": "Operational modules arrive in later phases",
-    "emptyBody": "Candidates, interviews, campaigns, plans, payments and system health are added as each phase is delivered. AI providers, AI usage, prompts and the interview library (roles, companies, templates) are available now."
+    "emptyTitle": "Analytics are not part of your role",
+    "emptyBody": "Use the sections in the navigation. Business KPIs, costs and margins are shown to super, operations and finance admins."
   },
   "admins": {
     "title": "Admin users",
@@ -1476,6 +1483,299 @@
       "confidence": "Confidence",
       "practical": "Practical",
       "uncertainty": "Uncertain: {{note}}"
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "dataAsOf": "Data as of {{time}}.",
+    "notComputed": "No daily rollups have been computed for this range yet.",
+    "usdToInr": "AI costs are converted at ₹{{rate}} per US dollar.",
+    "range": {
+      "label": "Range (India time)",
+      "lastDays_one": "Last {{count}} day",
+      "lastDays_other": "Last {{count}} days",
+      "custom": "Custom range",
+      "from": "From",
+      "to": "To",
+      "apply": "Apply range",
+      "errors": {
+        "invalid": "Enter both dates.",
+        "order": "The start date must not be after the end date.",
+        "tooLong": "Choose at most 366 days."
+      }
+    },
+    "chart": {
+      "summary_one": "{{title}}: {{count}} day, {{from}}. Totals: {{totals}}.",
+      "summary_other": "{{title}}: {{count}} days from {{from}} to {{to}}. Totals: {{totals}}.",
+      "empty": "No data for this range.",
+      "showTable": "Show data table",
+      "hideTable": "Hide data table",
+      "day": "Day"
+    },
+    "charts": {
+      "interviews": "Interviews started vs completed",
+      "revenueVsCost": "Revenue vs AI cost"
+    },
+    "kpis": {
+      "title": "Key metrics",
+      "registrations": "Registrations",
+      "activeUsers": "Active users",
+      "interviewsStarted": "Interviews started",
+      "interviewsCompleted": "Interviews completed",
+      "completionRate": "Completion rate",
+      "failureRate": "Technical failure rate",
+      "freeToPaidRate": "Free → paid conversion",
+      "grossMargin": "Gross margin",
+      "revenue": "Revenue",
+      "refunds": "Refunds",
+      "aiCost": "AI cost",
+      "gatewayFees": "Gateway fees",
+      "activeSessions": "Active interview sessions",
+      "rightNow": "Right now, not for the range",
+      "failedCount_one": "{{count}} failed interview",
+      "failedCount_other": "{{count}} failed interviews"
+    },
+    "targets": {
+      "met": "On target",
+      "missed": "Off target",
+      "noData": "No data",
+      "atLeast": "Target at least {{value}}",
+      "atMost": "Limit at most {{value}}"
+    },
+    "funnel": {
+      "title": "Cohort funnel",
+      "explain": "People who registered in the range and how far they got. Each step shows its conversion from the step before.",
+      "users_one": "{{value}} user",
+      "users_other": "{{value}} users",
+      "conversion": "{{value}} of previous step",
+      "noConversion": "no one reached the previous step",
+      "steps": {
+        "registered": "Registered",
+        "onboarded": "Completed onboarding",
+        "created_interview": "Created an interview",
+        "started_interview": "Started an interview",
+        "completed_interview": "Completed an interview",
+        "viewed_report": "Viewed a report",
+        "paid": "Paid"
+      }
+    },
+    "providerHealth": {
+      "title": "AI provider health",
+      "empty": "No provider health data yet.",
+      "errorRate": "Errors {{value}}",
+      "p95": "p95 {{value}} ms",
+      "noLatency": "p95 —"
+    },
+    "recompute": {
+      "button": "Recompute this range",
+      "explain_one": "Recompute the daily rollup for {{count}} day ({{from}} to {{to}}) from the source data.",
+      "explain_other": "Recompute the daily rollups for {{count}} days ({{from}} to {{to}}) from the source data.",
+      "confirm": "Recompute",
+      "done_one": "Recomputed {{count}} day.",
+      "done_other": "Recomputed {{count}} days."
+    },
+    "costs": {
+      "title": "Costs & margin",
+      "subtitle": "AI spend by feature, provider, model or day, with revenue and margin for the range (India-time days).",
+      "groupBy": "Group AI cost by",
+      "groups": {
+        "feature": "Feature",
+        "provider": "Provider",
+        "model": "Model",
+        "day": "Day"
+      },
+      "totals": "Totals",
+      "cards": {
+        "aiCost": "AI cost",
+        "aiCostPerInterview": "AI cost per completed interview",
+        "calls": "AI calls",
+        "revenue": "Revenue",
+        "refunds": "Refunds",
+        "gatewayFees": "Gateway fees",
+        "margin": "Margin",
+        "grossMargin": "Gross margin"
+      },
+      "completedInterviews_one": "{{count}} completed interview",
+      "completedInterviews_other": "{{count}} completed interviews",
+      "breakdown": "AI cost breakdown",
+      "calls": "Calls",
+      "failures": "Failures",
+      "cost": "Cost",
+      "share": "Share of cost",
+      "empty": "No AI calls in this range.",
+      "marginChart": "Daily revenue, AI cost and margin"
+    }
+  },
+  "system": {
+    "readOnly": "You can view this page; only super admins can change it.",
+    "updatedBy": "by {{by}}",
+    "age": {
+      "seconds_one": "{{count}} second ago",
+      "seconds_other": "{{count}} seconds ago",
+      "minutes_one": "{{count}} minute ago",
+      "minutes_other": "{{count}} minutes ago",
+      "hours_one": "{{count}} hour ago",
+      "hours_other": "{{count}} hours ago",
+      "days_one": "{{count}} day ago",
+      "days_other": "{{count}} days ago"
+    },
+    "queueNames": {
+      "system": "Housekeeping: heartbeats, provider health, schedules",
+      "documents": "Résumé and job description parsing",
+      "analysis": "Role analysis and blueprints",
+      "evaluation": "Scoring, reports and PDFs"
+    },
+    "health": {
+      "title": "System health",
+      "subtitle": "Dependencies, background workers, queues and interview sessions. Refreshes every {{seconds}} seconds.",
+      "updatedAt": "Last updated {{time}}.",
+      "refresh": "Refresh",
+      "env": "Environment: {{env}}",
+      "apiVersion": "API version {{version}}",
+      "maintenanceOn": "Maintenance mode is on: new interviews and campaign joins are blocked.",
+      "dependencies": "Dependencies",
+      "ok": "OK",
+      "failing": "Failing",
+      "sessions": "Interview sessions",
+      "live": "Live now",
+      "processing": "Processing (scoring)",
+      "stuck": "Stuck (processing over 30 minutes)",
+      "stuckWarning_one": "{{count}} interview has been processing for more than 30 minutes.",
+      "stuckWarning_other": "{{count}} interviews have been processing for more than 30 minutes.",
+      "viewProcessing": "View processing interviews",
+      "workers": "Workers",
+      "noWorkers": "No worker heartbeats: background jobs are not being processed.",
+      "staleWarning_one": "{{count}} worker has not sent a heartbeat for over {{seconds}} seconds.",
+      "staleWarning_other": "{{count}} workers have not sent a heartbeat for over {{seconds}} seconds.",
+      "worker": "Worker",
+      "version": "Version",
+      "queues": "Queues",
+      "heartbeat": "Last heartbeat",
+      "status": "Status",
+      "stale": "Stale",
+      "alive": "Alive",
+      "openQueues": "Open queues"
+    },
+    "queues": {
+      "title": "Queues",
+      "subtitle": "Background job counts per queue. Open a queue's failed jobs to inspect or retry them.",
+      "listLabel": "Queues",
+      "queue": "Queue",
+      "counts": {
+        "waiting": "Waiting",
+        "active": "Active",
+        "delayed": "Delayed",
+        "failed": "Failed",
+        "completed": "Completed"
+      },
+      "actions": "Actions",
+      "paused": "Paused",
+      "empty": "No queues.",
+      "showFailed": "Failed jobs in {{name}}",
+      "failedTitle": "Failed jobs in {{name}}",
+      "failedExplain": "The {{limit}} most recent failed jobs. Jobs carry ids only, never personal data.",
+      "job": "Job",
+      "reason": "Error",
+      "attempts": "Attempts",
+      "failedAt": "Failed at",
+      "data": "Data",
+      "noFailed": "No failed jobs in this queue.",
+      "retry": "Retry",
+      "retryJob": "Retry {{id}}",
+      "confirmRetry": "Retry job",
+      "retryExplain": "Retry job {{id}} in {{name}}? It runs again with the same data.",
+      "retried": "Job {{id}} was queued for retry.",
+      "goneRefreshed": "Job {{id}} is no longer failed (it may already have been retried or removed). The list has been refreshed."
+    },
+    "flags": {
+      "title": "Feature flags",
+      "subtitle": "Switch features on or off without a deployment. Every change is recorded in the audit log.",
+      "rolloutExplain": "A partial rollout applies only to signed-in users, and each user always gets the same result for a flag. Signed-out visitors see a partially rolled-out flag as off; 100% turns it on for everyone.",
+      "listLabel": "Feature flags",
+      "flag": "Flag",
+      "state": "State",
+      "visibility": "Visibility",
+      "updated": "Last changed",
+      "actions": "Actions",
+      "off": "Off",
+      "onForEveryone": "On for everyone",
+      "onForPercent": "On for {{percent}}% of signed-in users",
+      "clientVisible": "Sent to the web apps",
+      "serverOnly": "Server only",
+      "edit": "Edit",
+      "editFlag": "Edit {{key}}",
+      "editTitle": "Change {{key}}",
+      "enabled": "Enabled",
+      "rollout": "Rollout",
+      "rolloutHint": "0–100% of signed-in users; 100 means everyone.",
+      "rolloutInvalid": "Enter a whole number from 0 to 100.",
+      "save": "Save flag",
+      "saved": "{{key}} was updated.",
+      "empty": "No flags.",
+      "notes": {
+        "publicProof": "Turns on Candidate Proof: candidates can share a read-only link to their report."
+      }
+    },
+    "settings": {
+      "title": "Settings",
+      "subtitle": "System-wide settings. Every change needs a reason and is recorded in the audit log.",
+      "saved": "{{name}} saved.",
+      "lastUpdated": "Last changed {{time}}",
+      "defaultValue": "Using the default (never changed).",
+      "on": "On",
+      "off": "Off",
+      "reasonError": "Enter a reason of 3–300 characters.",
+      "maintenance": {
+        "title": "Maintenance mode",
+        "explain": "Shows a maintenance banner in the candidate app.",
+        "warning": "While on, new interviews cannot be started and campaign invites cannot be joined. Interviews already running continue.",
+        "save": "Save maintenance mode",
+        "fields": {
+          "enabled": "Maintenance mode on",
+          "message": "Banner message"
+        },
+        "hints": {
+          "message": "Up to 300 characters, shown to candidates."
+        },
+        "errors": {
+          "enabled": "Choose on or off.",
+          "message": "Keep the message to 300 characters."
+        }
+      },
+      "finance": {
+        "title": "Finance",
+        "explain": "Converts AI costs (priced in US dollars) to rupees and estimates payment gateway fees for margins.",
+        "save": "Save finance settings",
+        "fields": {
+          "usdToInr": "Rupees per US dollar",
+          "gatewayFeeRate": "Payment gateway fee"
+        },
+        "hints": {
+          "usdToInr": "For example 84.",
+          "gatewayFeeRate": "Share of revenue, 0–20%."
+        },
+        "errors": {
+          "usdToInr": "Enter a rate above 0 and at most 1000.",
+          "gatewayFeeRate": "Enter a percentage from 0 to 20."
+        }
+      },
+      "targets": {
+        "title": "KPI targets",
+        "explain": "Targets shown on the dashboard. These are placeholders until the business sets them.",
+        "save": "Save KPI targets",
+        "fields": {
+          "completionRate": "Completion rate (at least)",
+          "freeToPaidRate": "Free → paid conversion (at least)",
+          "grossMargin": "Gross margin (at least)",
+          "maxFailureRate": "Technical failure rate (at most)"
+        },
+        "errors": {
+          "completionRate": "Enter a percentage from 0 to 100.",
+          "freeToPaidRate": "Enter a percentage from 0 to 100.",
+          "grossMargin": "Enter a percentage from 0 to 100.",
+          "maxFailureRate": "Enter a percentage from 0 to 100."
+        }
+      }
     }
   }
 }

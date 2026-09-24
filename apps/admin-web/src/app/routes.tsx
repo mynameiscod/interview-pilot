@@ -1,4 +1,4 @@
-import type { RouteObject } from 'react-router';
+import { Navigate, type RouteObject } from 'react-router';
 import { AdminLayout } from './AdminLayout';
 import { RedirectIfSignedIn, RequireAdmin, RequirePermission, RouteLoading } from './guards';
 
@@ -28,6 +28,50 @@ export const routes: RouteObject[] = [
                 lazy: async () => ({
                   Component: (await import('../pages/DashboardPage')).DashboardPage,
                 }),
+              },
+              {
+                path: 'analytics',
+                element: <RequirePermission permission="analytics.read" />,
+                children: [
+                  { index: true, element: <Navigate to="/" replace /> },
+                  {
+                    path: 'costs',
+                    lazy: async () => ({
+                      Component: (await import('../features/analytics/CostsPage')).CostsPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'system',
+                element: <RequirePermission permission="system.read" />,
+                children: [
+                  { index: true, element: <Navigate to="/system/health" replace /> },
+                  {
+                    path: 'health',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/HealthPage')).HealthPage,
+                    }),
+                  },
+                  {
+                    path: 'queues',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/QueuesPage')).QueuesPage,
+                    }),
+                  },
+                  {
+                    path: 'flags',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/FlagsPage')).FlagsPage,
+                    }),
+                  },
+                  {
+                    path: 'settings',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/SettingsPage')).SettingsPage,
+                    }),
+                  },
+                ],
               },
               {
                 path: 'admins',
