@@ -81,6 +81,8 @@ services:
       STORAGE_PROVIDER: local
       # Development-only mock payment gateway (Checkout is simulated in the app).
       PAYMENT_PROVIDER: mock
+      # Development-only mock judge (never executes code).
+      JUDGE_PROVIDER: mock
       LOCAL_STORAGE_DIR: /data/storage
     volumes:
       - storage-data:/data/storage
@@ -122,6 +124,8 @@ services:
       STORAGE_PROVIDER: local
       # Development-only mock payment gateway (Checkout is simulated in the app).
       PAYMENT_PROVIDER: mock
+      # Development-only mock judge (never executes code).
+      JUDGE_PROVIDER: mock
       LOCAL_STORAGE_DIR: /data/storage
     volumes:
       - storage-data:/data/storage

@@ -60,6 +60,8 @@ Voice interviews work without speech keys: with `AI_MOCK_MODE=true` the mock tex
 
 Video interviews add the camera: the device check shows a preview, and the consent step asks whether to record (the seeded templates make recording optional). Recordings are uploaded in 10-second segments to `LOCAL_STORAGE_DIR` (`media/…`) and can be watched from the interview page or under **Recordings** in the admin console. Consent texts are edited under **Consent texts** (super admins). Integrity observations are only noted for templates with tab-switch tracking turned on. Details: [Consent, recordings and retention](../architecture/media-and-consent.md).
 
+Coding rounds use the **mock judge** by default: it never runs code, it decides the result from markers you put in the code (`MOCK_PASS_2` passes the first two tests, `MOCK_COMPILE_ERROR`, `MOCK_TIMEOUT`, `MOCK_JUDGE_DOWN` simulates an outage); anything else passes. To try real execution, run Judge0 CE on another machine and set `JUDGE_PROVIDER=judge0`, `JUDGE_BASE_URL` and `JUDGE_HMAC_SECRET`. The seeded templates have no coding round; add one to a template version in **Library → Templates**, and manage problems in **Library → Coding problems**. Details: [Coding rounds](../architecture/coding.md).
+
 ### Uploads and background jobs locally
 
 Resumes and JD files are stored under `.data/storage` in the repository (`STORAGE_PROVIDER=local`, git-ignored). The API and the worker must point at the same folder, so start both with `pnpm dev`. Parsing, JD URL fetching and role analysis run in the **worker**: if the worker is not running, inputs stay "processing" and analysis fails after 3 minutes with `INPUT_TIMEOUT`. In Option B both containers share the `storage-data` volume.
