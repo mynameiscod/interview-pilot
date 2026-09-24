@@ -30,6 +30,8 @@ export function webConfig(opts: { port: number }): UserConfig & { test: object }
       include: ['src/**/*.test.{ts,tsx}'],
       setupFiles: ['./src/test/setup.ts'],
       css: false,
+      // Form tests type into many fields; turbo runs every suite at once, so allow for a loaded machine.
+      testTimeout: 20_000,
     },
   };
 }

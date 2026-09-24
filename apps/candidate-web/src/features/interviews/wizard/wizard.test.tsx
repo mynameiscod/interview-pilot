@@ -84,6 +84,8 @@ describe('new interview wizard', () => {
     expect(await screen.findByRole('heading', { name: 'Company and role' })).toBeInTheDocument();
     await user.type(screen.getByRole('combobox', { name: 'Role' }), 'Backend');
     await user.click(await screen.findByRole('option', { name: 'Backend Developer' }));
+    // The library choice must register before submitting (a loaded machine can be slow to re-render).
+    expect(await screen.findByText('Selected from our list.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Analyse my interview' }));
 
     await waitFor(() =>
