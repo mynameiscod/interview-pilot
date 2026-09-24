@@ -6,10 +6,12 @@ import {
   createDevMailboxSmsProvider,
   createEmailProvider,
   createMsg91OtpProvider,
+  createJudge,
   createPaymentGateway,
   createStorage,
   mockGatewayControls,
   type EmailProvider,
+  type JudgeAdapter,
   type OtpSmsProvider,
   type PaymentGateway,
   type StorageProvider,
@@ -37,6 +39,7 @@ import { createReportsService } from './modules/reports/reports.service.js';
 import { createTranscriptStore, createVoiceService } from './modules/voice/voice.service.js';
 import { createConsentService } from './modules/consent/consent.service.js';
 import { createMediaService } from './modules/media/media.service.js';
+import { codingQuestionText, createCodingService } from './modules/coding/coding.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -57,6 +60,8 @@ export interface ContainerOptions {
     jobs?: JobQueues;
     /** A payment gateway (tests pass a fresh mock) and, for a mock, its controls. */
     payments?: { gateway: PaymentGateway; mock: ReturnType<typeof mockGatewayControls> };
+    /** A code judge (tests pass a controllable mock). */
+    judge?: JudgeAdapter;
   };
 }
 
@@ -79,6 +84,8 @@ function jobQueues(queueRedis: Redis | undefined): JobQueues {
   if (!queueRedis) throw new Error('buildContainer needs queueRedis (or overrides.jobs)');
   return createBullJobQueues(queueRedis);
 }
+
+type LiveAnswer = ReturnType<typeof createLiveInterviewService>['answer'];
 
 export function buildContainer(opts: ContainerOptions) {
   const { env, logger, redis } = opts;
@@ -153,6 +160,15 @@ export function buildContainer(opts: ContainerOptions) {
     // A separate key per purpose, derived from the server secret.
     signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
   });
+  const judge = opts.overrides?.judge ?? createJudge(env);
+  // `live` is created below; submitting code answers through it.
+  let liveRef: { answer: LiveAnswer } | null = null;
+  const coding = createCodingService({
+    judge,
+    audit,
+    logger,
+    answer: (userId, payload, o) => liveRef!.answer(userId, payload, o),
+  });
   const live = createLiveInterviewService({
     ai,
     redis,
@@ -163,7 +179,12 @@ export function buildContainer(opts: ContainerOptions) {
     transcripts,
     consent,
     onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
+    pickCodingProblem: async (s, target) => {
+      const p = await coding.pickProblem(s, target);
+      return p ? { _id: p._id, title: p.content.title, text: codingQuestionText(p) } : null;
+    },
   });
+  liveRef = live;
   const reports = createReportsService({ storage, jobs, audit });
   const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
   const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
@@ -199,6 +220,8 @@ export function buildContainer(opts: ContainerOptions) {
     voice,
     consent,
     media,
+    coding,
+    judge,
     reports,
     payments,
     paymentMock,
@@ -209,6 +232,7 @@ export function buildContainer(opts: ContainerOptions) {
       aiMock: ai.mockEnabled,
       storage: storage.name,
       payments: paymentGateway.name,
+      judge: judge.name,
     },
     limiters: createRateLimiters(opts.rateLimitRedis),
   };

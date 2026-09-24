@@ -38,6 +38,7 @@ import {
   type LiveQuestion,
   type RtErrorCode,
 } from '@cbi/shared-types';
+import type { Types } from 'mongoose';
 import type { z } from 'zod';
 import type { AuditService } from '../../lib/audit.js';
 import type { JobQueues } from '../../lib/jobs.js';
@@ -145,6 +146,11 @@ interface Deps {
   consent: ConsentService;
   /** Called after a question is asked (voice interviews prepare its audio). */
   onQuestion?: (s: InterviewSessionRecord, turn: InterviewTurnRecord) => void;
+  /** Coding rounds: a problem from the bank for the round's first question (null: ask normally). */
+  pickCodingProblem?: (
+    s: InterviewSessionRecord,
+    target: QuestionTarget,
+  ) => Promise<{ _id: Types.ObjectId; title: string; text: string } | null>;
   now?: () => Date;
 }
 
@@ -160,6 +166,7 @@ export function createLiveInterviewService({
   transcripts,
   consent,
   onQuestion,
+  pickCodingProblem,
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -220,7 +227,31 @@ export function createLiveInterviewService({
   const bullets = (items: readonly string[]) =>
     items.length ? items.map((x) => `- ${x}`).join('\n') : '-';
 
-  async function generateQuestion(s: Session, target: QuestionTarget, blueprint: BlueprintContent) {
+  async function generateQuestion(
+    s: Session,
+    target: QuestionTarget,
+    blueprint: BlueprintContent,
+  ): Promise<{
+    text: string;
+    model: string | null;
+    promptVersion: number | null;
+    coding?: { problemId: Types.ObjectId; title: string };
+  }> {
+    // A coding round opens with a problem from the bank; its follow-ups are ordinary questions.
+    if (target.roundType === 'CODING' && !target.followUpOf && pickCodingProblem) {
+      const problem = await pickCodingProblem(s, target).catch((err: unknown) => {
+        logger.error({ err, sessionId: String(s._id) }, 'coding problem selection failed');
+        return null;
+      });
+      if (problem) {
+        return {
+          text: problem.text,
+          model: null,
+          promptVersion: null,
+          coding: { problemId: problem._id, title: problem.title },
+        };
+      }
+    }
     const previous = await InterviewTurnModel.find(
       { sessionId: s._id },
       { question: 1, answer: 1, questionId: 1 },
@@ -320,6 +351,9 @@ export function createLiveInterviewService({
       roundType: t.roundType,
       isFollowUp: t.question.followUpOf !== null,
       askedAt: t.askedAt.toISOString(),
+      coding: t.question.coding
+        ? { problemId: String(t.question.coding.problemId), title: t.question.coding.title }
+        : null,
     };
   }
 
@@ -485,6 +519,7 @@ export function createLiveInterviewService({
                 probeTopic: step.target.probeTopic,
                 promptVersion: question.promptVersion,
                 model: question.model,
+                coding: question.coding ?? null,
               },
               askedAt: now(),
               language: s.language === 'auto' ? 'en' : s.language,
@@ -705,7 +740,11 @@ export function createLiveInterviewService({
     },
 
     /** Records an answer, assesses it and moves on. Idempotent per clientMsgId. */
-    async answer(userId: string, payload: AnswerTextPayload): Promise<{ duplicate: boolean }> {
+    async answer(
+      userId: string,
+      payload: AnswerTextPayload,
+      opts: { coding?: true } = {},
+    ): Promise<{ duplicate: boolean }> {
       return locked(payload.sessionId, async () => {
         const s = await load(payload.sessionId, userId);
         if (!s) throw new LiveError('NOT_FOUND', 'Interview not found');
@@ -721,6 +760,10 @@ export function createLiveInterviewService({
           throw new LiveError('INVALID_STATE', 'The interview is not active.');
         if (!turn || turn.seq !== s.lastSeq) {
           throw new LiveError('STALE_QUESTION', 'This is not the current question.');
+        }
+        // A coding question is answered by submitting code in the editor.
+        if (turn.question.coding && !opts.coding) {
+          throw new LiveError('INVALID_STATE', 'Submit your solution in the code editor.');
         }
         let text = payload.text.trim();
         let voice: {

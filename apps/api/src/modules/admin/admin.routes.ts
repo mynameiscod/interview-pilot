@@ -18,6 +18,7 @@ import { aiAdminRouter } from '../ai/ai.routes.js';
 import { libraryAdminRouter } from '../library/library-admin.routes.js';
 import { paymentsAdminRouter } from '../payments/payments.routes.js';
 import { mediaAdminRouter } from '../media/media.routes.js';
+import { codingAdminRouter } from '../coding/coding.routes.js';
 import { interviewsAdminRouter } from '../reports/reports.routes.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
@@ -119,6 +120,7 @@ export function adminRouter(c: Container): Router {
   router.use(interviewsAdminRouter(c));
   router.use(paymentsAdminRouter(c));
   router.use(mediaAdminRouter(c));
+  router.use(codingAdminRouter(c));
 
   return router;
 }

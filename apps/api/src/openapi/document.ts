@@ -1,5 +1,10 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  CodingWorkspace,
+  CreateProblemVersionBody,
+  ProblemActivationBody,
+  ProblemSummary,
+  SaveCodeBody,
   ActivateConsentTextBody,
   AdminIntegrityEvent,
   AdminMediaAsset,
@@ -813,6 +818,58 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: SwitchModeBody,
     response: z.object({ mode: z.enum(['TEXT', 'VOICE']) }),
     errors: [400, 401, 404, 409],
+  });
+
+  // ---- Coding (Phase 9) ------------------------------------------------------------------------
+  candidate('get', '/interviews/{id}/coding/{questionId}', {
+    tag: 'Coding',
+    summary:
+      'The coding workspace: the problem (visible tests only; hidden ones are counted), your code and results',
+    response: CodingWorkspace,
+    errors: [401, 404],
+  });
+  candidate('put', '/interviews/{id}/coding/{questionId}', {
+    tag: 'Coding',
+    summary: 'Autosave your code (every few seconds and on blur)',
+    body: SaveCodeBody,
+    response: CodingWorkspace,
+    errors: [400, 401, 404, 409, 413],
+  });
+  candidate('post', '/interviews/{id}/coding/{questionId}/run', {
+    tag: 'Coding',
+    summary:
+      'Run the visible tests on the code judge. 503 JUDGE_UNAVAILABLE when it cannot run (keep working; submit still works)',
+    body: SaveCodeBody,
+    response: CodingWorkspace,
+    errors: [400, 401, 404, 409, 413, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/coding/{questionId}/submit', {
+    tag: 'Coding',
+    summary:
+      'Submit: judged against visible and hidden tests (counts only for hidden), recorded even when the judge is down, and answers the coding question',
+    body: SaveCodeBody,
+    response: CodingWorkspace,
+    errors: [400, 401, 404, 409, 413, 429],
+  });
+  lib('get', '/admin/problems', {
+    summary: 'Coding problem versions, with hidden tests (library.read)',
+    response: z.array(ProblemSummary),
+  });
+  lib('post', '/admin/problems', {
+    summary: 'Add the next version of a problem, inactive (library.manage)',
+    body: CreateProblemVersionBody,
+    response: ProblemSummary,
+    status: 201,
+  });
+  lib('post', '/admin/problems/{id}/activate', {
+    summary: 'Make this version the one asked for its key (library.manage)',
+    body: ProblemActivationBody,
+    response: ProblemSummary,
+  });
+  lib('post', '/admin/problems/{id}/deactivate', {
+    summary: 'Stop asking this problem (library.manage)',
+    body: ProblemActivationBody,
+    response: ProblemSummary,
   });
 
   // ---- Consent, recordings and integrity (Phase 8) ------------------------------------------
