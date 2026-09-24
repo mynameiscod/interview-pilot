@@ -115,6 +115,69 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'roles',
+                element: <RequirePermission permission="library.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/library/RolesPage')).RolesPage,
+                    }),
+                  },
+                  {
+                    path: ':roleId',
+                    lazy: async () => ({
+                      Component: (await import('../features/library/RoleDetailPage'))
+                        .RoleDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'blueprints',
+                element: <RequirePermission permission="library.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/library/AiBlueprintsPage'))
+                        .AiBlueprintsPage,
+                    }),
+                  },
+                  {
+                    path: ':blueprintId',
+                    lazy: async () => ({
+                      Component: (await import('../features/library/AiBlueprintsPage'))
+                        .AiBlueprintPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'companies',
+                element: <RequirePermission permission="library.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/library/CompaniesPage')).CompaniesPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'templates',
+                element: <RequirePermission permission="library.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/library/TemplatesPage')).TemplatesPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: '*',
                 lazy: async () => ({
                   Component: (await import('../pages/NotFoundPage')).NotFoundPage,
