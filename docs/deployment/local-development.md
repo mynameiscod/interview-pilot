@@ -46,6 +46,14 @@ In a deployed container: `docker compose exec api node dist/scripts/seed-super-a
 
 With `AI_MOCK_MODE=true` (the `.env.example` default), every AI feature is served by the deterministic `mock` provider. Its replies start with `[mock]`, and it sits last in each route. To try a real model, add its API key in the admin console under **AI providers → Providers & keys** (or set `AI_BOOTSTRAP_ANTHROPIC_API_KEY` etc. before first start), then press **Test** on the model. Real calls are billed by the provider. Usage and cost show under **AI usage & cost**. The example `AI_SECRETS_MASTER_KEY` is refused in staging and production. Details: [AI provider layer](../ai/provider-layer.md).
 
+### Uploads and background jobs locally
+
+Resumes and JD files are stored under `.data/storage` in the repository (`STORAGE_PROVIDER=local`, git-ignored). The API and the worker must point at the same folder, so start both with `pnpm dev`. Parsing, JD URL fetching and role analysis run in the **worker**: if the worker is not running, inputs stay "processing" and analysis fails after 3 minutes with `INPUT_TIMEOUT`. In Option B both containers share the `storage-data` volume.
+
+The seeded library (4 roles with blueprints, 2 interview templates) and the Phase 3 prompts are inserted at API start if they are missing. Admins edit them under **Library** and **Prompts** in the console. With the mock provider, analysis produces a clearly labelled `[mock]` plan.
+
+JD links are fetched with the production SSRF policy even locally, so `localhost` and private-network URLs are refused on purpose.
+
 ### Why ports 27018 and 6380?
 
 The dev stack avoids the default ports so it can run alongside other local MongoDB/Redis installs. To change them, set `CBI_MONGO_HOST_PORT` / `CBI_REDIS_HOST_PORT` before `pnpm infra:up` and update `.env` to match.

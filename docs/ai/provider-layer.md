@@ -95,6 +95,8 @@ If a stored key can't be decrypted (for example, its master key is missing), boo
 
 In development, the seeded routes put the mock **last** (priority 99). Features therefore work without any keys, and a real model serves as soon as its key is added.
 
+The sampler prefers `null` for nullable strings that carry a regex `pattern` (such as resume dates), because it cannot satisfy arbitrary patterns. A unit test in the worker checks that mock output validates for every Phase 3 feature, and that a sampled blueprint normalises into valid `BlueprintContent`.
+
 ## Default catalog
 
 At boot the API inserts missing providers, models and routes. It never modifies existing ones, so admin changes always win.
@@ -104,7 +106,7 @@ At boot the API inserts missing providers, models and routes. It never modifies 
 - Routes: every LLM feature uses Claude Opus 5, then Claude Sonnet 5 (then the mock in development).
 - OpenAI and Gemini models are **not** seeded, because model ids and prices change often. Add them under **Models & pricing**: enter the exact provider model id, add its prices, run **Test**, then add it to routes.
 
-`stt.live`, `tts.live` and `ocr.document` have no adapters until Phases 7 and 3, so their routes stay empty.
+`stt.live`, `tts.live` and `ocr.document` have no adapters yet, so their routes stay empty. The document parser has an OCR hook ready for when an `ocr.document` adapter is added.
 
 ## Prompt registry
 
@@ -129,6 +131,6 @@ API: `/api/v1/admin/ai/*` and `/api/v1/admin/prompts`. See the OpenAPI document 
 ## Not yet built
 
 - Streaming (`LLMProvider.stream`), plus the STT, TTS, OCR, embedding and translation adapters, arrive with the phases that need them.
-- Worker-side AI calls (evaluation, Phase 5) will reuse `buildAiRuntime`, and will need the AI secrets settings in the worker environment.
+- Worker-side AI calls now exist (Phase 3: resume/JD structuring, role analysis, blueprint generation). `buildAiRuntime` lives in `@cbi/ai-runtime`, so the worker needs `AI_SECRETS_MASTER_KEY` (and `AI_MOCK_MODE` in development) just like the API. Both subscribe to config-change broadcasts.
 - Latency and cost charts. The console shows tables for now (charts are planned for Phase 11 analytics).
-- The candidate apps don't translate `AI_UNAVAILABLE` yet. Candidate-facing AI features start in Phase 3 and will add the Telugu and Hindi text.
+- Candidate-facing AI work runs in the background in Phase 3: an unavailable model shows up as a session `failure.code` (`AI_UNAVAILABLE`), which the analysis screen explains in English, Hindi and Telugu. Synchronous `AI_UNAVAILABLE` errors arrive with the live interview in Phase 4.

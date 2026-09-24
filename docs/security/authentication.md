@@ -65,8 +65,10 @@ Endpoints check **permissions**, never role names. The matrix lives in [`package
 | `ai_usage.read`      | ✔     | ✔          |         |         | ✔       |
 | `prompts.read`       | ✔     | ✔          | ✔       |         |         |
 | `prompts.manage`     | ✔     |            | ✔       |         |         |
+| `library.read`       | ✔     | ✔          | ✔       |         |         |
+| `library.manage`     | ✔     | ✔          | ✔       |         |         |
 
-The AI permissions (Phase 2) are described in [the AI provider layer](../ai/provider-layer.md#admin-console-and-permissions). Only super admins can see or change provider keys and routing.
+The AI permissions (Phase 2) are described in [the AI provider layer](../ai/provider-layer.md#admin-console-and-permissions). The library permissions (Phase 3: roles, blueprints, companies, templates) are described in [inputs and role analysis](../architecture/inputs-and-role-analysis.md#admin-permissions). Only super admins can see or change provider keys and routing.
 
 Safeguards: admins cannot demote or revoke themselves; the platform keeps at least one active super admin; revoking admin access ends admin sessions but leaves the person's candidate account intact. The admin UI hides sections without permission, and the API enforces it independently.
 
