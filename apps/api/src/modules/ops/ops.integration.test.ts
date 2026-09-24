@@ -13,8 +13,7 @@ import {
   UserModel,
   UserProfileModel,
 } from '@cbi/db';
-import type {
-  FailedJob} from '@cbi/shared-types';
+import type { FailedJob } from '@cbi/shared-types';
 import {
   ClientFlags,
   CostReport,
