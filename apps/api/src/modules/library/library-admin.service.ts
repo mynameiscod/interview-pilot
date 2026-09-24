@@ -194,7 +194,7 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
           const role = await RoleModel.findByIdAndUpdate(
             before._id,
             { $set: body },
-            { new: true, session },
+            { returnDocument: 'after', session },
           ).lean();
           return {
             result: roleSummary(role!),
@@ -409,7 +409,7 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
                 ),
               },
             },
-            { new: true, session },
+            { returnDocument: 'after', session },
           ).lean();
           return {
             result: companySummary(company!),

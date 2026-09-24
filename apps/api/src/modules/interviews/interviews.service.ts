@@ -252,7 +252,7 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
       const updated = await InterviewSessionModel.findOneAndUpdate(
         { _id: session._id, userId, state: 'READY', stateVersion: session.stateVersion },
         { $set: { mode: body.mode, language: body.language } },
-        { new: true },
+        { returnDocument: 'after' },
       ).lean();
       if (!updated) throw AppError.conflict('This interview changed. Refresh and try again.');
       return summary(updated, { template });

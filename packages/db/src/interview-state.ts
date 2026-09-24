@@ -61,7 +61,7 @@ export async function transitionSession(
     },
   };
   return InterviewSessionModel.findOneAndUpdate(filter, update, {
-    new: true,
+    returnDocument: 'after',
     session: input.session,
   }).lean<InterviewSessionRecord>();
 }

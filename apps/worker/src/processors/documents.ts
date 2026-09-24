@@ -144,7 +144,7 @@ export async function processResumeExtract(
   const resume = await ResumeModel.findOneAndUpdate(
     { _id: resumeId, 'extraction.status': { $in: ['PENDING', 'PROCESSING'] } },
     { $set: { 'extraction.status': 'PROCESSING' }, $inc: { 'extraction.attempts': 1 } },
-    { new: true },
+    { returnDocument: 'after' },
   ).lean();
   if (!resume) return; // deleted or already finished
 
@@ -210,7 +210,7 @@ export async function processJdExtract(
   const target = await JobTargetModel.findOneAndUpdate(
     { _id: jobTargetId, 'extraction.status': { $in: ['PENDING', 'PROCESSING'] } },
     { $set: { 'extraction.status': 'PROCESSING' }, $inc: { 'extraction.attempts': 1 } },
-    { new: true },
+    { returnDocument: 'after' },
   ).lean();
   if (!target) return;
 
@@ -225,7 +225,7 @@ export async function processJdExtract(
 
       switch (target.source) {
         case 'PASTE':
-          text = target.rawText ?? '';
+          text = cleanText(target.rawText ?? '');
           parser = 'paste';
           break;
         case 'UPLOAD': {

@@ -1,8 +1,10 @@
 import {
   BlueprintContent,
   type BlueprintDraftAi,
+  type CompetencyCategory,
   type RoleAnalysis,
   type RoleAnalysisAi,
+  type RoundType,
   type TemplateContent,
 } from '@cbi/shared-types';
 
@@ -67,20 +69,36 @@ export function normalizeBlueprintDraft(draft: BlueprintDraftAi): BlueprintConte
 
 export type PlannedRound = RoleAnalysis['plannedRounds'][number];
 
+/**
+ * Categories that suit a round when no competency names the round type
+ * itself (models sometimes tag everything with one round). Intro and
+ * wrap-up rounds have no fallback: an empty focus is fine there.
+ */
+const ROUND_CATEGORIES: Partial<Record<RoundType, readonly CompetencyCategory[]>> = {
+  TECHNICAL: ['TECHNICAL', 'DOMAIN'],
+  CODING: ['TECHNICAL'],
+  PROBLEM_SOLVING: ['PROBLEM_SOLVING', 'TECHNICAL'],
+  BEHAVIORAL: ['BEHAVIORAL', 'COMMUNICATION'],
+};
+
 /** Which competencies each template round focuses on (top 3 by weight). */
 export function planRounds(
   template: Pick<TemplateContent, 'rounds'>,
   blueprint: Pick<BlueprintContent, 'competencies'>,
 ): PlannedRound[] {
-  return template.rounds.map((round) => ({
-    type: round.type,
-    durationSec: round.durationSec,
-    focus: blueprint.competencies
-      .filter((c) => c.roundTypes.includes(round.type))
+  const top = (list: BlueprintContent['competencies']) =>
+    [...list]
       .sort((a, b) => b.weight - a.weight)
       .slice(0, 3)
-      .map((c) => c.name),
-  }));
+      .map((c) => c.name);
+  return template.rounds.map((round) => {
+    let focus = top(blueprint.competencies.filter((c) => c.roundTypes.includes(round.type)));
+    const categories = ROUND_CATEGORIES[round.type];
+    if (focus.length === 0 && categories) {
+      focus = top(blueprint.competencies.filter((c) => categories.includes(c.category)));
+    }
+    return { type: round.type, durationSec: round.durationSec, focus };
+  });
 }
 
 const normalizeTitle = (value: string) =>

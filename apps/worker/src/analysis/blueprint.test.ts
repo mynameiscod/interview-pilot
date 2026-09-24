@@ -165,6 +165,39 @@ describe('planRounds', () => {
   });
 });
 
+describe('planRounds category fallback', () => {
+  it('uses competency categories when no competency names the round', () => {
+    // A model that tagged everything INTRO must not leave the main rounds without focus.
+    const blueprint = normalizeBlueprintDraft(
+      draft([
+        { name: 'Tech', category: 'TECHNICAL', weight: 50, roundTypes: ['INTRO'] },
+        { name: 'Talk', category: 'COMMUNICATION', weight: 30, roundTypes: ['INTRO'] },
+        { name: 'Solve', category: 'PROBLEM_SOLVING', weight: 20, roundTypes: ['INTRO'] },
+      ]),
+    );
+    const round = (type: 'TECHNICAL' | 'BEHAVIORAL' | 'PROBLEM_SOLVING' | 'WRAP_UP') => ({
+      type,
+      durationSec: 300,
+      questionCount: 2,
+      difficulty: 'MEDIUM' as const,
+      followUpDepth: 1,
+      minEvidence: 1,
+    });
+    const plan = planRounds(
+      {
+        rounds: [
+          round('TECHNICAL'),
+          round('BEHAVIORAL'),
+          round('PROBLEM_SOLVING'),
+          round('WRAP_UP'),
+        ],
+      },
+      blueprint,
+    );
+    expect(plan.map((r) => r.focus)).toEqual([['Tech'], ['Talk'], ['Tech', 'Solve'], []]);
+  });
+});
+
 describe('matchRoleByTitle', () => {
   const roles = [
     { slug: 'backend-engineer', title: 'Backend Engineer', aliases: ['Node.js Developer'] },
