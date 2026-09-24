@@ -1,9 +1,6 @@
 import type { ProcessingStage } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
-import {
-  InterviewSessionModel,
-  type SessionProcessingRecord,
-} from './models/interview-session.js';
+import { InterviewSessionModel, type SessionProcessingRecord } from './models/interview-session.js';
 
 export const FIRST_STAGE: ProcessingStage = 'FINALIZE_TRANSCRIPT';
 
