@@ -1,0 +1,43 @@
+{
+  "name": "@cbi/documents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Untrusted document handling: type detection, zip-bomb checks and bounded text extraction for PDF, DOCX and plain text",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./detect": {
+      "@cbi/source": "./src/detect.ts",
+      "types": "./dist/detect.d.ts",
+      "import": "./dist/detect.js"
+    },
+    "./testing": {
+      "@cbi/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cbi/shared-types": "workspace:*",
+    "fflate": "0.8.3",
+    "mammoth": "1.12.3",
+    "unpdf": "1.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "vitest": "5.0.1"
+  }
+}
