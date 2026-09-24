@@ -31,7 +31,9 @@ export function webConfig(opts: { port: number }): UserConfig & { test: object }
       setupFiles: ['./src/test/setup.ts'],
       css: false,
       // Form tests type into many fields; turbo runs every suite at once, so allow for a loaded machine.
-      testTimeout: 20_000,
+      testTimeout: 40_000,
+      // Same allowance for expect.poll (its 1 s default is too short under the full parallel run).
+      expect: { poll: { timeout: 15_000 } },
     },
   };
 }
