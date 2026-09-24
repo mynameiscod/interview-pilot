@@ -1,5 +1,12 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  CompareQuery,
+  CompareResult,
+  FeedbackBody,
+  FeedbackSummary,
+  ProcessingProgress,
+  ReportHistoryItem,
+  ReportSummary,
   CreditBalance,
   CreditLedgerEntry,
   CreditLedgerQuery,
@@ -572,6 +579,57 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'My credit ledger, newest first',
     query: CreditLedgerQuery,
     response: z.array(CreditLedgerEntry),
+  });
+  candidate('get', '/interviews/{id}/progress', {
+    tag: 'Interviews',
+    summary: 'Evaluation progress after the interview (stage, status, report ready)',
+    response: ProcessingProgress,
+  });
+  candidate('get', '/reports', {
+    tag: 'Reports',
+    summary: 'My readiness reports, newest first (history)',
+    response: z.array(ReportHistoryItem),
+  });
+  candidate('get', '/reports/compare', {
+    tag: 'Reports',
+    summary: 'Compare 2–4 attempts at the same role: dimension scores and change',
+    query: CompareQuery,
+    response: CompareResult,
+  });
+  candidate('get', '/reports/{sessionId}', {
+    tag: 'Reports',
+    summary: 'The latest revision of an interview’s readiness report',
+    response: ReportSummary,
+  });
+  route('get', '/reports/{sessionId}/pdf', {
+    tag: 'Reports',
+    auth: 'bearer',
+    summary: 'Download the report as a PDF (application/pdf); 409 while it is being prepared',
+    response: null,
+    status: 200,
+    errors: [401, 404, 409],
+  });
+  candidate('post', '/feedback', {
+    tag: 'Feedback',
+    summary: 'Rate an interview and its report (one per interview; sending again updates it)',
+    body: FeedbackBody,
+    response: FeedbackSummary,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('get', '/feedback/{sessionId}', {
+    tag: 'Feedback',
+    summary: 'My feedback for an interview, or null',
+    response: FeedbackSummary.nullable(),
+  });
+  route('post', '/admin/interviews/{id}/reprocess', {
+    tag: 'Admin interviews',
+    auth: 'bearer',
+    summary:
+      'Start a new evaluation run for an interview stuck or failed in PROCESSING (interviews.manage)',
+    body: LibraryReasonBody,
+    response: z.object({ run: z.number().int() }),
+    status: 202,
+    errors: [400, 401, 403, 404, 409],
   });
   candidate('post', '/interviews/{id}/cancel', {
     tag: 'Interviews',

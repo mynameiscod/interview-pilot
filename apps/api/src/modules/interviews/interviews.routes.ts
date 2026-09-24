@@ -51,6 +51,10 @@ export function interviewsRouter(c: Container): Router {
   router.get('/:id/live', async (req, res) => {
     res.json({ data: await c.live.snapshot(await svc.record(user(req), id(req.params.id))) });
   });
+  /** Evaluation progress for the completion screen. */
+  router.get('/:id/progress', async (req, res) => {
+    res.json({ data: await c.reports.progress(user(req), id(req.params.id)) });
+  });
   router.post('/:id/cancel', async (req, res) => {
     res.json({ data: await svc.cancel(user(req), id(req.params.id), clientContext(req)) });
   });

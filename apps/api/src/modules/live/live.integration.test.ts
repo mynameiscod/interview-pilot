@@ -359,6 +359,7 @@ describe('reconnect and resume (end to end)', () => {
     const completed = nextEvent<InterviewSnapshot>(socket, RtEvent.COMPLETED);
     const res = await c.call('post', `/interviews/${id}/end`).expect(200);
     expect(res.body.data.state).toBe('PROCESSING');
+    expect(t.jobs.jobs).toContainEqual({ kind: 'evaluate', id, rerun: false });
     expect((await completed).state).toBe('PROCESSING');
     const s = await session(id);
     expect(s).toMatchObject({

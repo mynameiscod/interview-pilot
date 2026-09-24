@@ -29,6 +29,7 @@
     "@cbi/documents": "workspace:*",
     "@cbi/interview-engine": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
+    "@cbi/scoring-core": "workspace:*",
     "@cbi/shared-types": "workspace:*",
     "@socket.io/redis-adapter": "8.3.0",
     "bullmq": "6.3.8",

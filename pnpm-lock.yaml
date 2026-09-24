@@ -153,6 +153,9 @@ importers:
       '@cbi/provider-adapters':
         specifier: workspace:*
         version: link:../../packages/provider-adapters
+      '@cbi/scoring-core':
+        specifier: workspace:*
+        version: link:../../packages/scoring-core
       '@cbi/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
