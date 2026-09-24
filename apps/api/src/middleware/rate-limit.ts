@@ -13,7 +13,8 @@ export type RateLimiterName =
   | 'aiTest'
   | 'upload'
   | 'jdUrl'
-  | 'analysis';
+  | 'analysis'
+  | 'payment';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -35,10 +36,19 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   jdUrl: { windowMs: 10 * 60_000, limit: 10, failOpen: false },
   /** Role analysis runs several billed AI calls. */
   analysis: { windowMs: 10 * 60_000, limit: 15, failOpen: false },
+  /** Quotes, orders and verification (each order opens a gateway order). */
+  payment: { windowMs: 10 * 60_000, limit: 40, failOpen: false },
 };
 
 /** Limiters mounted after authentication count per user rather than per IP. */
-const PER_USER = new Set<RateLimiterName>(['admin', 'aiTest', 'upload', 'jdUrl', 'analysis']);
+const PER_USER = new Set<RateLimiterName>([
+  'admin',
+  'aiTest',
+  'upload',
+  'jdUrl',
+  'analysis',
+  'payment',
+]);
 
 /** @param redis null → in-process memory counters (single-process tests only). */
 export function createRateLimiters(redis: Redis | null): Record<RateLimiterName, RequestHandler> {
@@ -74,5 +84,6 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     upload: make('upload'),
     jdUrl: make('jdUrl'),
     analysis: make('analysis'),
+    payment: make('payment'),
   };
 }

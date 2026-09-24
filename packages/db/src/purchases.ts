@@ -19,7 +19,7 @@ import { CreditLedgerModel } from './models/credits.js';
  */
 
 type Id = Types.ObjectId | string;
-export type PurchaseEventSource = 'VERIFY' | 'WEBHOOK' | 'RECONCILE' | 'FREE' | 'ADMIN';
+export type PurchaseEventSource = 'ORDER' | 'VERIFY' | 'WEBHOOK' | 'RECONCILE' | 'FREE' | 'ADMIN';
 
 const history = (status: string, at: Date, source: string) => ({ status, at, source });
 
@@ -226,6 +226,71 @@ export async function markPurchaseRefunded(input: {
     );
     return { refunded: true, creditsWithdrawn };
   });
+}
+
+// ---- Reconciliation --------------------------------------------------------------------------
+
+/** The part of a payment gateway reconciliation needs (structural, so db has no adapter dependency). */
+export interface ReconcileGateway {
+  fetchOrderPayments(
+    orderId: string,
+  ): Promise<{ id: string; amountMinor: number; currency: string; status: string }[]>;
+  fetchPayment(paymentId: string): Promise<{ id: string; status: string }>;
+}
+
+export type ReconcileOutcome =
+  'PAID' | 'REFUNDED' | 'EXPIRED' | 'PENDING' | 'AMOUNT_MISMATCH' | 'UNCHANGED';
+
+/**
+ * Asks the gateway what happened to a purchase whose outcome we never heard
+ * about (closed browser, lost webhook). Captured payments are credited; an
+ * order unpaid after `expireAfterMs` expires; a pending refund the gateway
+ * has processed is completed. Safe to run at any time and in parallel with
+ * verify and webhooks.
+ */
+export async function reconcilePurchase(
+  purchaseId: Id,
+  gateway: ReconcileGateway,
+  opts: { expireAfterMs: number; now?: Date },
+): Promise<ReconcileOutcome> {
+  const now = opts.now ?? new Date();
+  const purchase = await PurchaseModel.findById(purchaseId).lean<PurchaseRecord>();
+  const payment = await PaymentModel.findOne({ purchaseId }).lean();
+  if (!purchase || !payment) return 'UNCHANGED';
+
+  if (purchase.status === 'PAID') {
+    if (payment.status !== 'REFUND_PENDING' || !payment.paymentId || !payment.refund) {
+      return 'UNCHANGED';
+    }
+    const remote = await gateway.fetchPayment(payment.paymentId);
+    if (remote.status !== 'refunded') return 'PENDING';
+    await markPurchaseRefunded({
+      purchaseId,
+      refundId: payment.refund.id,
+      source: 'RECONCILE',
+      now,
+    });
+    return 'REFUNDED';
+  }
+  if (purchase.status === 'REFUNDED') return 'UNCHANGED';
+
+  const payments = await gateway.fetchOrderPayments(payment.orderId);
+  const captured = payments.filter((p) => p.status === 'captured');
+  const match = captured.find(
+    (p) => p.amountMinor === payment.amountMinor && p.currency === payment.currency,
+  );
+  if (match) {
+    await markPurchasePaid({ purchaseId, source: 'RECONCILE', paymentId: match.id, now });
+    return 'PAID';
+  }
+  if (captured.length > 0) return 'AMOUNT_MISMATCH';
+  if (
+    purchase.status !== 'EXPIRED' &&
+    now.getTime() - purchase.createdAt.getTime() >= opts.expireAfterMs
+  ) {
+    return (await expirePurchase(purchaseId, now)) ? 'EXPIRED' : 'UNCHANGED';
+  }
+  return purchase.status === 'EXPIRED' ? 'UNCHANGED' : 'PENDING';
 }
 
 // ---- Seed -------------------------------------------------------------------------------------------

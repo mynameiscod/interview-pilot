@@ -5,9 +5,12 @@ import {
   createDevMailboxSmsProvider,
   createEmailProvider,
   createMsg91OtpProvider,
+  createPaymentGateway,
   createStorage,
+  mockGatewayControls,
   type EmailProvider,
   type OtpSmsProvider,
+  type PaymentGateway,
   type StorageProvider,
 } from '@cbi/provider-adapters';
 import type { AdapterRegistry, UsageSink } from '@cbi/ai-core';
@@ -28,6 +31,7 @@ import { createInputsService } from './modules/inputs/inputs.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
 import { createLibraryAdminService } from './modules/library/library-admin.service.js';
 import { createLiveInterviewService, createRoomEmitter } from './modules/live/live.service.js';
+import { createPaymentsService } from './modules/payments/payments.service.js';
 import { createReportsService } from './modules/reports/reports.service.js';
 
 export interface ContainerOptions {
@@ -47,6 +51,8 @@ export interface ContainerOptions {
     aiUsage?: UsageSink;
     storage?: StorageProvider;
     jobs?: JobQueues;
+    /** A payment gateway (tests pass a fresh mock) and, for a mock, its controls. */
+    payments?: { gateway: PaymentGateway; mock: ReturnType<typeof mockGatewayControls> };
   };
 }
 
@@ -134,6 +140,12 @@ export function buildContainer(opts: ContainerOptions) {
   const rooms = createRoomEmitter();
   const live = createLiveInterviewService({ ai, redis, logger, rooms, audit, jobs });
   const reports = createReportsService({ storage, jobs, audit });
+  const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
+  const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
+  // Mock Checkout controls exist only with the mock gateway (refused outside development/test).
+  const paymentMock = opts.overrides?.payments
+    ? opts.overrides.payments.mock
+    : mockGatewayControls(env);
   const cookies: CookieSettings = {
     secure: env.APP_ENV !== 'development' && env.APP_ENV !== 'test',
     domain: env.COOKIE_DOMAIN,
@@ -160,12 +172,15 @@ export function buildContainer(opts: ContainerOptions) {
     rooms,
     live,
     reports,
+    payments,
+    paymentMock,
     cookies,
     providers: {
       email: email.name,
       sms: sms?.name ?? null,
       aiMock: ai.mockEnabled,
       storage: storage.name,
+      payments: paymentGateway.name,
     },
     limiters: createRateLimiters(opts.rateLimitRedis),
   };

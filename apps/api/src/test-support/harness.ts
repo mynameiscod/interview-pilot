@@ -4,6 +4,7 @@
  */
 import { apiEnvSchema, createLogger, loadEnv, type ApiEnv } from '@cbi/config';
 import { createRedis, type Redis } from '@cbi/db';
+import { createMockGateway } from '@cbi/provider-adapters';
 import {
   createMemoryStorage,
   createRecordingEmailProvider,
@@ -111,6 +112,7 @@ export async function buildTestApp(
   const google = await createFakeGoogleIssuer();
   const storage = createMemoryStorage();
   const jobs = createRecordingJobQueues();
+  const payments = createMockGateway();
   const container = buildContainer({
     env,
     logger,
@@ -123,6 +125,7 @@ export async function buildTestApp(
       aiAdapters: opts.aiAdapters,
       storage: storage.storage,
       jobs: jobs.queues,
+      payments: { gateway: payments.gateway, mock: payments },
     },
   });
   const app = createApp({
@@ -131,5 +134,5 @@ export async function buildTestApp(
     probes: { mongo: async () => undefined, redis: async () => undefined },
     isDraining: () => false,
   });
-  return { app, container, env, email, sms, google, storage, jobs };
+  return { app, container, env, email, sms, google, storage, jobs, payments };
 }

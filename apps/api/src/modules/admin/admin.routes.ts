@@ -16,6 +16,7 @@ import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
 import { aiAdminRouter } from '../ai/ai.routes.js';
 import { libraryAdminRouter } from '../library/library-admin.routes.js';
+import { paymentsAdminRouter } from '../payments/payments.routes.js';
 import { interviewsAdminRouter } from '../reports/reports.routes.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
@@ -115,6 +116,7 @@ export function adminRouter(c: Container): Router {
   router.use(aiAdminRouter(c));
   router.use(libraryAdminRouter(c));
   router.use(interviewsAdminRouter(c));
+  router.use(paymentsAdminRouter(c));
 
   return router;
 }

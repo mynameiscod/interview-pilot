@@ -242,3 +242,44 @@ export const PAYMENT_POLICY = {
   reconcileAfterMs: 30 * 60_000,
   expireAfterMs: 24 * 3600_000,
 } as const;
+
+/** Activating or retiring a plan version. */
+export const PlanActivationBody = z.object({ reason: z.string().trim().min(3).max(300) });
+export type PlanActivationBody = z.infer<typeof PlanActivationBody>;
+
+/** DEVELOPMENT ONLY: stands in for the customer completing (or failing) mock Checkout. */
+export const MockCheckoutBody = z.object({
+  purchaseId: z.string().regex(/^[0-9a-f]{24}$/i),
+  outcome: z.enum(['success', 'failure']),
+});
+export type MockCheckoutBody = z.infer<typeof MockCheckoutBody>;
+
+export const MockCheckoutResult = z.object({
+  /** Checkout's success fields, to send to /payments/verify as the real flow does. */
+  checkout: VerifyPaymentBody.nullable(),
+  purchase: PurchaseSummary,
+});
+export type MockCheckoutResult = z.infer<typeof MockCheckoutResult>;
+
+export const AdminRefundResult = z.object({
+  purchase: AdminPurchase,
+  refundStatus: z.enum(['pending', 'processed', 'failed']),
+  creditsWithdrawn: z.number().int(),
+});
+export type AdminRefundResult = z.infer<typeof AdminRefundResult>;
+
+export const ReconcileOutcome = z.enum([
+  'PAID',
+  'REFUNDED',
+  'EXPIRED',
+  'PENDING',
+  'AMOUNT_MISMATCH',
+  'UNCHANGED',
+]);
+export type ReconcileOutcome = z.infer<typeof ReconcileOutcome>;
+
+export const AdminReconcileResult = z.object({
+  outcome: ReconcileOutcome,
+  purchase: AdminPurchase,
+});
+export type AdminReconcileResult = z.infer<typeof AdminReconcileResult>;

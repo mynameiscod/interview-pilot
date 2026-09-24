@@ -100,7 +100,10 @@ export function createMockGateway() {
       return { kind: 'ignored', eventId, type: event.event };
     },
     async refund(paymentId, amountMinor) {
-      const refund: GatewayRefund = { id: id('rfnd'), paymentId, amountMinor, status: 'pending' };
+      // Test-mode refunds complete at once (Razorpay may answer pending or processed).
+      const refund: GatewayRefund = { id: id('rfnd'), paymentId, amountMinor, status: 'processed' };
+      const paid = payments.get(paymentId);
+      if (paid) paid.status = 'refunded';
       refunds.set(refund.id, refund);
       return { ...refund };
     },

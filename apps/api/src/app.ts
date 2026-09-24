@@ -16,6 +16,11 @@ import { healthRouter } from './modules/health/health.routes.js';
 import { jobsRouter, resumesRouter } from './modules/inputs/inputs.routes.js';
 import { interviewsRouter } from './modules/interviews/interviews.routes.js';
 import { librarySearchRouter } from './modules/library/library.routes.js';
+import {
+  paymentsRouter,
+  paymentWebhookHandler,
+  plansRouter,
+} from './modules/payments/payments.routes.js';
 import { feedbackRouter, reportsRouter } from './modules/reports/reports.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
@@ -81,6 +86,8 @@ export function createApp(deps: AppDependencies): Express {
 
   app.use(helmet());
   app.use(originGuard(env.CORS_ALLOWED_ORIGINS));
+  // Payment webhooks need the raw body for their signature, so they come before the JSON parser.
+  app.post(`${API_V1_PREFIX}/payments/webhooks/razorpay`, ...paymentWebhookHandler(c));
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
 
   const v1 = express.Router();
@@ -93,6 +100,8 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/credits', creditsRouter(c));
   v1.use('/reports', reportsRouter(c));
   v1.use('/feedback', feedbackRouter(c));
+  v1.use('/plans', plansRouter(c));
+  v1.use('/payments', paymentsRouter(c));
   v1.use(librarySearchRouter());
   v1.use('/admin/auth', authRouter('admin', c));
   v1.use('/admin', adminRouter(c));

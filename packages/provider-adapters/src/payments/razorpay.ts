@@ -1,11 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { ProviderError } from '../errors.js';
-import type {
-  GatewayOrder,
-  GatewayPayment,
-  GatewayRefund,
-  PaymentGateway,
-} from './types.js';
+import type { GatewayOrder, GatewayPayment, GatewayRefund, PaymentGateway } from './types.js';
 
 export interface RazorpayOptions {
   keyId: string;

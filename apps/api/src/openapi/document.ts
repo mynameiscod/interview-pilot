@@ -1,5 +1,24 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  AdminPurchase,
+  AdminPurchaseQuery,
+  AdminReconcileResult,
+  AdminRefundResult,
+  CheckoutOrder,
+  CouponSummary,
+  CreateOrderBody,
+  CreatePlanVersionBody,
+  MockCheckoutBody,
+  MockCheckoutResult,
+  PlanActivationBody,
+  PlanSummary,
+  PublicPlan,
+  PurchaseSummary,
+  Quote,
+  QuoteBody,
+  RefundBody,
+  UpsertCouponBody,
+  VerifyPaymentBody,
   CompareQuery,
   CompareResult,
   FeedbackBody,
@@ -728,6 +747,128 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: LibraryReasonBody,
     response: TemplateSummary,
     errors: conflict,
+  });
+
+  // ---- Plans and payments (Phase 6) -------------------------------------------------
+  route('get', '/plans', {
+    tag: 'Payments',
+    summary: 'Active plans for the pricing page (public)',
+    response: z.array(PublicPlan),
+    errors: [429],
+  });
+  candidate('post', '/payments/quote', {
+    tag: 'Payments',
+    summary:
+      'Server-side price for a plan and optional coupon (explains a coupon that does not apply)',
+    body: QuoteBody,
+    response: Quote,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('post', '/payments/orders', {
+    tag: 'Payments',
+    summary:
+      'Create a purchase and its gateway order for Checkout; a zero total completes at once (provider null)',
+    body: CreateOrderBody,
+    response: CheckoutOrder,
+    status: 201,
+    errors: [400, 401, 404, 409, 429, 503],
+  });
+  candidate('post', '/payments/verify', {
+    tag: 'Payments',
+    summary:
+      'Verify the Checkout result (signature, then captured amount) and issue credits; idempotent',
+    body: VerifyPaymentBody,
+    response: PurchaseSummary,
+    errors: [400, 401, 404, 429],
+  });
+  route('post', '/payments/webhooks/razorpay', {
+    tag: 'Payments',
+    summary:
+      'Razorpay webhook (raw JSON body signed in X-Razorpay-Signature; each X-Razorpay-Event-Id is processed once)',
+    response: z.object({ result: z.string() }),
+    errors: [400, 500],
+  });
+  candidate('post', '/payments/mock/checkout', {
+    tag: 'Payments',
+    summary: 'DEVELOPMENT ONLY (mock gateway): complete or fail mock Checkout for a purchase',
+    body: MockCheckoutBody,
+    response: MockCheckoutResult,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('get', '/payments/purchases', {
+    tag: 'Payments',
+    summary: 'My purchases, newest first',
+    response: z.array(PurchaseSummary),
+  });
+  candidate('get', '/payments/purchases/{purchaseId}', {
+    tag: 'Payments',
+    summary: 'One of my purchases (poll after Checkout until PAID or FAILED)',
+    response: PurchaseSummary,
+    errors: [401, 404],
+  });
+  const pay = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin payments',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  pay('get', '/admin/plans', {
+    summary: 'All plan versions (payments.read)',
+    response: z.array(PlanSummary),
+  });
+  pay('post', '/admin/plans', {
+    summary: 'Add the next version of a plan, inactive (payments.manage)',
+    body: CreatePlanVersionBody,
+    response: PlanSummary,
+    status: 201,
+  });
+  pay('post', '/admin/plans/{id}/activate', {
+    summary: 'Make this version the one on sale for its code (payments.manage)',
+    body: PlanActivationBody,
+    response: PlanSummary,
+  });
+  pay('post', '/admin/plans/{id}/deactivate', {
+    summary: 'Take a plan version off sale (payments.manage)',
+    body: PlanActivationBody,
+    response: PlanSummary,
+  });
+  pay('get', '/admin/coupons', {
+    summary: 'Coupons (payments.read)',
+    response: z.array(CouponSummary),
+  });
+  pay('post', '/admin/coupons', {
+    summary: 'Create a coupon (payments.manage)',
+    body: UpsertCouponBody,
+    response: CouponSummary,
+    status: 201,
+    errors: conflict,
+  });
+  pay('put', '/admin/coupons/{id}', {
+    summary: 'Update a coupon; the code cannot change (payments.manage)',
+    body: UpsertCouponBody,
+    response: CouponSummary,
+  });
+  pay('get', '/admin/purchases', {
+    summary:
+      'Purchases with payment history; q matches ids, order/payment ids or email (payments.read)',
+    query: AdminPurchaseQuery,
+    response: z.array(AdminPurchase),
+  });
+  pay('get', '/admin/purchases/{id}', {
+    summary: 'One purchase with its payment history (payments.read)',
+    response: AdminPurchase,
+  });
+  pay('post', '/admin/purchases/{id}/refund', {
+    summary: 'Refund a paid purchase in full; unused credits are withdrawn (payments.manage)',
+    body: RefundBody,
+    response: AdminRefundResult,
+    errors: [...conflict, 503],
+  });
+  pay('post', '/admin/purchases/{id}/reconcile', {
+    summary: 'Ask the gateway what happened to a purchase and apply it (payments.manage)',
+    response: AdminReconcileResult,
+    errors: [401, 403, 404, 503],
   });
 
   const generator = new OpenApiGeneratorV31(registry.definitions);

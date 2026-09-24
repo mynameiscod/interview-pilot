@@ -8,6 +8,7 @@ import {
   connectMongo,
   createRedis,
   disconnectMongo,
+  ensureCommerceCatalog,
   ensureIndexes,
   ensureLibraryCatalog,
   pingMongo,
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   await bootstrapAi({ env, ai: container.ai, audit: container.audit, logger });
   const seeded = await ensureLibraryCatalog();
   logger.info(seeded, 'interview library checked');
+  logger.info({ created: await ensureCommerceCatalog() }, 'plan catalogue checked');
   const stopAiListener = await container.ai.listenForChanges();
   const app = createApp({
     container,
