@@ -18,10 +18,15 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@cbi/ai-core": "workspace:*",
+    "@cbi/ai-runtime": "workspace:*",
     "@cbi/config": "workspace:*",
     "@cbi/db": "workspace:*",
+    "@cbi/documents": "workspace:*",
+    "@cbi/provider-adapters": "workspace:*",
     "@cbi/shared-types": "workspace:*",
-    "bullmq": "6.3.8"
+    "bullmq": "6.3.8",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.13.6",

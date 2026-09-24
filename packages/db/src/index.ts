@@ -10,6 +10,7 @@ export * from './models/refresh-token.js';
 export * from './models/user-profile.js';
 export * from './models/user.js';
 export * from './indexes.js';
+export * from './interview-state.js';
 export * from './mongo.js';
 export * from './redis.js';
 export * from './seed/library.js';

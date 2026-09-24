@@ -31,8 +31,12 @@ export function sampleFromJsonSchema(
   for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
     const options = schema[key];
     if (Array.isArray(options) && options.length > 0) {
+      // A nullable patterned string gets null: the sampler cannot satisfy arbitrary regexes.
+      const all = options as JsonSchema[];
       const preferred =
-        (options as JsonSchema[]).find((o) => o.type !== 'null') ?? (options[0] as JsonSchema);
+        all.find((o) => o.type !== 'null' && !o.pattern) ??
+        all.find((o) => o.type === 'null') ??
+        all[0]!;
       return sampleFromJsonSchema(preferred, root, path);
     }
   }

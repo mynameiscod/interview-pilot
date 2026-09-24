@@ -1,8 +1,21 @@
 import type { Logger } from '@cbi/config';
 import type { Redis } from '@cbi/db';
-import { QueueName } from '@cbi/shared-types';
-import { Queue, Worker } from 'bullmq';
+import {
+  AnalysisJob,
+  DocumentJob,
+  QueueName,
+  type InterviewAnalyzeJobData,
+  type JdExtractJobData,
+  type ResumeExtractJobData,
+} from '@cbi/shared-types';
+import { DelayedError, Queue, Worker, type Job } from 'bullmq';
 import { writeHeartbeat } from './processors/heartbeat.js';
+import { processInterviewAnalyze, type AnalysisProcessorDeps } from './processors/analysis.js';
+import {
+  processJdExtract,
+  processResumeExtract,
+  type DocumentProcessorDeps,
+} from './processors/documents.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
@@ -19,6 +32,10 @@ export interface WorkerRuntimeOptions {
   /** Connection used by processors for ordinary commands. */
   redis: Redis;
   logger: Logger;
+  /** Resume and job-description extraction; omit to leave the queue unconsumed. */
+  documents?: { deps: DocumentProcessorDeps; concurrency: number };
+  /** Role analysis and blueprint selection; omit to leave the queue unconsumed. */
+  analysis?: { deps: AnalysisProcessorDeps; concurrency: number };
 }
 
 export interface WorkerRuntime {
@@ -27,9 +44,16 @@ export interface WorkerRuntime {
   close(): Promise<void>;
 }
 
+const isFinalAttempt = (job: Job) => job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+
 /** Registers queues, schedulers and processors. */
 export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRuntime> {
   const systemQueue = new Queue(QueueName.SYSTEM, { connection: opts.queueConnection });
+  const consumed: QueueName[] = [
+    QueueName.SYSTEM,
+    ...(opts.documents ? [QueueName.DOCUMENTS] : []),
+    ...(opts.analysis ? [QueueName.ANALYSIS] : []),
+  ];
 
   // Scheduler per worker id so every replica reports its own heartbeat.
   await systemQueue.upsertJobScheduler(
@@ -51,47 +75,105 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
-  const systemWorker = new Worker(
-    QueueName.SYSTEM,
-    async (job) => {
-      switch (job.name) {
-        case HEARTBEAT_JOB: {
-          await writeHeartbeat(
-            opts.redis,
-            {
-              workerId: String(job.data.workerId),
-              version: opts.version,
-              at: new Date().toISOString(),
-              queues: [QueueName.SYSTEM],
-            },
-            opts.heartbeatIntervalMs,
-          );
-          return;
+  const workers: Worker[] = [
+    new Worker(
+      QueueName.SYSTEM,
+      async (job) => {
+        switch (job.name) {
+          case HEARTBEAT_JOB: {
+            await writeHeartbeat(
+              opts.redis,
+              {
+                workerId: String(job.data.workerId),
+                version: opts.version,
+                at: new Date().toISOString(),
+                queues: consumed,
+              },
+              opts.heartbeatIntervalMs,
+            );
+            return;
+          }
+          case PROVIDER_HEALTH_JOB: {
+            const windows = await rollupProviderHealth();
+            opts.logger.debug({ windows }, 'provider health rolled up');
+            return;
+          }
+          default:
+            // Unknown jobs fail visibly instead of being silently acknowledged.
+            throw new Error(`Unknown system job: ${job.name}`);
         }
-        case PROVIDER_HEALTH_JOB: {
-          const windows = await rollupProviderHealth();
-          opts.logger.debug({ windows }, 'provider health rolled up');
-          return;
-        }
-        default:
-          // Unknown jobs fail visibly instead of being silently acknowledged.
-          throw new Error(`Unknown system job: ${job.name}`);
-      }
-    },
-    { connection: opts.queueConnection, concurrency: 1 },
-  );
+      },
+      { connection: opts.queueConnection, concurrency: 1 },
+    ),
+  ];
 
-  systemWorker.on('failed', (job, err) =>
-    opts.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'job failed'),
-  );
-  systemWorker.on('error', (err) => opts.logger.error({ err }, 'worker error'));
+  if (opts.documents) {
+    const { deps, concurrency } = opts.documents;
+    workers.push(
+      new Worker(
+        QueueName.DOCUMENTS,
+        async (job) => {
+          switch (job.name) {
+            case DocumentJob.RESUME_EXTRACT:
+              return processResumeExtract(
+                deps,
+                (job.data as ResumeExtractJobData).resumeId,
+                isFinalAttempt(job),
+              );
+            case DocumentJob.JD_EXTRACT:
+              return processJdExtract(
+                deps,
+                (job.data as JdExtractJobData).jobTargetId,
+                isFinalAttempt(job),
+              );
+            default:
+              throw new Error(`Unknown document job: ${job.name}`);
+          }
+        },
+        // Parsing untrusted files can be slow; a long lock stops a busy job being re-run as stalled.
+        { connection: opts.queueConnection, concurrency, lockDuration: 120_000 },
+      ),
+    );
+  }
+
+  if (opts.analysis) {
+    const { deps, concurrency } = opts.analysis;
+    workers.push(
+      new Worker(
+        QueueName.ANALYSIS,
+        async (job, token) => {
+          if (job.name !== AnalysisJob.INTERVIEW_ANALYZE) {
+            throw new Error(`Unknown analysis job: ${job.name}`);
+          }
+          const outcome = await processInterviewAnalyze(
+            deps,
+            (job.data as InterviewAnalyzeJobData).sessionId,
+            isFinalAttempt(job),
+          );
+          if (outcome.status === 'wait') {
+            // Inputs are still being extracted: check again shortly without using up an attempt.
+            await job.moveToDelayed(Date.now() + outcome.retryInMs, token);
+            throw new DelayedError();
+          }
+        },
+        { connection: opts.queueConnection, concurrency, lockDuration: 120_000 },
+      ),
+    );
+  }
+
+  for (const worker of workers) {
+    worker.on('failed', (job, err) =>
+      opts.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'job failed'),
+    );
+    worker.on('error', (err) => opts.logger.error({ err }, 'worker error'));
+  }
 
   return {
     queues: [systemQueue],
-    workers: [systemWorker],
+    workers,
     async close() {
       await systemQueue.removeJobScheduler(`${HEARTBEAT_JOB}:${opts.workerId}`).catch(() => false);
-      await Promise.all([systemWorker.close(), systemQueue.close()]);
+      await Promise.all([...workers.map((w) => w.close()), systemQueue.close()]);
     },
   };
 }

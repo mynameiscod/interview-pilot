@@ -1,6 +1,8 @@
 import { hostname } from 'node:os';
+import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
+import { createStorage } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { startWorkers } from './worker.js';
 
@@ -28,6 +30,10 @@ async function main(): Promise<void> {
     queueConnection.connect(),
   ]);
 
+  const ai = buildAiRuntime({ env, logger, redis });
+  const stopListening = await ai.listenForChanges();
+  const storage = createStorage(env);
+
   const runtime = await startWorkers({
     workerId,
     version: env.APP_VERSION,
@@ -36,6 +42,16 @@ async function main(): Promise<void> {
     queueConnection,
     redis,
     logger,
+    documents: {
+      concurrency: env.WORKER_DOCUMENT_CONCURRENCY,
+      deps: {
+        storage,
+        ai,
+        logger,
+        fetch: { timeoutMs: env.JD_FETCH_TIMEOUT_MS, maxBytes: env.JD_FETCH_MAX_BYTES },
+      },
+    },
+    analysis: { concurrency: env.WORKER_ANALYSIS_CONCURRENCY, deps: { ai, logger } },
   });
 
   const health = createHealthServer({
@@ -59,6 +75,7 @@ async function main(): Promise<void> {
     force.unref();
     try {
       await runtime.close();
+      await stopListening();
       await Promise.allSettled([disconnectMongo(), redis.quit(), queueConnection.quit()]);
       health.close();
       logger.info('shutdown complete');
