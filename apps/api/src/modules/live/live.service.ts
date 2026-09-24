@@ -39,9 +39,11 @@ import {
   type RtErrorCode,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
+import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
+import type { ClientContext } from '../../lib/request-context.js';
 
 /** Where realtime events go; attached once the Socket.IO server exists. */
 export interface RoomEmitter {
@@ -132,6 +134,7 @@ interface Deps {
   redis: Redis;
   logger: Logger;
   rooms: RoomEmitter;
+  audit: AuditService;
   now?: () => Date;
 }
 
@@ -142,6 +145,7 @@ export function createLiveInterviewService({
   redis,
   logger,
   rooms,
+  audit,
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -506,7 +510,7 @@ export function createLiveInterviewService({
     kick,
 
     /** READY or READY_TO_START → ACTIVE, reserving a credit (REST `POST /interviews/:id/start`). */
-    async start(userId: string, sessionId: string) {
+    async start(userId: string, sessionId: string, ctx?: ClientContext) {
       const s = await load(sessionId, userId);
       if (!s) throw AppError.notFound('Interview not found');
       if (s.state === 'ACTIVE' || s.state === 'ROUND_TRANSITION') return s; // double click
@@ -576,12 +580,23 @@ export function createLiveInterviewService({
         }
         throw err;
       }
+      await audit.record(
+        {
+          actorType: 'USER',
+          actorId: userId,
+          action: 'interview.started',
+          resourceType: 'interviewSession',
+          resourceId: sessionId,
+          details: { mode: started.mode, budgetMs: started.clock?.budgetMs ?? null },
+        },
+        ctx,
+      );
       kick(sessionId);
       return started;
     },
 
     /** The candidate ends the interview early (REST `POST /interviews/:id/end`). */
-    async end(userId: string, sessionId: string) {
+    async end(userId: string, sessionId: string, ctx?: ClientContext) {
       return locked(sessionId, async () => {
         const s = await load(sessionId, userId);
         if (!s) throw AppError.notFound('Interview not found');
@@ -589,6 +604,17 @@ export function createLiveInterviewService({
         const ended = await event(s, { type: 'END_REQUESTED' }, { reason: 'ended by candidate' });
         if (!ended.ok)
           throw new AppError(409, 'INVALID_STATE', 'This interview is not in progress.');
+        await audit.record(
+          {
+            actorType: 'USER',
+            actorId: userId,
+            action: 'interview.ended_early',
+            resourceType: 'interviewSession',
+            resourceId: sessionId,
+            details: { answered: ended.session.planner?.answeredCount ?? 0 },
+          },
+          ctx,
+        );
         return (await finish(ended.session)) ?? ended.session;
       });
     },

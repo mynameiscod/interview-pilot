@@ -152,7 +152,7 @@ export function buildContainer(opts: ContainerOptions) {
   const interviews = createInterviewService({ jobs, audit, logger });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
-  const live = createLiveInterviewService({ ai, redis, logger, rooms });
+  const live = createLiveInterviewService({ ai, redis, logger, rooms, audit });
   const cookies: CookieSettings = {
     secure: env.APP_ENV !== 'development' && env.APP_ENV !== 'test',
     domain: env.COOKIE_DOMAIN,
