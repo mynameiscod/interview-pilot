@@ -5,6 +5,7 @@
 import type { EmailMessage, EmailProvider } from './email/types.js';
 import { ProviderError } from './errors.js';
 import type { OtpSms, OtpSmsProvider } from './sms/types.js';
+import { assertStorageKey, StorageNotFoundError, type StorageProvider } from './storage/types.js';
 
 export function createRecordingEmailProvider() {
   const sent: EmailMessage[] = [];
@@ -33,4 +34,25 @@ export function createRecordingSmsProvider() {
     },
   };
   return { provider, sent };
+}
+
+/** In-memory object storage for tests. */
+export function createMemoryStorage() {
+  const objects = new Map<string, { body: Buffer; contentType: string }>();
+  const storage: StorageProvider = {
+    name: 'test-memory-storage',
+    async put(key, body, contentType) {
+      assertStorageKey(key);
+      objects.set(key, { body: Buffer.from(body), contentType });
+    },
+    async get(key) {
+      const hit = objects.get(key);
+      if (!hit) throw new StorageNotFoundError('test-memory-storage');
+      return Buffer.from(hit.body);
+    },
+    async delete(key) {
+      objects.delete(key);
+    },
+  };
+  return { storage, objects };
 }

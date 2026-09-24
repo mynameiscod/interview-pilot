@@ -9,3 +9,17 @@ export { createOpenAiLlmAdapter, type OpenAiAdapterOptions } from './llm/openai.
 export { createDevMailboxSmsProvider } from './sms/dev-mailbox.js';
 export { createMsg91OtpProvider, type Msg91Options } from './sms/msg91.js';
 export type { OtpSms, OtpSmsProvider } from './sms/types.js';
+export { createBunnyStorage, type BunnyStorageOptions } from './storage/bunny.js';
+export { createLocalStorage } from './storage/local.js';
+export { assertStorageKey, StorageNotFoundError, type StorageProvider } from './storage/types.js';
+export { extractReadableText, normalizeText } from './web/readable-text.js';
+export {
+  isPublicAddress,
+  safeFetchText,
+  SafeFetchError,
+  UrlBlockedError,
+  type BlockReason,
+  type FetchFailure,
+  type SafeFetchOptions,
+  type SafeFetchResult,
+} from './web/safe-fetch.js';
