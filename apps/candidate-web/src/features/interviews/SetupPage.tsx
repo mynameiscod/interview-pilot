@@ -53,7 +53,7 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
             <i className="bi bi-check-circle text-success me-2" aria-hidden="true" />
             {t('setup.ready.title')}
           </h2>
-          <p>{t('setup.ready.body')}</p>
+          <p>{mode === 'VOICE' ? t('setup.ready.voiceBody') : t('setup.ready.body')}</p>
         </div>
         <dl className="row mb-3">
           <dt className="col-sm-4">{t('setup.modeTitle')}</dt>
@@ -64,7 +64,14 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
           <dd className="col-sm-8">{formatMinutes(t, duration)}</dd>
         </dl>
         <div className="d-flex flex-wrap gap-2">
-          <Link to={`/app/interviews/${interview.id}/start`} className="btn btn-primary btn-lg">
+          <Link
+            to={
+              mode === 'VOICE' && interview.voice?.ready !== true
+                ? `/app/interviews/${interview.id}/device-check`
+                : `/app/interviews/${interview.id}/start`
+            }
+            className="btn btn-primary btn-lg"
+          >
             {t('setup.ready.continue')}
           </Link>
           <button
@@ -126,6 +133,17 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
               );
             })}
           </div>
+          {mode === 'VOICE' && (
+            <div className="mt-3 p-3 rounded-3 cb-surface-muted" aria-live="polite">
+              <p className="fw-semibold mb-2">{t('setup.voiceInfo.title')}</p>
+              <ul className="small mb-0">
+                <li>{t('setup.voiceInfo.speak')}</li>
+                <li>{t('setup.voiceInfo.readAloud')}</li>
+                <li>{t('setup.voiceInfo.switch')}</li>
+                <li>{t('setup.voiceInfo.check')}</li>
+              </ul>
+            </div>
+          )}
         </fieldset>
 
         <fieldset aria-describedby={`${id}-lang-hint`}>

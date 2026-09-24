@@ -1,0 +1,50 @@
+// Voice interview indicators. Motion is decorative: the same states are also
+// shown in words, and animations stop for people who prefer reduced motion.
+
+@keyframes cb-voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--bs-primary-rgb), 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 0.5rem rgba(var(--bs-primary-rgb), 0);
+  }
+}
+
+@keyframes cb-voice-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.cb-voice-speaking {
+  animation: cb-voice-pulse 1.4s ease-in-out infinite;
+}
+
+.cb-voice-recording-dot {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background-color: var(--bs-danger);
+  animation: cb-voice-blink 1.2s ease-in-out infinite;
+}
+
+.cb-voice-meter .progress-bar {
+  transition: width 0.15s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-voice-speaking,
+  .cb-voice-recording-dot {
+    animation: none;
+  }
+
+  .cb-voice-meter .progress-bar {
+    transition: none;
+  }
+}

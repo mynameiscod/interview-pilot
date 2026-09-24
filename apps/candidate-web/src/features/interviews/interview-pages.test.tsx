@@ -115,9 +115,10 @@ describe('interview setup page', () => {
     const user = userEvent.setup();
 
     expect(await screen.findByRole('radio', { name: 'Text' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: 'Voice' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Voice' })).toBeEnabled();
     expect(screen.getByRole('radio', { name: 'Video' })).toBeDisabled();
-    expect(screen.getAllByText('Coming soon')).toHaveLength(2);
+    expect(screen.getAllByText('Coming soon')).toHaveLength(1);
+    expect(screen.queryByText('How a voice interview works')).not.toBeInTheDocument();
     expect(screen.getByText('Uses 1 credit')).toBeInTheDocument();
     expect(screen.getByText('25 minutes')).toBeInTheDocument();
 

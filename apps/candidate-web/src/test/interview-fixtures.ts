@@ -100,6 +100,7 @@ export function makeInterview(overrides: Partial<InterviewSummary> = {}): Interv
     startedAt: null,
     endedAt: null,
     credit: 'NONE',
+    voice: null,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

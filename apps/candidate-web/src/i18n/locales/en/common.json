@@ -492,7 +492,8 @@
       "title": "Your interview is ready",
       "body": "Next, review the interview rules and start when you are ready.",
       "change": "Change settings",
-      "continue": "Continue"
+      "continue": "Continue",
+      "voiceBody": "Next, check your microphone and speaker, then review the interview rules and start when you are ready."
     },
     "cancel": {
       "title": "Cancel this interview",
@@ -500,6 +501,13 @@
       "action": "Cancel interview",
       "confirm": "Yes, cancel it",
       "keep": "Keep it"
+    },
+    "voiceInfo": {
+      "title": "How a voice interview works",
+      "speak": "You answer each question by speaking. You can check what we heard before you submit it.",
+      "readAloud": "Questions are read aloud and also shown on screen.",
+      "switch": "You can switch to typing at any time.",
+      "check": "Before you start, we check your microphone and speaker."
     }
   },
   "credits": {
@@ -520,7 +528,8 @@
       "duration": "It takes about {{duration}}.",
       "ownWords": "Answer in your own words, as you would in a real interview. The interviewer may ask follow-up questions.",
       "noScores": "You will not see scores during the interview. Your readiness report comes afterwards.",
-      "connection": "If you lose connection, your progress is saved and the clock stops. You have 10 minutes to reconnect; after that the interview is paused and you can resume it within 24 hours."
+      "connection": "If you lose connection, your progress is saved and the clock stops. You have 10 minutes to reconnect; after that the interview is paused and you can resume it within 24 hours.",
+      "voice": "This is a voice interview: each question is read aloud and you answer by speaking. You can switch to typing at any time."
     },
     "roundsTitle": "Rounds",
     "creditTitle": "Credits",
@@ -535,9 +544,17 @@
     "errors": {
       "noCredits": "You have no credits left, so this interview cannot start. Buy credits to continue.",
       "inProgress": "You already have an interview in progress. Finish or end it before starting a new one.",
-      "invalidState": "This interview cannot be started now. Check its status on your dashboard."
+      "invalidState": "This interview cannot be started now. Check its status on your dashboard.",
+      "voiceNotReady": "Check your microphone and speaker (and agree to the voice notice) before starting this voice interview."
     },
-    "buyCredits": "See plans and buy credits"
+    "buyCredits": "See plans and buy credits",
+    "voice": {
+      "title": "Microphone and speaker",
+      "ready": "Your microphone and speaker are checked and you have agreed to how your audio is used.",
+      "checkAgain": "Run the check again",
+      "needed": "Before you start, check your microphone and speaker and agree to how your audio is used.",
+      "check": "Check microphone and speaker"
+    }
   },
   "room": {
     "timeLeft": "Time left",
@@ -590,7 +607,8 @@
     "problems": {
       "stale": "The interview had already moved on, so that answer was not sent. Check the current question.",
       "sendFailed": "We could not send your answer. Please try again.",
-      "endFailed": "We could not end the interview. Please try again."
+      "endFailed": "We could not end the interview. Please try again.",
+      "modeFailed": "We could not switch how you answer. Please try again."
     },
     "dismiss": "Dismiss",
     "notFound": "This interview could not be found.",
@@ -938,6 +956,151 @@
       "FAILED": "Failed",
       "EXPIRED": "Expired",
       "REFUNDED": "Refunded"
+    }
+  },
+  "voice": {
+    "check": {
+      "title": "Check your microphone and speaker",
+      "intro": "A quick check makes sure the interviewer can hear you and you can hear the questions. It takes about a minute.",
+      "status": {
+        "PENDING": "Not checked yet",
+        "RUNNING": "Checking…",
+        "PASS": "Passed",
+        "WARN": "Needs attention",
+        "FAIL": "Failed"
+      },
+      "testAgain": "Test again",
+      "switchToText": "Switch to a text interview instead",
+      "save": "Save and continue",
+      "saving": "Saving…",
+      "finishChecks": "Finish the checks above to continue.",
+      "requiredFailed": "Your microphone or browser cannot record answers right now. Fix the problem above and test again, or switch to a text interview.",
+      "recorder": {
+        "title": "Browser",
+        "pass": "Your browser can record spoken answers.",
+        "noRecorder": "This browser cannot record audio. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview.",
+        "noFormat": "This browser cannot record audio in a format we support. Use the latest Chrome, Edge, Firefox or Safari, or switch to a text interview."
+      },
+      "mic": {
+        "title": "Microphone",
+        "intro": "Press Test microphone, allow access when your browser asks, then say a few words.",
+        "test": "Test microphone",
+        "listening": "Listening… say a few words, for example your name.",
+        "level": "Microphone input level",
+        "pass": "We can hear you clearly.",
+        "denied": "Microphone access is blocked. Click the lock or microphone icon in your browser's address bar, allow the microphone for this site, then press Test again.",
+        "noDevice": "We could not find a microphone. Connect a microphone or headset, then press Test again.",
+        "inUse": "Your microphone is being used by another app. Close other apps that use it (calls, recorders), then press Test again.",
+        "unsupported": "This browser cannot use a microphone here. Use the latest Chrome, Edge, Firefox or Safari.",
+        "other": "We could not open your microphone. Check that it is connected and allowed, then press Test again.",
+        "quiet": "Your voice sounds very quiet. Move closer to the microphone or raise its volume in your system settings, then test again. You can also continue.",
+        "silent": "We did not hear anything. Check that the right microphone is selected and not muted, then test again. You can also continue.",
+        "noMeter": "Your microphone works, but we could not measure its level in this browser. You can continue."
+      },
+      "speaker": {
+        "title": "Speaker or headphones",
+        "intro": "Press Play test sound and listen.",
+        "play": "Play test sound",
+        "playAgain": "Play again",
+        "question": "Did you hear it?",
+        "yes": "Yes, I heard it",
+        "no": "No",
+        "pass": "Your speaker works.",
+        "noAnswer": "Turn up the volume, check that your speaker or headphones are connected and selected, then play the sound again. You can also continue: questions are always shown on screen too.",
+        "noAudio": "This browser cannot play the test sound. Questions are always shown on screen too."
+      },
+      "network": {
+        "title": "Connection",
+        "pass": "Your connection is good ({{ms}} ms).",
+        "slow": "Your connection is a little slow ({{ms}} ms). Answers may take longer to process.",
+        "verySlow": "Your connection is slow ({{ms}} ms). Move closer to your Wi-Fi router or close other downloads.",
+        "failed": "We could not measure your connection. Check that you are online."
+      },
+      "speech": {
+        "title": "Speech service",
+        "pass": "The speech service is working.",
+        "stt": "Turning speech into text is not available right now. You may need to type your answers.",
+        "tts": "Questions cannot be read aloud right now. You can read them on screen.",
+        "both": "The speech service is not available right now. Try again later, or switch to a text interview.",
+        "failed": "We could not check the speech service. You can continue and switch to typing if needed."
+      },
+      "done": {
+        "title": "You are ready",
+        "body": "Your microphone and speaker are checked. Next, review the rules and start your interview.",
+        "continue": "Continue"
+      },
+      "failed": {
+        "title": "Voice answers will not work on this device yet",
+        "body": "We could not use your microphone to record answers. Fix the problem and try again, or switch to a text interview.",
+        "retry": "Try the checks again"
+      }
+    },
+    "consent": {
+      "title": "How we use your voice",
+      "providers": "Your recorded answers are sent to our speech providers to turn them into text, and each question is sent to be read aloud.",
+      "notStored": "Your audio is not stored.",
+      "transcript": "The text of your answers is used for your interview report.",
+      "switch": "You can switch to typing at any time during the interview.",
+      "agree": "I agree",
+      "saving": "Saving…"
+    },
+    "room": {
+      "speaking": "Speaking…",
+      "spokenAnswer": "spoken answer",
+      "answerTitle": "Your spoken answer",
+      "hint": "When you are ready, press Start answering and speak. Press Done when you finish (up to {{max}}).",
+      "start": "Start answering",
+      "starting": "Opening the microphone…",
+      "recording": "Recording",
+      "elapsed": "Recording time",
+      "done": "Done",
+      "transcribing": "Turning your answer into text…",
+      "heardTitle": "Here's what we heard",
+      "heardNothing": "We did not catch any words.",
+      "unclear": "We may not have heard you clearly. Check the text, and record again if it is wrong.",
+      "submit": "Submit answer",
+      "recordAgain": "Record again",
+      "typeInstead": "Type instead",
+      "answerByVoice": "Answer by voice",
+      "switchToTyping": "Switch to typing",
+      "audioLoading": "Getting the question audio ready…",
+      "stopAudio": "Stop reading",
+      "repeat": "Repeat question",
+      "autoplayBlocked": "Your browser did not let the question play by itself.",
+      "playQuestion": "Play question",
+      "audioUnavailable": "Audio is not available for this question. Read it on screen.",
+      "announce": {
+        "recording": "Recording started. Press Done when you finish.",
+        "transcribing": "Recording stopped. Turning your answer into text.",
+        "review": "Your answer is ready to review."
+      },
+      "modeNow": {
+        "TEXT": "You are now answering by typing.",
+        "VOICE": "You are now answering by voice."
+      },
+      "sttDown": {
+        "title": "We cannot turn speech into text right now",
+        "body": "Try again in a moment, or switch to typing your answers.",
+        "retry": "Try again"
+      },
+      "ttsDown": {
+        "title": "Questions can't be read aloud right now — read them on screen",
+        "body": "You can still answer by speaking.",
+        "continue": "Continue"
+      },
+      "problems": {
+        "denied": "Microphone access is blocked. Allow the microphone for this site in your browser's address bar, then try again, or type your answer instead.",
+        "noDevice": "We could not find a microphone. Connect one and try again, or type your answer instead.",
+        "inUse": "Your microphone is being used by another app. Close it and try again, or type your answer instead.",
+        "unsupported": "This browser cannot use a microphone here. Type your answer instead.",
+        "other": "We could not start recording. Please try again.",
+        "noFormat": "This browser cannot record audio in a format we support. Type your answer instead.",
+        "tooShort": "That recording was too short. Press Start answering and try again.",
+        "tooLarge": "That recording was too long. Please give a shorter answer.",
+        "format": "We could not read that recording. Try again, or type your answer instead.",
+        "stale": "The interview had already moved on, so that recording was not used.",
+        "failed": "We could not process your recording. Please try again."
+      }
     }
   }
 }

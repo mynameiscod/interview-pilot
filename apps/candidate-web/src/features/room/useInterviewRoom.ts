@@ -1,12 +1,16 @@
 import {
   ANSWER_LIMITS,
   RtEvent,
+  type DegradedEvent,
+  type InterviewMode,
   type InterviewSnapshot,
   type InterviewState,
   type InterviewSummary,
   type LiveQuestion,
   type LiveRound,
   type LiveTurn,
+  type ModeChangedEvent,
+  type ModeSwitchReason,
   type RoundTransitionEvent,
   type RtAck,
 } from '@cbi/shared-types';
@@ -14,6 +18,7 @@ import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
 import { useInterviewsApi } from '../interviews/interviews-api';
+import { useVoiceApi } from '../voice/voice-api';
 import { useSocketFactory, type RoomSocket } from './realtime';
 
 /** How long to wait for the server to acknowledge an event. */
@@ -41,7 +46,13 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'of
 export type SendResult = 'sent' | 'stale' | 'rejected';
 
 export type RoomProblem =
-  'notFound' | 'notStarted' | 'signedOut' | 'stale' | 'sendFailed' | 'endFailed';
+  'notFound' | 'notStarted' | 'signedOut' | 'stale' | 'sendFailed' | 'endFailed' | 'modeFailed';
+
+/** Answering mode in the room (video is not offered). */
+export type AnswerMode = Extract<InterviewMode, 'TEXT' | 'VOICE'>;
+
+/** Speech features currently failing (speech-to-text, text-to-speech). */
+export type SpeechKind = DegradedEvent['kind'];
 
 export interface RoomState {
   status: 'connecting' | 'connected' | 'reconnecting';
@@ -49,6 +60,13 @@ export interface RoomState {
   joined: boolean;
   title: string;
   state: InterviewState | null;
+  /** How the candidate answers right now. */
+  mode: AnswerMode;
+  /** Set up for voice: the candidate can switch between voice and text. */
+  voiceEnabled: boolean;
+  /** Speech features the server reported as unavailable (cleared on dismiss or mode change). */
+  degraded: Record<SpeechKind, boolean>;
+  switchingMode: boolean;
   rounds: LiveRound[];
   roundIdx: number;
   budgetMs: number;
@@ -74,7 +92,10 @@ type Action =
   | { type: 'thinking' }
   | { type: 'question'; question: LiveQuestion }
   | { type: 'transition'; event: RoundTransitionEvent }
-  | { type: 'answered'; questionId: string; text: string }
+  | { type: 'answered'; questionId: string; text: string; source: 'TEXT' | 'VOICE' }
+  | { type: 'mode'; mode: InterviewMode }
+  | { type: 'switchingMode'; switching: boolean }
+  | { type: 'degraded'; kind: SpeechKind; on: boolean }
   | { type: 'sending'; sending: boolean }
   | { type: 'ending'; ending: boolean }
   | { type: 'problem'; problem: RoomProblem | null }
@@ -86,6 +107,10 @@ export const initialRoomState: RoomState = {
   joined: false,
   title: '',
   state: null,
+  mode: 'TEXT',
+  voiceEnabled: false,
+  degraded: { STT: false, TTS: false },
+  switchingMode: false,
   rounds: [],
   roundIdx: 0,
   budgetMs: 0,
@@ -116,6 +141,7 @@ function questionTurn(q: LiveQuestion): LiveTurn {
     roundIdx: q.roundIdx,
     question: q.text,
     answer: null,
+    answerSource: null,
   };
 }
 
@@ -156,6 +182,8 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         joined: true,
         title: s.title,
         state: s.state,
+        mode: s.mode === 'VOICE' ? 'VOICE' : 'TEXT',
+        voiceEnabled: s.voiceEnabled,
         rounds: s.rounds,
         roundIdx: Math.max(s.roundIdx, question?.roundIdx ?? -1),
         budgetMs: s.budgetMs,
@@ -194,7 +222,9 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
     }
     case 'answered': {
       const turn = state.turns.find((t) => t.questionId === action.questionId);
-      const turns = turn ? withTurn(state.turns, { ...turn, answer: action.text }) : state.turns;
+      const turns = turn
+        ? withTurn(state.turns, { ...turn, answer: action.text, answerSource: action.source })
+        : state.turns;
       const wasCurrent = state.question?.questionId === action.questionId;
       return {
         ...state,
@@ -205,6 +235,15 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
     }
     case 'sending':
       return { ...state, sending: action.sending };
+    case 'mode': {
+      const mode: AnswerMode = action.mode === 'VOICE' ? 'VOICE' : 'TEXT';
+      if (mode === state.mode) return state;
+      return { ...state, mode, degraded: { STT: false, TTS: false } };
+    }
+    case 'switchingMode':
+      return { ...state, switchingMode: action.switching };
+    case 'degraded':
+      return { ...state, degraded: { ...state.degraded, [action.kind]: action.on } };
     case 'ending':
       return { ...state, ending: action.ending };
     case 'problem':
@@ -219,6 +258,8 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
 interface PendingAnswer {
   questionId: string;
   text: string;
+  /** A spoken answer: the server uses its stored transcript. */
+  voiceTranscriptId?: string;
   /** Idempotency key: kept until the server acknowledges, so resends are harmless. */
   clientMsgId: string;
   resolve: (result: SendResult) => void;
@@ -257,6 +298,7 @@ export function useInterviewRoom(sessionId: string) {
   const factory = useSocketFactory();
   const { manager } = useCandidateAuth();
   const api = useInterviewsApi();
+  const voice = useVoiceApi();
   const [state, dispatch] = useReducer(roomReducer, initialRoomState);
   const online = useSyncExternalStore(subscribeOnline, isOnline, alwaysOnline);
 
@@ -393,6 +435,7 @@ export function useInterviewRoom(sessionId: string) {
           questionId: pending.questionId,
           text: pending.text,
           clientMsgId: pending.clientMsgId,
+          ...(pending.voiceTranscriptId ? { voiceTranscriptId: pending.voiceTranscriptId } : {}),
         });
       } catch {
         // Timed out: keep the answer (same id) and resend while connected or after reconnecting.
@@ -404,7 +447,12 @@ export function useInterviewRoom(sessionId: string) {
       if (disposed || pendingRef.current !== pending) return;
       if (ack.ok) {
         settle(pending, 'sent');
-        dispatch({ type: 'answered', questionId: pending.questionId, text: pending.text });
+        dispatch({
+          type: 'answered',
+          questionId: pending.questionId,
+          text: pending.text,
+          source: pending.voiceTranscriptId ? 'VOICE' : 'TEXT',
+        });
         return;
       }
       if (attempt !== pending.attempt) return; // A newer resend is on its way.
@@ -495,6 +543,9 @@ export function useInterviewRoom(sessionId: string) {
       else finish('PROCESSING');
     };
     const onDraining = () => dispatch({ type: 'status', status: 'reconnecting', at: Date.now() });
+    const onModeChanged = (event: ModeChangedEvent) => dispatch({ type: 'mode', mode: event.mode });
+    const onDegraded = (event: DegradedEvent) =>
+      dispatch({ type: 'degraded', kind: event.kind, on: true });
 
     const listeners: [string, (...args: never[]) => void][] = [
       ['connect', onConnect],
@@ -505,6 +556,8 @@ export function useInterviewRoom(sessionId: string) {
       [RtEvent.ROUND_TRANSITION, onTransition],
       [RtEvent.COMPLETED, onCompleted],
       [RtEvent.DRAINING, onDraining],
+      [RtEvent.MODE_CHANGED, onModeChanged],
+      [RtEvent.DEGRADED, onDegraded],
     ];
     // Registered once, before the first connect: Socket.IO keeps them across
     // reconnects, so every join already has its listeners in place (the server
@@ -534,26 +587,67 @@ export function useInterviewRoom(sessionId: string) {
     wasOnline.current = online;
   }, [online]);
 
-  const sendAnswer = useCallback((questionId: string, text: string): Promise<SendResult> => {
-    const trimmed = text.trim();
-    if (pendingRef.current || !trimmed || trimmed.length > ANSWER_LIMITS.maxChars) {
-      return Promise.resolve('rejected');
-    }
-    return new Promise<SendResult>((resolve) => {
-      pendingRef.current = {
-        questionId,
-        text: trimmed,
-        clientMsgId: newClientMsgId(),
-        resolve,
-        attempt: 0,
-        inFlight: false,
-        busyRetries: 0,
-      };
+  /**
+   * Sends an answer. A spoken answer passes its transcript id; the text is
+   * what the candidate reviewed (the server uses its stored copy).
+   */
+  const sendAnswer = useCallback(
+    (
+      questionId: string,
+      text: string,
+      opts: { voiceTranscriptId?: string } = {},
+    ): Promise<SendResult> => {
+      const spoken = Boolean(opts.voiceTranscriptId);
+      const trimmed = spoken ? text.trim().slice(0, ANSWER_LIMITS.maxChars) : text.trim();
+      if (pendingRef.current || (!trimmed && !spoken) || trimmed.length > ANSWER_LIMITS.maxChars) {
+        return Promise.resolve('rejected');
+      }
+      return new Promise<SendResult>((resolve) => {
+        pendingRef.current = {
+          questionId,
+          text: trimmed,
+          voiceTranscriptId: opts.voiceTranscriptId,
+          clientMsgId: newClientMsgId(),
+          resolve,
+          attempt: 0,
+          inFlight: false,
+          busyRetries: 0,
+        };
+        dispatch({ type: 'problem', problem: null });
+        dispatch({ type: 'sending', sending: true });
+        flushRef.current();
+      });
+    },
+    [],
+  );
+
+  /** Switches between voice and text answers; the server also tells every open tab. */
+  const switchMode = useCallback(
+    async (mode: AnswerMode, reason: ModeSwitchReason): Promise<boolean> => {
       dispatch({ type: 'problem', problem: null });
-      dispatch({ type: 'sending', sending: true });
-      flushRef.current();
-    });
-  }, []);
+      dispatch({ type: 'switchingMode', switching: true });
+      try {
+        const result = await voice.switchMode(sessionId, mode, reason);
+        dispatch({ type: 'mode', mode: result.mode });
+        return true;
+      } catch {
+        dispatch({ type: 'problem', problem: 'modeFailed' });
+        return false;
+      } finally {
+        dispatch({ type: 'switchingMode', switching: false });
+      }
+    },
+    [voice, sessionId],
+  );
+
+  const reportDegraded = useCallback(
+    (kind: SpeechKind) => dispatch({ type: 'degraded', kind, on: true }),
+    [],
+  );
+  const dismissDegraded = useCallback(
+    (kind: SpeechKind) => dispatch({ type: 'degraded', kind, on: false }),
+    [],
+  );
 
   const end = useCallback(async (): Promise<InterviewSummary | null> => {
     dispatch({ type: 'problem', problem: null });
@@ -576,7 +670,17 @@ export function useInterviewRoom(sessionId: string) {
   const connection: ConnectionStatus =
     state.status !== 'connected' && !online ? 'offline' : state.status;
 
-  return { ...state, connection, sendAnswer, end, retryNow, dismissProblem };
+  return {
+    ...state,
+    connection,
+    sendAnswer,
+    end,
+    retryNow,
+    dismissProblem,
+    switchMode,
+    reportDegraded,
+    dismissDegraded,
+  };
 }
 
 export type InterviewRoom = ReturnType<typeof useInterviewRoom>;

@@ -63,7 +63,10 @@ function interviewsApi(api: ApiClient) {
       api.patch<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/setup`, body),
     cancel: (id: string) =>
       api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/cancel`),
-    /** Starts a text interview (READY or READY_TO_START → ACTIVE), reserving a credit. */
+    /**
+     * Starts the interview (READY or READY_TO_START → ACTIVE), reserving a credit. A voice
+     * interview needs a recent passing device check and consent first (409 otherwise).
+     */
     start: (id: string) =>
       api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/start`),
     /** Ends an interview in progress early (→ PROCESSING). */

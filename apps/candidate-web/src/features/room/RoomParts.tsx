@@ -1,5 +1,5 @@
 import type { LiveQuestion, LiveRound, LiveTurn } from '@cbi/shared-types';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ConnectionStatus } from './useInterviewRoom';
 
@@ -120,15 +120,23 @@ export function RoundStepper({ rounds, current }: { rounds: LiveRound[]; current
   );
 }
 
-/** Neutral interviewer panel: branded placeholder, thinking indicator, the current question. */
+/**
+ * Neutral interviewer panel: branded placeholder, thinking indicator, the
+ * current question. In a voice interview it shows when the question is being
+ * read aloud (the text stays as captions) and holds the playback controls.
+ */
 export function InterviewerPanel({
   question,
   thinking,
   questionTextId,
+  speaking = false,
+  controls,
 }: {
   question: LiveQuestion | null;
   thinking: boolean;
   questionTextId: string;
+  speaking?: boolean;
+  controls?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -138,11 +146,13 @@ export function InterviewerPanel({
     >
       <div className="d-flex align-items-center gap-3 mb-3">
         <div
-          className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center flex-shrink-0"
+          className={`rounded-circle bg-primary text-white d-flex align-items-center justify-content-center flex-shrink-0 ${
+            speaking ? 'cb-voice-speaking' : ''
+          }`}
           style={{ width: '3rem', height: '3rem' }}
           aria-hidden="true"
         >
-          <i className="bi bi-chat-square-text fs-4" />
+          <i className={`bi ${speaking ? 'bi-volume-up' : 'bi-chat-square-text'} fs-4`} />
         </div>
         <div>
           <h2 id="interviewer-title" className="h6 mb-0">
@@ -154,6 +164,12 @@ export function InterviewerPanel({
             </p>
           )}
         </div>
+        {speaking && (
+          <span className="ms-auto small text-primary d-inline-flex align-items-center gap-1">
+            <i className="bi bi-soundwave" aria-hidden="true" />
+            {t('voice.room.speaking')}
+          </span>
+        )}
       </div>
       <div aria-live="polite" aria-atomic="true">
         {question ? (
@@ -174,6 +190,7 @@ export function InterviewerPanel({
           </p>
         )}
       </div>
+      {question && controls && <div className="mt-3">{controls}</div>}
     </section>
   );
 }
@@ -205,7 +222,15 @@ export function Transcript({ turns }: { turns: LiveTurn[] }) {
             <p className="mb-2" style={{ whiteSpace: 'pre-wrap' }}>
               {turn.question}
             </p>
-            <p className="small fw-semibold mb-1">{t('room.you')}</p>
+            <p className="small fw-semibold mb-1">
+              {t('room.you')}
+              {turn.answerSource === 'VOICE' && (
+                <>
+                  <i className="bi bi-mic ms-2 cb-text-secondary" aria-hidden="true" />
+                  <span className="visually-hidden"> ({t('voice.room.spokenAnswer')})</span>
+                </>
+              )}
+            </p>
             {turn.answer ? (
               <p className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
                 {turn.answer}

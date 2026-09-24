@@ -150,6 +150,7 @@ export function makeSnapshot(overrides: Partial<InterviewSnapshot> = {}): Interv
     sessionId: 'int1',
     state: 'ACTIVE',
     mode: 'TEXT',
+    voiceEnabled: false,
     language: 'auto',
     title: 'Backend Developer',
     rounds: [
@@ -171,6 +172,7 @@ export function makeSnapshot(overrides: Partial<InterviewSnapshot> = {}): Interv
             roundIdx: currentQuestion.roundIdx,
             question: currentQuestion.text,
             answer: null,
+            answerSource: null,
           },
         ]
       : [],

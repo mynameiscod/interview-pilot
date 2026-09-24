@@ -43,6 +43,39 @@ function CreditSummary({ interview }: { interview: InterviewSummary }) {
   );
 }
 
+/** Voice interviews: the device check and consent must be done before starting. */
+function VoiceReadinessCard({ interview }: { interview: InterviewSummary }) {
+  const { t } = useTranslation();
+  const ready = interview.voice?.ready === true;
+  const checkPath = `/app/interviews/${interview.id}/device-check`;
+  return (
+    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="start-voice">
+      <h2 id="start-voice" className="h5">
+        <i className="bi bi-mic me-2 text-secondary" aria-hidden="true" />
+        {t('start.voice.title')}
+      </h2>
+      {ready ? (
+        <>
+          <p className="mb-2">
+            <i className="bi bi-check-circle-fill text-success me-2" aria-hidden="true" />
+            {t('start.voice.ready')}
+          </p>
+          <Link to={checkPath} className="small">
+            {t('start.voice.checkAgain')}
+          </Link>
+        </>
+      ) : (
+        <>
+          <p className="mb-3">{t('start.voice.needed')}</p>
+          <Link to={checkPath} className="btn btn-primary">
+            {t('start.voice.check')}
+          </Link>
+        </>
+      )}
+    </section>
+  );
+}
+
 function StartScreen({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
   const api = useInterviewsApi();
@@ -53,8 +86,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
     message: string;
     inProgress: boolean;
     noCredits: boolean;
+    voiceNotReady: boolean;
   } | null>(null);
   const rounds = interview.analysis?.plannedRounds ?? [];
+  const isVoice = interview.mode === 'VOICE';
+  const voiceBlocked = isVoice && interview.voice?.ready !== true;
 
   async function start() {
     setStarting(true);
@@ -66,11 +102,18 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.credits });
       await navigate(`/app/interviews/${interview.id}/room`);
     } catch (err) {
+      // A voice interview without a recent device check or consent is refused.
+      const voiceNotReady =
+        isVoice && err instanceof ApiClientError && err.code === 'INVALID_STATE';
       setError({
-        message: startErrorMessage(t, err),
+        message: voiceNotReady ? t('start.errors.voiceNotReady') : startErrorMessage(t, err),
         inProgress: err instanceof ApiClientError && err.code === 'CONFLICT',
         noCredits: err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS',
+        voiceNotReady,
       });
+      if (voiceNotReady) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.interview(interview.id) });
+      }
       void queryClient.invalidateQueries({ queryKey: queryKeys.credits });
       setStarting(false);
     }
@@ -84,7 +127,7 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
           {t('start.rulesTitle')}
         </h2>
         <ul className="mb-3">
-          <li>{t('start.rules.text')}</li>
+          <li>{isVoice ? t('start.rules.voice') : t('start.rules.text')}</li>
           <li>
             {t('start.rules.duration', {
               duration: formatMinutes(t, interview.template.totalDurationSec),
@@ -112,6 +155,8 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
         )}
       </section>
 
+      {isVoice && <VoiceReadinessCard interview={interview} />}
+
       <CreditSummary interview={interview} />
 
       {error && (
@@ -127,6 +172,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
               {t('start.buyCredits')}
             </Link>
           )}
+          {error.voiceNotReady && (
+            <Link to={`/app/interviews/${interview.id}/device-check`} className="alert-link">
+              {t('start.voice.check')}
+            </Link>
+          )}
         </div>
       )}
 
@@ -134,7 +184,8 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
         <button
           type="button"
           className="btn btn-primary btn-lg"
-          disabled={starting}
+          disabled={starting || voiceBlocked}
+          aria-describedby={voiceBlocked ? 'start-voice' : undefined}
           onClick={() => void start()}
         >
           <i className="bi bi-play-fill me-1" aria-hidden="true" />

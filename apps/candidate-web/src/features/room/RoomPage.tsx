@@ -1,6 +1,14 @@
 import { ANSWER_LIMITS } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
@@ -8,6 +16,117 @@ import { queryKeys } from '../interviews/interviews-api';
 import { clearDraft, loadDraft, saveDraft } from './drafts';
 import { ConnectionPill, InterviewerPanel, RoundStepper, RoomTimer, Transcript } from './RoomParts';
 import { useInterviewRoom, type InterviewRoom } from './useInterviewRoom';
+import { VoiceAnswer } from './VoiceAnswer';
+import { useQuestionAudio } from './voice-hooks';
+import '../voice/voice.scss';
+
+type QuestionAudio = ReturnType<typeof useQuestionAudio>;
+
+/** Playback controls under the question in a voice interview. */
+function QuestionAudioControls({ audio, recording }: { audio: QuestionAudio; recording: boolean }) {
+  const { t } = useTranslation();
+  switch (audio.status) {
+    case 'loading':
+      return (
+        <p className="small cb-text-secondary mb-0 d-flex align-items-center gap-2">
+          <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+          {t('voice.room.audioLoading')}
+        </p>
+      );
+    case 'playing':
+      return (
+        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={audio.stop}>
+          <i className="bi bi-stop-fill me-1" aria-hidden="true" />
+          {t('voice.room.stopAudio')}
+        </button>
+      );
+    case 'ready':
+      return (
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          disabled={recording}
+          onClick={audio.replay}
+        >
+          <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
+          {t('voice.room.repeat')}
+        </button>
+      );
+    case 'blocked':
+      return (
+        <div>
+          <p className="small cb-text-secondary mb-2">{t('voice.room.autoplayBlocked')}</p>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            disabled={recording}
+            onClick={audio.replay}
+          >
+            <i className="bi bi-play-fill me-1" aria-hidden="true" />
+            {t('voice.room.playQuestion')}
+          </button>
+        </div>
+      );
+    case 'unavailable':
+      return (
+        <p className="small cb-text-secondary mb-0">
+          <i className="bi bi-volume-mute me-1" aria-hidden="true" />
+          {t('voice.room.audioUnavailable')}
+        </p>
+      );
+    default:
+      return null;
+  }
+}
+
+/** "Type instead" in a voice interview; "Answer by voice" to go back when it was set up for voice. */
+function ModeSwitch({ room }: { room: InterviewRoom }) {
+  const { t } = useTranslation();
+  const voice = room.mode === 'VOICE';
+  if (!voice && !room.voiceEnabled) return null;
+  return (
+    <div className="d-flex justify-content-end">
+      <button
+        type="button"
+        className="btn btn-link btn-sm p-0"
+        disabled={room.switchingMode}
+        onClick={() => void room.switchMode(voice ? 'TEXT' : 'VOICE', 'CANDIDATE_CHOICE')}
+      >
+        <i className={`bi ${voice ? 'bi-keyboard' : 'bi-mic'} me-1`} aria-hidden="true" />
+        {voice ? t('voice.room.typeInstead') : t('voice.room.answerByVoice')}
+      </button>
+    </div>
+  );
+}
+
+/** Questions cannot be read aloud: carry on reading them, or switch to typing. */
+function TtsDownBanner({ room }: { room: InterviewRoom }) {
+  const { t } = useTranslation();
+  return (
+    <div className="alert alert-warning" role="alert">
+      <p className="fw-semibold mb-1">{t('voice.room.ttsDown.title')}</p>
+      <p className="small mb-2">{t('voice.room.ttsDown.body')}</p>
+      <div className="d-flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          onClick={() => room.dismissDegraded('TTS')}
+        >
+          {t('voice.room.ttsDown.continue')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={room.switchingMode}
+          onClick={() => void room.switchMode('TEXT', 'TTS_UNAVAILABLE')}
+        >
+          <i className="bi bi-keyboard me-1" aria-hidden="true" />
+          {t('voice.room.switchToTyping')}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** Answer box: keeps an unsent draft per question and clears it only once the server has it. */
 function AnswerForm({ room, sessionId }: { room: InterviewRoom; sessionId: string }) {
@@ -193,6 +312,7 @@ const PROBLEM_KEYS = {
   stale: 'room.problems.stale',
   sendFailed: 'room.problems.sendFailed',
   endFailed: 'room.problems.endFailed',
+  modeFailed: 'room.problems.modeFailed',
 } as const;
 
 export function RoomPage() {
@@ -205,6 +325,17 @@ export function RoomPage() {
 
   const completePath = `/app/interviews/${id}/complete`;
   const finished = room.finished;
+
+  // Voice: the current question is read aloud (stopped and released in text mode).
+  const voiceMode = room.joined && room.mode === 'VOICE' && !finished;
+  const { reportDegraded } = room;
+  const onTtsDown = useCallback(() => reportDegraded('TTS'), [reportDegraded]);
+  const audio = useQuestionAudio(
+    id,
+    voiceMode ? (room.question?.questionId ?? null) : null,
+    onTtsDown,
+  );
+  const [recording, setRecording] = useState(false);
 
   useEffect(() => {
     if (!finished) return;
@@ -286,10 +417,15 @@ export function RoomPage() {
 
       <div className="row g-4">
         <div className="col-lg-5 d-flex flex-column gap-4">
+          {voiceMode && room.degraded.TTS && <TtsDownBanner room={room} />}
           <InterviewerPanel
             question={room.question}
             thinking={room.thinking}
             questionTextId="room-question-text"
+            speaking={voiceMode && audio.status === 'playing'}
+            controls={
+              voiceMode ? <QuestionAudioControls audio={audio} recording={recording} /> : undefined
+            }
           />
           <p className="small cb-text-secondary mb-0">
             <i className="bi bi-shield-check me-1" aria-hidden="true" />
@@ -297,7 +433,24 @@ export function RoomPage() {
           </p>
         </div>
         <div className="col-lg-7 d-flex flex-column gap-4">
-          <AnswerForm room={room} sessionId={id} />
+          <ModeSwitch room={room} />
+          {(room.voiceEnabled || room.mode === 'VOICE') && (
+            <p className="visually-hidden" aria-live="polite">
+              {t(`voice.room.modeNow.${room.mode}`)}
+            </p>
+          )}
+          {voiceMode ? (
+            <VoiceAnswer
+              key={room.question?.questionId ?? 'waiting'}
+              room={room}
+              sessionId={id}
+              question={room.question}
+              onBeforeRecord={audio.stop}
+              onRecordingChange={setRecording}
+            />
+          ) : (
+            <AnswerForm room={room} sessionId={id} />
+          )}
           <Transcript turns={earlier} />
         </div>
       </div>

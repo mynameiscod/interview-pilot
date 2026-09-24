@@ -104,6 +104,13 @@ export const routes: RouteObject[] = [
                 }),
               },
               {
+                // Voice interviews: microphone, speaker and connection checks, then consent.
+                path: 'interviews/:id/device-check',
+                lazy: async () => ({
+                  Component: (await import('../features/voice/DeviceCheckPage')).DeviceCheckPage,
+                }),
+              },
+              {
                 path: 'interviews/:id/start',
                 lazy: async () => ({
                   Component: (await import('../features/interviews/StartPage')).StartPage,
