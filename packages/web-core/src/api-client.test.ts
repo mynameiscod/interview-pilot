@@ -50,6 +50,17 @@ describe('createApiClient', () => {
     expect(init.body).toBe('{"rating":5}');
     expect(init.headers['Content-Type']).toBe('application/json');
   });
+
+  it('sends FormData as-is so the browser sets the multipart boundary', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(json(201, { data: { id: 'r1' } }));
+    const client = createApiClient({ baseUrl: '', fetchImpl });
+    const form = new FormData();
+    form.append('file', new Blob(['hello']), 'cv.txt');
+    await client.post('/resumes', form);
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init.body).toBe(form);
+    expect(init.headers['Content-Type']).toBeUndefined();
+  });
 });
 
 describe('session refresh', () => {

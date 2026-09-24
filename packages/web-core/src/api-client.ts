@@ -48,6 +48,9 @@ export function createApiClient(opts: ApiClientOptions) {
 
   async function send<T>(path: string, options: RequestOptions, token: string | null): Promise<T> {
     let response: Response;
+    // FormData (file uploads) sets its own multipart Content-Type with the boundary.
+    const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    const json = options.body !== undefined && !isForm;
     try {
       response = await fetchImpl(`${opts.baseUrl}${API_V1_PREFIX}${path}`, {
         method: options.method ?? 'GET',
@@ -55,11 +58,11 @@ export function createApiClient(opts: ApiClientOptions) {
         signal: options.signal,
         headers: {
           Accept: 'application/json',
-          ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...(json ? { 'Content-Type': 'application/json' } : {}),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(options.csrf ? { [CSRF_HEADER]: '1' } : {}),
         },
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body: isForm ? (options.body as FormData) : json ? JSON.stringify(options.body) : undefined,
       });
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') throw err;
