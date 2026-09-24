@@ -25,12 +25,15 @@
     "@cbi/documents": "workspace:*",
     "@cbi/interview-engine": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
+    "@cbi/scoring-core": "workspace:*",
     "@cbi/shared-types": "workspace:*",
     "bullmq": "6.3.8",
+    "pdfkit": "0.20.2",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.13.6",
+    "@types/pdfkit": "0.17.6",
     "tsx": "4.23.15",
     "vitest": "5.0.1"
   }

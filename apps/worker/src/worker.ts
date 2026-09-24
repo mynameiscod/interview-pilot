@@ -3,12 +3,17 @@ import type { Redis } from '@cbi/db';
 import {
   AnalysisJob,
   DocumentJob,
+  EvaluationJob,
   QueueName,
+  type EvaluationStageJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
   type ResumeExtractJobData,
 } from '@cbi/shared-types';
 import { DelayedError, Queue, Worker, type Job } from 'bullmq';
+import { runEvaluationStage, type EvaluationDeps } from './evaluation/pipeline.js';
+import { createEvaluationQueue, ensureStageJob } from './evaluation/queue.js';
+import { sweepEvaluations } from './evaluation/sweep.js';
 import { writeHeartbeat } from './processors/heartbeat.js';
 import { processInterviewAnalyze, type AnalysisProcessorDeps } from './processors/analysis.js';
 import {
@@ -40,6 +45,8 @@ export interface WorkerRuntimeOptions {
   documents?: { deps: DocumentProcessorDeps; concurrency: number };
   /** Role analysis and blueprint selection; omit to leave the queue unconsumed. */
   analysis?: { deps: AnalysisProcessorDeps; concurrency: number };
+  /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
+  evaluation?: { deps: EvaluationDeps; concurrency: number };
 }
 
 export interface WorkerRuntime {
@@ -57,7 +64,9 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     QueueName.SYSTEM,
     ...(opts.documents ? [QueueName.DOCUMENTS] : []),
     ...(opts.analysis ? [QueueName.ANALYSIS] : []),
+    ...(opts.evaluation ? [QueueName.EVALUATION] : []),
   ];
+  const evaluationQueue = opts.evaluation ? createEvaluationQueue(opts.queueConnection) : null;
 
   // Scheduler per worker id so every replica reports its own heartbeat.
   await systemQueue.upsertJobScheduler(
@@ -109,6 +118,12 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             const swept = await sweepLiveSessions({ logger: opts.logger });
             if (Object.values(swept).some((n) => n > 0)) {
               opts.logger.info(swept, 'live sessions swept');
+            }
+            if (evaluationQueue) {
+              const evaluations = await sweepEvaluations({ queue: evaluationQueue });
+              if (evaluations.started + evaluations.resumed > 0) {
+                opts.logger.info(evaluations, 'evaluations started or resumed');
+              }
             }
             return;
           }
@@ -180,6 +195,26 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.evaluation && evaluationQueue) {
+    const { deps, concurrency } = opts.evaluation;
+    workers.push(
+      new Worker(
+        QueueName.EVALUATION,
+        async (job) => {
+          if (job.name !== EvaluationJob.STAGE)
+            throw new Error(`Unknown evaluation job: ${job.name}`);
+          const data = job.data as EvaluationStageJobData;
+          const outcome = await runEvaluationStage(deps, data, isFinalAttempt(job));
+          if (outcome.status === 'done' && outcome.next) {
+            await ensureStageJob(evaluationQueue, { ...data, stage: outcome.next });
+          }
+        },
+        // AI scoring and PDF rendering can take a while; keep the lock long enough.
+        { connection: opts.queueConnection, concurrency, lockDuration: 180_000 },
+      ),
+    );
+  }
+
   for (const worker of workers) {
     worker.on('failed', (job, err) =>
       opts.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'job failed'),
@@ -188,11 +223,15 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
   }
 
   return {
-    queues: [systemQueue],
+    queues: evaluationQueue ? [systemQueue, evaluationQueue] : [systemQueue],
     workers,
     async close() {
       await systemQueue.removeJobScheduler(`${HEARTBEAT_JOB}:${opts.workerId}`).catch(() => false);
-      await Promise.all([...workers.map((w) => w.close()), systemQueue.close()]);
+      await Promise.all([
+        ...workers.map((w) => w.close()),
+        systemQueue.close(),
+        evaluationQueue?.close(),
+      ]);
     },
   };
 }

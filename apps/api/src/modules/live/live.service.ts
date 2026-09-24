@@ -40,6 +40,7 @@ import {
 } from '@cbi/shared-types';
 import type { z } from 'zod';
 import type { AuditService } from '../../lib/audit.js';
+import type { JobQueues } from '../../lib/jobs.js';
 import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
@@ -135,6 +136,7 @@ interface Deps {
   logger: Logger;
   rooms: RoomEmitter;
   audit: AuditService;
+  jobs: Pick<JobQueues, 'evaluateInterview'>;
   now?: () => Date;
 }
 
@@ -146,6 +148,7 @@ export function createLiveInterviewService({
   logger,
   rooms,
   audit,
+  jobs,
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -363,8 +366,12 @@ export function createLiveInterviewService({
       ...extra,
     });
     if (result.ok && result.effects.some((x) => x.type === 'ENQUEUE_EVALUATION')) {
-      // The evaluation pipeline arrives in Phase 5; sessions wait in PROCESSING until then.
-      logger.info({ sessionId: String(s._id) }, 'interview ready for evaluation');
+      // If this fails the worker's evaluation sweep starts it within a minute.
+      await jobs
+        .evaluateInterview(String(s._id))
+        .catch((err: unknown) =>
+          logger.error({ err, sessionId: String(s._id) }, 'failed to enqueue evaluation'),
+        );
     }
     return result;
   }

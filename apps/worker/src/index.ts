@@ -2,7 +2,7 @@ import { hostname } from 'node:os';
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
-import { createStorage } from '@cbi/provider-adapters';
+import { createEmailProvider, createStorage } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { startWorkers } from './worker.js';
 
@@ -53,6 +53,16 @@ async function main(): Promise<void> {
       },
     },
     analysis: { concurrency: env.WORKER_ANALYSIS_CONCURRENCY, deps: { ai, logger } },
+    evaluation: {
+      concurrency: env.WORKER_EVALUATION_CONCURRENCY,
+      deps: {
+        ai,
+        storage,
+        email: createEmailProvider(env),
+        logger,
+        candidateUrl: env.PUBLIC_CANDIDATE_URL,
+      },
+    },
   });
 
   const health = createHealthServer({

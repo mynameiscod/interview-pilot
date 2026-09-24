@@ -1,9 +1,12 @@
-import type { Redis } from '@cbi/db';
+import { beginEvaluation, FIRST_STAGE, type Redis } from '@cbi/db';
 import {
   AnalysisJob,
   DocumentJob,
+  EvaluationJob,
+  evaluationJobId,
   jobId,
   QueueName,
+  type EvaluationStageJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
   type ResumeExtractJobData,
@@ -16,6 +19,11 @@ export interface JobQueues {
   extractJobTarget(jobTargetId: string): Promise<void>;
   /** `attempt` (the session's stateVersion) makes each re-analysis a distinct job. */
   analyzeInterview(sessionId: string, attempt: number): Promise<void>;
+  /**
+   * Starts the evaluation pipeline for a PROCESSING session (once), or a new
+   * run with `rerun`. Returns the run number, or null when nothing started.
+   */
+  evaluateInterview(sessionId: string, opts?: { rerun?: boolean }): Promise<number | null>;
   close(): Promise<void>;
 }
 
@@ -29,6 +37,10 @@ const DEFAULTS: JobsOptions = {
 export function createBullJobQueues(connection: Redis): JobQueues {
   const documents = new Queue(QueueName.DOCUMENTS, { connection, defaultJobOptions: DEFAULTS });
   const analysis = new Queue(QueueName.ANALYSIS, { connection, defaultJobOptions: DEFAULTS });
+  const evaluation = new Queue(QueueName.EVALUATION, {
+    connection,
+    defaultJobOptions: { ...DEFAULTS, backoff: { type: 'exponential', delay: 10_000 } },
+  });
   return {
     async extractResume(resumeId) {
       const data: ResumeExtractJobData = { resumeId };
@@ -48,8 +60,17 @@ export function createBullJobQueues(connection: Redis): JobQueues {
         jobId: jobId(AnalysisJob.INTERVIEW_ANALYZE, sessionId, attempt),
       });
     },
+    async evaluateInterview(sessionId, opts = {}) {
+      const run = await beginEvaluation(sessionId, { rerun: opts.rerun });
+      if (run === null) return null;
+      const data: EvaluationStageJobData = { sessionId, stage: FIRST_STAGE, run };
+      await evaluation.add(EvaluationJob.STAGE, data, {
+        jobId: evaluationJobId(sessionId, FIRST_STAGE, run),
+      });
+      return run;
+    },
     async close() {
-      await Promise.all([documents.close(), analysis.close()]);
+      await Promise.all([documents.close(), analysis.close(), evaluation.close()]);
     },
   };
 }

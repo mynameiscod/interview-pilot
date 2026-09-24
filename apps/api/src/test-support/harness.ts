@@ -46,7 +46,8 @@ export function testEnv(overrides: Record<string, string> = {}): ApiEnv {
 export type RecordedJob =
   | { kind: 'resume'; id: string }
   | { kind: 'jobTarget'; id: string }
-  | { kind: 'analyze'; id: string; attempt: number };
+  | { kind: 'analyze'; id: string; attempt: number }
+  | { kind: 'evaluate'; id: string; rerun: boolean };
 
 /** Records enqueued work instead of sending it to Redis; `fail` simulates a queue outage. */
 export function createRecordingJobQueues() {
@@ -60,6 +61,10 @@ export function createRecordingJobQueues() {
     extractResume: (id) => record({ kind: 'resume', id }),
     extractJobTarget: (id) => record({ kind: 'jobTarget', id }),
     analyzeInterview: (id, attempt) => record({ kind: 'analyze', id, attempt }),
+    evaluateInterview: async (id, opts = {}) => {
+      await record({ kind: 'evaluate', id, rerun: Boolean(opts.rerun) });
+      return 1;
+    },
     close: async () => undefined,
   };
   return { queues, jobs, state };
