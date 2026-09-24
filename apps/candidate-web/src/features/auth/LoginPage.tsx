@@ -10,6 +10,7 @@ import {
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
 import { useAuthProviders, useCandidateApi } from './auth-api';
@@ -23,6 +24,7 @@ export function LoginPage() {
   const providers = useAuthProviders();
   const [requested, setRequested] = useState<OtpRequested | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  useTrackOnce('signup_started');
 
   const next = safeNextPath(params.get('next'));
 

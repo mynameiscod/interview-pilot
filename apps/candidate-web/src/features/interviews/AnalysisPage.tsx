@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
 import { formatMinutes, inputErrorMessage } from './messages';
@@ -242,6 +243,7 @@ export function AnalysisPage() {
   const interview = useInterview(id);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useTrackOnce('analysis_viewed', Boolean(interview.data?.analysis));
 
   if (interview.isPending) return <RouteLoading />;
   if (interview.isError || !interview.data) {

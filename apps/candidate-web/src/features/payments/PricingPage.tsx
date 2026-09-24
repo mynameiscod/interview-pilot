@@ -1,6 +1,7 @@
 import type { PublicPlan } from '@cbi/shared-types';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { formatMoney, validityText } from './payment-format';
 import { usePlans } from './payments-api';
 
@@ -63,6 +64,7 @@ function PlanCard({ plan }: { plan: PublicPlan }) {
 export function PricingPage() {
   const { t } = useTranslation();
   const plans = usePlans();
+  useTrackOnce('pricing_viewed');
 
   return (
     <div className="container py-5">

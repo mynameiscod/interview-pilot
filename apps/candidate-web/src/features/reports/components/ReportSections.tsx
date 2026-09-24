@@ -3,6 +3,7 @@ import type { TFunction } from 'i18next';
 import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
+import { track } from '../../../lib/analytics';
 import { useCandidateAuth } from '../../../app/session';
 import { formatDate, formatMinutes } from '../../interviews/messages';
 import { DELTA_ICON, deltaText } from '../report-format';
@@ -160,6 +161,7 @@ export function PdfButton({ sessionId, pdfReady }: { sessionId: string; pdfReady
     setProblem(null);
     try {
       await downloadReportPdf(manager, sessionId);
+      track('report_pdf_downloaded');
     } catch (err) {
       setProblem(
         err instanceof PdfNotReadyError ? t('report.pdf.notReady') : t('report.pdf.failed'),

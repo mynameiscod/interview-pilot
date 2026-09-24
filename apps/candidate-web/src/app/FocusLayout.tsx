@@ -2,6 +2,8 @@ import { BrandLogo } from '@cbi/design-system';
 import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { MaintenanceBanner } from '../components/MaintenanceBanner';
+import { RouteAnalytics } from '../lib/use-analytics';
 
 /**
  * Distraction-free shell for the interview room (design §12): the brand and
@@ -23,6 +25,8 @@ export function FocusLayout() {
           <LanguageSwitcher />
         </div>
       </header>
+      <MaintenanceBanner />
+      <RouteAnalytics />
       <main id="main" tabIndex={-1}>
         <Outlet />
       </main>

@@ -1391,5 +1391,62 @@
     "errors": {
       "closed": "This interview is not open right now. The company may have paused or closed it."
     }
+  },
+  "maintenance": {
+    "title": "Scheduled maintenance.",
+    "fallback": "We are doing maintenance. New interviews cannot be started right now; please try again a little later.",
+    "dismiss": "Dismiss the maintenance notice"
+  },
+  "proof": {
+    "share": {
+      "title": "Share a proof",
+      "intro": "Create a link that shows a read-only summary of this report, for example to a recruiter or on your profile.",
+      "shows": "The proof shows your name, the role, your overall score, readiness band, evidence confidence and skill scores.",
+      "neverShows": "It never shows your transcript, answers, evidence, recording or contact details.",
+      "anyone": "Anyone with the link can open it until it expires or you revoke it.",
+      "expiryLabel": "Link expires after",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "create": "Create link",
+      "creating": "Creating…",
+      "created": "Your proof link is ready.",
+      "copyNow": "Copy it now: for your security it will not be shown again.",
+      "linkLabel": "Proof link",
+      "copy": "Copy link",
+      "copied": "Link copied.",
+      "copyFailed": "Could not copy automatically. Select the link and copy it.",
+      "listTitle": "Your proof links",
+      "listError": "We could not load your proof links.",
+      "none": "You have not shared a proof of this report yet.",
+      "linkName": "Link starting {{hint}}…",
+      "states": {
+        "active": "Active",
+        "expired": "Expired",
+        "revoked": "Revoked"
+      },
+      "createdOn": "Created {{date}}",
+      "expiresOn": "expires {{date}}",
+      "expiredOn": "expired {{date}}",
+      "revokedOn": "revoked {{date}}",
+      "views_one": "{{count}} view",
+      "views_other": "{{count}} views",
+      "lastViewed": "last opened {{date}}",
+      "revoke": "Revoke",
+      "revokeNamed": "Revoke {{name}}",
+      "errors": {
+        "limit": "You can have 5 active links for a report. Revoke one first."
+      }
+    },
+    "view": {
+      "eyebrow": "Interview readiness proof",
+      "anonymous": "A CodeBegun candidate",
+      "completed": "Completed",
+      "reviewed": "Reviewed by CodeBegun: this result was checked by our team.",
+      "scope": "This proof shows scores only; the interview answers and evidence stay private.",
+      "expires": "This link expires on {{date}}.",
+      "notFoundTitle": "This proof link is not available",
+      "notFoundBody": "It may have expired or been revoked. Ask the candidate for a new link.",
+      "loadError": "We could not open this proof"
+    }
   }
 }

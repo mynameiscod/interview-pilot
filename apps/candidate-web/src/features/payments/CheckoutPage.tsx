@@ -10,6 +10,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router';
+import { track } from '../../lib/analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { useCandidateAuth } from '../../app/session';
 import {
@@ -304,6 +305,7 @@ export function CheckoutPage() {
     if (!claim()) return;
     setOrderRejection(null);
     setMockOrder(null);
+    track('checkout_started', { planCode, coupon: Boolean(current.coupon?.applied) });
     try {
       const order = await api.createOrder({
         planCode,

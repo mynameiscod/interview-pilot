@@ -2,6 +2,7 @@ import type { CompareResult } from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, inputErrorMessage } from '../interviews/messages';
 import { CONFIDENCE_ICON, DELTA_ICON, deltaText, scoreText } from './report-format';
@@ -119,6 +120,7 @@ export function ComparePage() {
     .filter(Boolean);
   const valid = ids.length >= 2 && ids.length <= 4;
   const compare = useCompare(ids, valid);
+  useTrackOnce('compare_viewed', Boolean(compare.data), { reports: ids.length });
 
   if (!valid) return <Problem title={t('compare.invalidTitle')} body={t('compare.invalidBody')} />;
   if (compare.isPending) return <RouteLoading />;

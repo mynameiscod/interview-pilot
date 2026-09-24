@@ -39,6 +39,9 @@ export function inputErrorMessage(t: TFunction, err: unknown): string {
         return t('inputs.serviceUnavailable');
       case 'CAMPAIGN_CLOSED':
         return t('campaign.errors.closed');
+      case 'MAINTENANCE':
+        // The admin's notice (set in the admin app) is shown as written.
+        return err.message.trim() || t('maintenance.fallback');
     }
   }
   return errorMessage(t, err);

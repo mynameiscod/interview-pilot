@@ -5,6 +5,7 @@ import type { TFunction } from 'i18next';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { useCandidateAuth } from '../../app/session';
 import { queryKeys, useInterview, useResumes } from '../interviews/interviews-api';
@@ -279,6 +280,7 @@ export function CampaignPage() {
   const { t } = useTranslation();
   const { token = '' } = useParams();
   const campaign = usePublicCampaign(token);
+  useTrackOnce('campaign_landing_viewed', Boolean(campaign.data));
 
   if (campaign.isPending) return <RouteLoading />;
   if (campaign.isError || !campaign.data) {

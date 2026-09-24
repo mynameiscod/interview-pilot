@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
+import { useTrackOnce } from '../../../lib/use-analytics';
 import { useInterview, useJobTarget } from '../interviews-api';
 import { JobStep } from './JobStep';
 import { ResumeStep } from './ResumeStep';
@@ -77,6 +78,8 @@ function usePrefillFromInterview(
   if (!done && (interview.isError || target.isError)) setDone(true);
 }
 
+const WIZARD_START_PROPS = { new: { editing: false }, edit: { editing: true } } as const;
+
 export function NewInterviewPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -88,6 +91,7 @@ export function NewInterviewPage() {
   const shownStep = useRef(state.step);
 
   usePrefillFromInterview(editId, Boolean(editId) && !initial.restored, setState);
+  useTrackOnce('wizard_started', true, WIZARD_START_PROPS[editId ? 'edit' : 'new']);
 
   useEffect(() => {
     saveWizardState(state);

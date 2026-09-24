@@ -2,6 +2,8 @@ import { BrandLogo } from '@cbi/design-system';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { MaintenanceBanner } from '../components/MaintenanceBanner';
+import { RouteAnalytics } from '../lib/use-analytics';
 import { useCandidateAuth } from './session';
 
 function AccountNav() {
@@ -83,6 +85,8 @@ export function PublicLayout() {
           </div>
         </nav>
       </header>
+      <MaintenanceBanner />
+      <RouteAnalytics />
       <main id="main" tabIndex={-1}>
         <Outlet />
       </main>

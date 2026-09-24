@@ -56,6 +56,13 @@ export const routes: RouteObject[] = [
         }),
       },
       {
+        // Candidate Proof: a read-only report summary shared by link (no sign-in).
+        path: 'proof/:token',
+        lazy: async () => ({
+          Component: (await import('../features/proof/ProofPage')).ProofPage,
+        }),
+      },
+      {
         element: <RedirectIfSignedIn />,
         children: [
           {

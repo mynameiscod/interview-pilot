@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
+import { track } from '../lib/analytics';
 
 const STEPS = [
   { key: 'step1', icon: 'bi-file-earmark-person' },
@@ -18,7 +19,11 @@ export function LandingPage() {
               <h1 className="display-6 fw-semibold text-primary">{t('landing.hero.title')}</h1>
               <p className="lead cb-text-secondary mt-3">{t('landing.hero.subtitle')}</p>
               <div className="d-flex flex-wrap gap-2 mt-3">
-                <Link to="/login" className="btn btn-primary btn-lg">
+                <Link
+                  to="/login"
+                  className="btn btn-primary btn-lg"
+                  onClick={() => track('landing_cta_clicked', { cta: 'get_started' })}
+                >
                   {t('landing.hero.getStarted')}
                 </Link>
                 <a href="#how-it-works" className="btn btn-outline-primary btn-lg">

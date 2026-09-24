@@ -3,9 +3,11 @@ import { ApiClientError } from '@cbi/web-core';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useParams } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
+import { SharePanel } from '../proof/SharePanel';
 import { CodingResults } from './components/CodingResults';
 import { DimensionBars } from './components/DimensionBars';
 import { FeedbackCard } from './components/FeedbackCard';
@@ -71,6 +73,7 @@ function ReportView({ report }: { report: ReportSummary }) {
       <RoundsAndCoverage content={content} />
       <PlanTabs plan={content.plan} />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />
+      <SharePanel sessionId={report.sessionId} />
       <RecordingCard sessionId={report.sessionId} />
       {content.integrity && <SessionObservations integrity={content.integrity} />}
       {content.transcript && <ReportTranscript transcript={content.transcript} />}
@@ -86,6 +89,7 @@ export function ReportPage() {
   const location = useLocation();
   const report = useReport(id);
   const loaded = Boolean(report.data);
+  useTrackOnce('report_viewed', loaded);
 
   // "Rate your interview" links land on the feedback card once the report has rendered.
   useEffect(() => {

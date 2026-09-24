@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
+import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { CodingWorkspace } from '../coding/CodingWorkspace';
 import { queryKeys } from '../interviews/interviews-api';
@@ -374,6 +375,7 @@ export function RoomPage() {
     ended: Boolean(finished) || (room.joined && room.mode !== 'VIDEO'),
   });
   useIntegrityObservations(observing, reportIntegrity);
+  useTrackOnce('interview_room_joined', room.joined);
 
   const onTtsDown = useCallback(() => reportDegraded('TTS'), [reportDegraded]);
   const audio = useQuestionAudio(

@@ -1,6 +1,7 @@
 import { DOCUMENT_LIMITS, JobUrl, type ExtractionErrorCode } from '@cbi/shared-types';
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { track } from '../../../lib/analytics';
 import { ExtractionStatus } from '../components/ExtractionStatus';
 import { FileDrop } from '../components/FileDrop';
 import { useInterviewsApi, useJobStatus } from '../interviews-api';
@@ -111,6 +112,7 @@ export function JobStep({ state, update, onBack, onNext }: StepProps) {
       }
     }
     update({ jdSkipped: false });
+    track('jd_added', { source: tab.toLowerCase() });
     onNext();
   };
 

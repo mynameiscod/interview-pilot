@@ -2,6 +2,7 @@ import type { ResumeSummary } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { track } from '../../../lib/analytics';
 import { ExtractionStatus } from '../components/ExtractionStatus';
 import { FileDrop } from '../components/FileDrop';
 import {
@@ -60,6 +61,7 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
         ...old.filter((r) => r.id !== resume.id),
       ]);
       update({ resumeId: resume.id });
+      track('resume_uploaded', { duplicate: known });
       setNotice(known ? t('wizard.resume.duplicate') : t('wizard.resume.uploaded'));
     } catch (err) {
       setError(inputErrorMessage(t, err));

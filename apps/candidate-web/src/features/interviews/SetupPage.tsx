@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { track } from '../../lib/analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
@@ -70,6 +71,7 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
       const updated = await api.updateSetup(interview.id, { mode, language });
       queryClient.setQueryData(queryKeys.interview(interview.id), updated);
       void queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
+      track('setup_completed', { mode });
       setSaved(true);
     } catch (err) {
       setError(inputErrorMessage(t, err));

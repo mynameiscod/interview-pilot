@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { track } from '../../lib/analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { ConsentStep } from '../consent/ConsentStep';
 import { queryKeys, useInterview, useInterviewsApi } from '../interviews/interviews-api';
@@ -401,6 +402,10 @@ function DeviceCheck({ interview }: { interview: InterviewSummary }) {
         browser: browserLabel(),
       });
       applyReadiness(readiness);
+      track('device_check_completed', {
+        passed: readiness.deviceCheck?.passed === true,
+        video: isVideo,
+      });
       if (!readiness.deviceCheck?.passed) setStage('failed');
       else setStage(readiness.ready ? 'done' : 'consent');
     } catch (err) {
