@@ -101,6 +101,7 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
           competencyKey: t.question.competencyKey,
           question: t.question.text,
           answer: t.answer!.text,
+          spoken: t.answer!.source === 'VOICE',
         })),
       },
       ctxOf(s),

@@ -64,7 +64,13 @@ export interface TurnForExtraction {
   competencyKey: string | null;
   question: string;
   answer: string;
+  /** Spoken and transcribed by a speech model (voice interviews). */
+  spoken?: boolean;
 }
+
+/** Tells the extractor that wording slips in a spoken answer came from transcription, not the candidate. */
+export const SPOKEN_ANSWER_LABEL =
+  'Answer (spoken, automatically transcribed; ignore transcription slips and filler words)';
 
 export interface ExtractedEvidence {
   questionId: string;
@@ -105,7 +111,7 @@ export async function extractEvidenceWithAi(
         input.turns
           .map(
             (t) =>
-              `[${t.questionId}] Competency: ${t.competencyKey ?? 'any'}\nQuestion: ${t.question}\nAnswer: ${t.answer}`,
+              `[${t.questionId}] Competency: ${t.competencyKey ?? 'any'}\nQuestion: ${t.question}\n${t.spoken ? SPOKEN_ANSWER_LABEL : 'Answer'}: ${t.answer}`,
           )
           .join('\n\n'),
       ),
