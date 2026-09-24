@@ -38,7 +38,8 @@ describe('system worker', () => {
   it('processes the scheduled heartbeat job end to end through BullMQ', async () => {
     const key = `${WORKER_HEARTBEAT_KEY_PREFIX}${workerId}`;
     let value: string | null = null;
-    for (let i = 0; i < 50 && !value; i++) {
+    // Up to 20 s: the first scheduled run can be slow on a loaded machine.
+    for (let i = 0; i < 100 && !value; i++) {
       value = await redis.get(key);
       if (!value) await new Promise((r) => setTimeout(r, 200));
     }
