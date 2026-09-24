@@ -40,6 +40,16 @@ export function pdfSafe(text: string): string {
 const date = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '-');
 
 /** Renders the readiness report as an A4 PDF. */
+/** Neutral wording for integrity observations. */
+const INTEGRITY_LABELS: Record<string, string> = {
+  TAB_HIDDEN: 'Switched to another tab or app',
+  WINDOW_BLUR: 'Interview window lost focus',
+  FULLSCREEN_EXIT: 'Left full screen',
+  PASTE: 'Pasted text into an answer',
+  CAMERA_LOST: 'Camera stopped',
+  MICROPHONE_LOST: 'Microphone stopped',
+};
+
 export function renderReportPdf(content: ReportContent): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -123,6 +133,22 @@ export function renderReportPdf(content: ReportContent): Promise<Buffer> {
       content.previous.deltas.forEach((d) =>
         bullet(`${d.name}: ${d.delta > 0 ? '+' : ''}${d.delta}`),
       );
+    }
+
+    if (content.integrity) {
+      h2('Session observations');
+      const counts = Object.entries(content.integrity.counts).filter(
+        ([type]) => type !== 'TAB_VISIBLE' && type !== 'WINDOW_FOCUS',
+      );
+      if (counts.length === 0) p('No browser events were noted.');
+      counts.forEach(([type, n]) => bullet(`${INTEGRITY_LABELS[type] ?? type}: ${n}`));
+      if (content.integrity.awaySec > 0) {
+        bullet(
+          `Time away from the interview page: about ${Math.round(content.integrity.awaySec / 60)} min`,
+        );
+      }
+      doc.font('Helvetica-Oblique').fontSize(8).text(pdfSafe(content.integrity.note));
+      doc.font('Helvetica').fontSize(10);
     }
 
     doc.moveDown(1);

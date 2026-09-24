@@ -1,6 +1,7 @@
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger } from '@cbi/config';
 import {
+  IntegrityEventModel,
   AiRouteModel,
   beginEvaluation,
   connectMongo,
@@ -258,6 +259,77 @@ describe('evaluation pipeline', () => {
     expect(mail.sent).toHaveLength(1);
     expect(mail.sent[0]).toMatchObject({ to: `c-${String(userId)}@example.com` });
     expect(mail.sent[0]!.text).toContain(`https://interview.example.com/app/reports/${id}`);
+  });
+
+  it('adds session observations to the report when tracked, without changing the score', async () => {
+    const plain = await finishedInterview();
+    const tracked = await finishedInterview();
+    const start = (await InterviewSessionModel.findById(tracked.id).lean())!.startedAt!;
+    await InterviewSessionModel.updateOne(
+      { _id: tracked.id },
+      {
+        $set: {
+          consents: [
+            {
+              type: 'INTEGRITY',
+              consentTextId: new mongoose.Types.ObjectId(),
+              version: 1,
+              accepted: true,
+              at: start,
+            },
+          ],
+        },
+      },
+    );
+    const at = (sec: number) => new Date(start.getTime() + sec * 1000);
+    await IntegrityEventModel.insertMany([
+      {
+        sessionId: tracked.id,
+        userId: tracked.userId,
+        type: 'TAB_HIDDEN',
+        at: at(120),
+        clientAt: at(120),
+        value: null,
+      },
+      {
+        sessionId: tracked.id,
+        userId: tracked.userId,
+        type: 'TAB_VISIBLE',
+        at: at(150),
+        clientAt: at(150),
+        value: 30_000,
+      },
+      {
+        sessionId: tracked.id,
+        userId: tracked.userId,
+        type: 'PASTE',
+        at: at(400),
+        clientAt: at(400),
+        value: 80,
+      },
+    ]);
+    for (const { id } of [plain, tracked]) {
+      await beginEvaluation(id);
+      await runAll(id, 1);
+    }
+    const report = async (id: string) =>
+      ReportContent.parse(
+        (await InterviewReportModel.findOne({ sessionId: id, revision: 0 }).lean())!.content,
+      );
+    const withObs = await report(tracked.id);
+    expect(withObs.integrity).toMatchObject({
+      counts: { TAB_HIDDEN: 1, TAB_VISIBLE: 1, PASTE: 1 },
+      awaySec: 30,
+      timeline: [
+        { type: 'TAB_HIDDEN', offsetSec: 120 },
+        { type: 'PASTE', offsetSec: 400 },
+      ],
+    });
+    expect((await report(plain.id)).integrity).toBeNull();
+    // Observations never touch scoring.
+    expect(withObs.overall.score).toBe((await report(plain.id)).overall.score);
+    const pdfReport = await InterviewReportModel.findOne({ sessionId: tracked.id }).lean();
+    expect(pdfReport!.pdf.status).toBe('READY');
   });
 
   it('is idempotent: re-running stages changes nothing and stale runs are ignored', async () => {

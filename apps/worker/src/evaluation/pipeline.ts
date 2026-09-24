@@ -14,6 +14,7 @@ import {
   type DraftDimensionScore,
   type InterviewSessionRecord,
   type ScoreDimensionRecord,
+  IntegrityEventModel,
 } from '@cbi/db';
 import type { EmailProvider, StorageProvider } from '@cbi/provider-adapters';
 import {
@@ -24,7 +25,12 @@ import {
   readinessBand,
   strengthScore,
 } from '@cbi/scoring-core';
-import { ProcessingStage, type BlueprintContent, type ReportContent } from '@cbi/shared-types';
+import {
+  ProcessingStage,
+  type BlueprintContent,
+  type ReportContent,
+  summarizeIntegrity,
+} from '@cbi/shared-types';
 import {
   bullets,
   extractEvidenceWithAi,
@@ -339,7 +345,19 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       structured: 1,
     }).lean();
 
+    // Observations are summarised only when the candidate acknowledged tracking; they are never scored.
+    const tracked = (s.consents ?? []).some((c) => c.type === 'INTEGRITY' && c.accepted);
+    const integrity = tracked
+      ? summarizeIntegrity(
+          await IntegrityEventModel.find({ sessionId: s._id }, { type: 1, at: 1, value: 1 })
+            .sort({ at: 1 })
+            .lean(),
+          s.startedAt,
+        )
+      : null;
+
     const content: ReportContent = buildReportContent({
+      integrity,
       header: {
         title: s.analysis?.detectedRole.title ?? template.name,
         companyName: target?.companyName ?? target?.structured?.companyName ?? null,

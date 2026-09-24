@@ -1,5 +1,5 @@
 import type { Logger } from '@cbi/config';
-import type { ReconcileGateway, Redis } from '@cbi/db';
+import type { MediaStorage, ReconcileGateway, Redis } from '@cbi/db';
 import {
   AnalysisJob,
   DocumentJob,
@@ -23,12 +23,14 @@ import {
 } from './processors/documents.js';
 import { sweepLiveSessions } from './processors/live-sweep.js';
 import { reconcilePayments } from './processors/payment-reconcile.js';
+import { runMediaSweep } from './processors/media-sweep.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
 export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
+export const MEDIA_SWEEP_JOB = 'media-sweep' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -49,6 +51,8 @@ export interface WorkerRuntimeOptions {
   analysis?: { deps: AnalysisProcessorDeps; concurrency: number };
   /** Reconciliation of purchases with the payment gateway; omit to disable. */
   payments?: { gateway: ReconcileGateway; intervalMs: number };
+  /** Recording finalization and retention; omit to disable. */
+  media?: { storage: MediaStorage; intervalMs: number };
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
   evaluation?: { deps: EvaluationDeps; concurrency: number };
 }
@@ -108,6 +112,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.media) {
+    await systemQueue.upsertJobScheduler(
+      MEDIA_SWEEP_JOB,
+      { every: opts.media.intervalMs },
+      { name: MEDIA_SWEEP_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -146,6 +158,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
               logger: opts.logger,
             });
             if (counts.checked > 0) opts.logger.info(counts, 'purchases reconciled');
+            return;
+          }
+          case MEDIA_SWEEP_JOB: {
+            if (!opts.media) return;
+            await runMediaSweep({ storage: opts.media.storage, logger: opts.logger });
             return;
           }
           case PROVIDER_HEALTH_JOB: {

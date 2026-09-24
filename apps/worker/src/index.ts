@@ -40,6 +40,7 @@ async function main(): Promise<void> {
     heartbeatIntervalMs: env.WORKER_HEARTBEAT_INTERVAL_MS,
     providerHealthIntervalMs: env.WORKER_PROVIDER_HEALTH_INTERVAL_MS,
     liveSweepIntervalMs: env.WORKER_LIVE_SWEEP_INTERVAL_MS,
+    media: { storage, intervalMs: env.WORKER_MEDIA_SWEEP_INTERVAL_MS },
     payments: {
       gateway: createPaymentGateway(env),
       intervalMs: env.WORKER_PAYMENT_RECONCILE_INTERVAL_MS,
