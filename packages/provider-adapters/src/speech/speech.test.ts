@@ -2,7 +2,13 @@ import { AiProviderError, type ModelTarget } from '@cbi/ai-core';
 import { describe, expect, it, vi } from 'vitest';
 import { createDeepgramSttAdapter } from './deepgram.js';
 import { createElevenLabsTtsAdapter, ELEVENLABS_DEFAULT_VOICE } from './elevenlabs.js';
-import { createMockSttAdapter, createMockTtsAdapter, mockSpeech, mockSpeechWav } from './mock.js';
+import {
+  createMockSttAdapter,
+  createMockTtsAdapter,
+  mockSpeech,
+  mockSpeechFailure,
+  mockSpeechWav,
+} from './mock.js';
 import { createOpenAiSttAdapter, createOpenAiTtsAdapter } from './openai.js';
 
 const target = (modelId: string, voice?: string | null): ModelTarget => ({
@@ -215,7 +221,7 @@ describe('speech mocks', () => {
     expect((await run(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]))).text).toBe(
       '[mock] Spoken answer of about 12 seconds.',
     );
-    await expect(run(new TextEncoder().encode('MOCK-SPEECH-FAIL'))).rejects.toMatchObject({
+    await expect(run(mockSpeechFailure())).rejects.toMatchObject({
       outcome: 'PROVIDER_ERROR',
     });
   });

@@ -45,6 +45,7 @@ import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import { voiceStartBlocker, type TranscriptStore } from '../voice/voice.service.js';
 
 /** Where realtime events go; attached once the Socket.IO server exists. */
 export interface RoomEmitter {
@@ -137,6 +138,10 @@ interface Deps {
   rooms: RoomEmitter;
   audit: AuditService;
   jobs: Pick<JobQueues, 'evaluateInterview'>;
+  /** Spoken answers waiting to be submitted (voice interviews). */
+  transcripts: TranscriptStore;
+  /** Called after a question is asked (voice interviews prepare its audio). */
+  onQuestion?: (s: InterviewSessionRecord, turn: InterviewTurnRecord) => void;
   now?: () => Date;
 }
 
@@ -149,6 +154,8 @@ export function createLiveInterviewService({
   rooms,
   audit,
   jobs,
+  transcripts,
+  onQuestion,
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -327,6 +334,7 @@ export function createLiveInterviewService({
       sessionId: String(s._id),
       state: s.state,
       mode: s.mode,
+      voiceEnabled: s.mode === 'VOICE' || Boolean(s.voice?.consent),
       language: s.language,
       title: s.analysis?.detectedRole.title ?? template?.content.name ?? 'Interview',
       rounds: (s.planner?.rounds ?? []).map((r) => ({
@@ -347,6 +355,7 @@ export function createLiveInterviewService({
         roundIdx: t.roundIdx,
         question: t.question.text,
         answer: t.answer?.text ?? null,
+        answerSource: t.answer ? (t.answer.source ?? 'TEXT') : null,
       })),
       lastSeq: s.lastSeq,
       serverTime: at.toISOString(),
@@ -482,6 +491,7 @@ export function createLiveInterviewService({
       // The session changed while the question was generated (disconnect, end): re-read and decide again.
       if (!saved) continue;
       rooms.emit(sessionId, RtEvent.QUESTION, liveQuestion(saved));
+      onQuestion?.(s, saved);
       return;
     }
     logger.error({ sessionId }, 'interview did not settle after 20 steps');
@@ -521,16 +531,16 @@ export function createLiveInterviewService({
       const s = await load(sessionId, userId);
       if (!s) throw AppError.notFound('Interview not found');
       if (s.state === 'ACTIVE' || s.state === 'ROUND_TRANSITION') return s; // double click
-      if (s.state !== 'READY' && s.state !== 'READY_TO_START') {
+      if (!['READY', 'DEVICE_CHECK', 'CONSENT_REQUIRED', 'READY_TO_START'].includes(s.state)) {
         throw new AppError(409, 'INVALID_STATE', 'This interview cannot be started now.');
       }
       if (!s.blueprintId) throw new AppError(409, 'INVALID_STATE', 'Analyse the interview first.');
-      if (s.mode !== 'TEXT') {
-        throw new AppError(
-          409,
-          'INVALID_STATE',
-          'Only text interviews can be started at the moment.',
-        );
+      if (s.mode === 'VIDEO') {
+        throw new AppError(409, 'INVALID_STATE', 'Video interviews are not available yet.');
+      }
+      if (s.mode === 'VOICE') {
+        const blocker = voiceStartBlocker(s, now());
+        if (blocker) throw new AppError(409, 'INVALID_STATE', blocker);
       }
       const planner = await templateAndPlan(s);
       // Every verified account gets its welcome credit, however it first reaches this point.
@@ -539,25 +549,33 @@ export function createLiveInterviewService({
       try {
         started = await inTransaction(undefined, async (tx) => {
           let version = s.stateVersion;
-          if (s.state === 'READY') {
-            const prepared = await applySessionEvent({
+          let state = s.state;
+          // The pre-start steps (device check, consent) were checked above; walk the machine through them.
+          for (let step = 0; state !== 'READY_TO_START' && step < 4; step++) {
+            const next: SessionEvent | null =
+              state === 'READY'
+                ? { type: 'PREPARE' }
+                : state === 'DEVICE_CHECK'
+                  ? { type: 'DEVICE_CHECK_PASSED' }
+                  : state === 'CONSENT_REQUIRED'
+                    ? { type: 'CONSENT_ACCEPTED' }
+                    : null;
+            if (!next) break;
+            const moved = await applySessionEvent({
               sessionId: s._id,
               userId,
-              event: { type: 'PREPARE' },
+              event: next,
               expectedVersion: version,
               now: now(),
               session: tx,
             });
-            if (!prepared.ok)
+            if (!moved.ok)
               throw new AppError(409, 'CONFLICT', 'This interview changed. Refresh and try again.');
-            if (prepared.session.state !== 'READY_TO_START') {
-              throw new AppError(
-                409,
-                'INVALID_STATE',
-                'This interview needs a device check first.',
-              );
-            }
-            version = prepared.session.stateVersion;
+            state = moved.session.state;
+            version = moved.session.stateVersion;
+          }
+          if (state !== 'READY_TO_START') {
+            throw new AppError(409, 'INVALID_STATE', 'This interview cannot be started now.');
           }
           const result = await applySessionEvent({
             sessionId: s._id,
@@ -701,7 +719,35 @@ export function createLiveInterviewService({
         if (!turn || turn.seq !== s.lastSeq) {
           throw new LiveError('STALE_QUESTION', 'This is not the current question.');
         }
-        const text = payload.text.trim();
+        let text = payload.text.trim();
+        let voice: {
+          durationSec: number;
+          language: string | null;
+          confidence: number | null;
+          model: string;
+        } | null = null;
+        if (payload.voiceTranscriptId) {
+          // A spoken answer: the server's transcript is the answer, whatever the client sent.
+          const t = await transcripts.get(payload.voiceTranscriptId);
+          if (
+            !t ||
+            t.userId !== userId ||
+            t.sessionId !== payload.sessionId ||
+            t.questionId !== payload.questionId
+          ) {
+            throw new LiveError(
+              'VALIDATION_FAILED',
+              'That recording has expired. Please answer again.',
+            );
+          }
+          text = t.text.trim();
+          voice = {
+            durationSec: t.durationSec,
+            language: t.language,
+            confidence: t.confidence,
+            model: t.model,
+          };
+        }
         const at = now();
         const saved = await InterviewTurnModel.findOneAndUpdate(
           { _id: turn._id, answer: null },
@@ -712,6 +758,8 @@ export function createLiveInterviewService({
                 clientMsgId: payload.clientMsgId,
                 answeredAt: at,
                 durationMs: Math.max(0, at.getTime() - new Date(turn.askedAt).getTime()),
+                source: voice ? 'VOICE' : 'TEXT',
+                voice,
               },
             },
           },

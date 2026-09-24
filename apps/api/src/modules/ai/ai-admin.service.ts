@@ -139,6 +139,27 @@ type Audited<T> = { result: T; details: Record<string, unknown> };
  * transaction together with its audit entry, then broadcasts a cache bust so
  * every process routes with the new configuration immediately.
  */
+/** `seconds` of 16 kHz mono silence as WAV: a harmless clip for STT connectivity tests. */
+function silentWav(seconds: number): Uint8Array {
+  const samples = 16_000 * seconds;
+  const view = new DataView(new ArrayBuffer(44 + samples * 2));
+  const ascii = (at: number, text: string) =>
+    [...text].forEach((ch, i) => view.setUint8(at + i, ch.charCodeAt(0)));
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + samples * 2, true);
+  ascii(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 16_000, true);
+  view.setUint32(28, 32_000, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, samples * 2, true);
+  return new Uint8Array(view.buffer);
+}
+
 export function createAiAdminService(deps: Deps) {
   const now = deps.now ?? (() => new Date());
   const { ai, audit } = deps;
@@ -482,27 +503,46 @@ export function createAiAdminService(deps: Deps) {
       const model = await loadModel(id);
       const started = performance.now();
       let response: TestAiModelResponse;
+      const callCtx = { correlationId: ctx.requestId, userId: actorId };
+      const success = (sample: string, servedModel: string | null = null): TestAiModelResponse => ({
+        ok: true,
+        outcome: 'SUCCESS',
+        latencyMs: Math.round(performance.now() - started),
+        servedModel,
+        sample: sample.slice(0, 120),
+        message: null,
+      });
       try {
-        const result = await ai.router.runOnModel(
-          String(model._id),
-          'admin.test',
-          {
-            messages: [
-              { role: 'user', content: 'Connectivity check. Reply with the single word OK.' },
-            ],
-            // Leaves room for adaptive thinking before the one-word answer.
-            maxOutputTokens: 512,
-          },
-          { correlationId: ctx.requestId, userId: actorId },
-        );
-        response = {
-          ok: true,
-          outcome: 'SUCCESS',
-          latencyMs: Math.round(performance.now() - started),
-          servedModel: result.servedModel,
-          sample: result.text.slice(0, 120),
-          message: null,
-        };
+        if (model.capabilities.includes('TTS')) {
+          // Speech models are tested on their own capability, not with a chat prompt.
+          const r = await ai.router.synthesize(
+            { text: 'This is a connectivity check.', language: 'en' },
+            callCtx,
+            { modelRef: String(model._id) },
+          );
+          response = success(`${r.result.audio.length} bytes of ${r.result.mimeType}`);
+        } else if (model.capabilities.includes('STT')) {
+          const r = await ai.router.transcribe(
+            { audio: silentWav(1), mimeType: 'audio/wav', language: 'en', durationSec: 1 },
+            callCtx,
+            { modelRef: String(model._id) },
+          );
+          response = success(r.result.text || '(no speech in the test clip, as expected)');
+        } else {
+          const result = await ai.router.runOnModel(
+            String(model._id),
+            'admin.test',
+            {
+              messages: [
+                { role: 'user', content: 'Connectivity check. Reply with the single word OK.' },
+              ],
+              // Leaves room for adaptive thinking before the one-word answer.
+              maxOutputTokens: 512,
+            },
+            callCtx,
+          );
+          response = success(result.text, result.servedModel);
+        }
       } catch (err) {
         if (!(err instanceof AiUnavailableError)) throw err;
         const last = err.attempts.at(-1);

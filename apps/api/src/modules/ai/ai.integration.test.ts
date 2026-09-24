@@ -95,7 +95,10 @@ const opusReply = (text: string): LlmCallResult => ({
 
 describe('catalog bootstrap', () => {
   it('seeds providers, priced models and routes once, and never overwrites admin changes', async () => {
-    expect(await AiProviderModel.countDocuments()).toBe(4); // anthropic, openai, gemini, mock (test env)
+    // anthropic, openai, gemini, deepgram, elevenlabs, mock (test env)
+    expect(await AiProviderModel.countDocuments()).toBe(6);
+    const stt = await AiRouteModel.findOne({ feature: 'stt.live' }).lean();
+    expect(stt!.chain).toHaveLength(3); // nova-3, gpt-4o-mini-transcribe, mock-stt
     const opus = await AiModelModel.findOne({ modelId: 'claude-opus-5' }).lean();
     expect(opus!.pricing.map((p) => [p.unit, p.pricePerUnitMicros]).sort()).toEqual([
       ['PER_1M_CACHED_INPUT_TOKENS', 500_000],
@@ -354,18 +357,11 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     });
     expect(result.attempts).toHaveLength(1);
 
-    const stt = await root('post', '/ai/models')
-      .send({
-        providerId: mock.providerId,
-        modelId: 'mock-stt',
-        displayName: 'Mock STT',
-        capabilities: ['STT'],
-      })
-      .expect(201);
+    const stt = all.find((m) => m.modelId === 'mock-stt')!;
     await root('put', '/ai/routes/interview.question')
       .send({
         active: true,
-        chain: [{ modelId: stt.body.data.id, priority: 0 }],
+        chain: [{ modelId: stt.id, priority: 0 }],
         reason: 'wrong capability',
       })
       .expect(400);

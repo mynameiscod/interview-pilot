@@ -15,21 +15,27 @@ import { AiProviderError, type SttAdapter, type TtsAdapter } from '@cbi/ai-core'
 export const MOCK_SPEECH_PREFIX = 'MOCK-SPEECH:';
 export const MOCK_SPEECH_FAIL = 'MOCK-SPEECH-FAIL';
 
-/** Test helper: audio bytes the mock STT transcribes to `text`. */
+/**
+ * Test helper: a clip the mock STT transcribes to `text`. It starts with a
+ * WAV header so it passes the API's container check, followed by the marker.
+ */
 export const mockSpeech = (text: string) =>
-  new TextEncoder().encode(`${MOCK_SPEECH_PREFIX}${text}`);
+  new TextEncoder().encode(`RIFF\0\0\0\0WAVE${MOCK_SPEECH_PREFIX}${text}`);
+
+/** A clip that makes the mock STT fail (simulated provider outage). */
+export const mockSpeechFailure = () =>
+  new TextEncoder().encode(`RIFF\0\0\0\0WAVE${MOCK_SPEECH_FAIL}`);
 
 export function createMockSttAdapter(): SttAdapter {
   return {
     providerKey: 'mock',
     async transcribe({ request }) {
-      const head = new TextDecoder().decode(request.audio.subarray(0, 4096));
-      if (head.startsWith(MOCK_SPEECH_FAIL)) {
+      const decoded = new TextDecoder().decode(request.audio);
+      if (decoded.slice(0, 64).includes(MOCK_SPEECH_FAIL)) {
         throw new AiProviderError('mock', 'PROVIDER_ERROR', 'mock_failure', 'simulated outage');
       }
-      const spoken = head.startsWith(MOCK_SPEECH_PREFIX)
-        ? new TextDecoder().decode(request.audio).slice(MOCK_SPEECH_PREFIX.length).trim()
-        : null;
+      const marker = decoded.slice(0, 64).indexOf(MOCK_SPEECH_PREFIX);
+      const spoken = marker >= 0 ? decoded.slice(marker + MOCK_SPEECH_PREFIX.length).trim() : null;
       const seconds = Math.round(request.durationSec ?? 0);
       return {
         text: spoken ?? `[mock] Spoken answer of about ${seconds} seconds.`,

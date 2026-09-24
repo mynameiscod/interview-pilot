@@ -306,8 +306,9 @@ describe('interviews', () => {
       .expect(409);
 
     await InterviewSessionModel.updateOne({ _id: draft.id }, { $set: { state: 'READY' } });
+    // Video arrives in Phase 8.
     await call('patch', `/interviews/${draft.id}/setup`)
-      .send({ mode: 'VOICE', language: 'hi' })
+      .send({ mode: 'VIDEO', language: 'hi' })
       .expect(400);
     const ok = await call('patch', `/interviews/${draft.id}/setup`)
       .send({ mode: 'TEXT', language: 'hi' })

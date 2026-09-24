@@ -33,6 +33,7 @@ import { createLibraryAdminService } from './modules/library/library-admin.servi
 import { createLiveInterviewService, createRoomEmitter } from './modules/live/live.service.js';
 import { createPaymentsService } from './modules/payments/payments.service.js';
 import { createReportsService } from './modules/reports/reports.service.js';
+import { createTranscriptStore, createVoiceService } from './modules/voice/voice.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -138,7 +139,18 @@ export function buildContainer(opts: ContainerOptions) {
   const interviews = createInterviewService({ jobs, audit, logger });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
-  const live = createLiveInterviewService({ ai, redis, logger, rooms, audit, jobs });
+  const transcripts = createTranscriptStore(redis);
+  const voice = createVoiceService({ ai, redis, logger, rooms, audit, transcripts });
+  const live = createLiveInterviewService({
+    ai,
+    redis,
+    logger,
+    rooms,
+    audit,
+    jobs,
+    transcripts,
+    onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
+  });
   const reports = createReportsService({ storage, jobs, audit });
   const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
   const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
@@ -171,6 +183,7 @@ export function buildContainer(opts: ContainerOptions) {
     libraryAdmin,
     rooms,
     live,
+    voice,
     reports,
     payments,
     paymentMock,

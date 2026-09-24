@@ -1,5 +1,12 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  DeviceCheckBody,
+  SwitchModeBody,
+  TranscribeFields,
+  VoiceConsentBody,
+  VoiceHealth,
+  VoiceReadiness,
+  VoiceTranscript,
   AdminPurchase,
   AdminPurchaseQuery,
   AdminReconcileResult,
@@ -747,6 +754,60 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: LibraryReasonBody,
     response: TemplateSummary,
     errors: conflict,
+  });
+
+  // ---- Voice (Phase 7) ----------------------------------------------------------------
+  candidate('get', '/voice/health', {
+    tag: 'Voice',
+    summary:
+      'Speech recognition and synthesis status (AVAILABLE, DEGRADED = fallback only, UNAVAILABLE)',
+    response: VoiceHealth,
+    errors: [401],
+  });
+  candidate('post', '/interviews/{id}/device-check', {
+    tag: 'Voice',
+    summary: 'Record the browser device check for a voice interview (before starting)',
+    body: DeviceCheckBody,
+    response: VoiceReadiness,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/voice-consent', {
+    tag: 'Voice',
+    summary:
+      'Accept the voice processing notice (audio goes to speech providers and is not stored)',
+    body: VoiceConsentBody,
+    response: VoiceReadiness,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/voice/transcribe', {
+    tag: 'Voice',
+    summary:
+      'Transcribe a recorded answer to the current question; submit it with answer:text + voiceTranscriptId. 503 SPEECH_UNAVAILABLE also emits interview:degraded',
+    multipart: TranscribeFields.extend({
+      audio: z.string().meta({
+        format: 'binary',
+        description:
+          'The recorded answer: WebM, Ogg, MP4, MP3 or WAV (detected from the bytes), up to 10 MB',
+      }),
+    }),
+    response: VoiceTranscript,
+    errors: [400, 401, 404, 409, 413, 415, 429, 503],
+  });
+  route('get', '/interviews/{id}/questions/{questionId}/audio', {
+    tag: 'Voice',
+    auth: 'bearer',
+    summary:
+      'The spoken question (audio/mpeg or audio/wav), synthesized once and cached; 503 SPEECH_UNAVAILABLE when no TTS model can serve',
+    response: null,
+    status: 200,
+    errors: [401, 404, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/mode', {
+    tag: 'Voice',
+    summary: 'Switch a running interview between voice and text (state and clock are unchanged)',
+    body: SwitchModeBody,
+    response: z.object({ mode: z.enum(['TEXT', 'VOICE']) }),
+    errors: [400, 401, 404, 409],
   });
 
   // ---- Plans and payments (Phase 6) -------------------------------------------------

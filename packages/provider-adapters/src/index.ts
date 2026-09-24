@@ -52,5 +52,6 @@ export {
   MOCK_SPEECH_FAIL,
   MOCK_SPEECH_PREFIX,
   mockSpeech,
+  mockSpeechFailure,
 } from './speech/mock.js';
 export { createOpenAiSttAdapter, createOpenAiTtsAdapter } from './speech/openai.js';

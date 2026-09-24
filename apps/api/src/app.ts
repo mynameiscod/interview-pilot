@@ -23,6 +23,7 @@ import {
 } from './modules/payments/payments.routes.js';
 import { feedbackRouter, reportsRouter } from './modules/reports/reports.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
+import { voiceInterviewRouter, voiceRouter } from './modules/voice/voice.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
@@ -96,7 +97,9 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/users', usersRouter(c));
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
+  v1.use('/interviews', voiceInterviewRouter(c));
   v1.use('/interviews', interviewsRouter(c));
+  v1.use('/voice', voiceRouter(c));
   v1.use('/credits', creditsRouter(c));
   v1.use('/reports', reportsRouter(c));
   v1.use('/feedback', feedbackRouter(c));

@@ -24,6 +24,7 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { JobQueues } from '../../lib/jobs.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import { voiceReadiness } from '../voice/voice.service.js';
 
 export const DEFAULT_TEMPLATE_KEY = 'standard-practice';
 /** Analysis runs billed AI calls; repeated retries of one draft are capped. */
@@ -93,6 +94,7 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
       startedAt: session.startedAt ? iso(session.startedAt) : null,
       endedAt: session.endedAt ? iso(session.endedAt) : null,
       credit: session.credit?.status ?? 'NONE',
+      voice: session.mode === 'VOICE' || session.voice ? voiceReadiness(session) : null,
       createdAt: iso(session.createdAt),
       updatedAt: iso(session.updatedAt),
     };
