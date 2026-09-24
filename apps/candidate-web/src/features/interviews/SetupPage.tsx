@@ -9,6 +9,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
 import {
   formatMinutes,
@@ -21,8 +22,27 @@ import {
 
 const MODE_ICON = { TEXT: 'bi-keyboard', VOICE: 'bi-mic', VIDEO: 'bi-camera-video' } as const;
 
+/** A campaign fixes which modes and languages its candidates can choose from. */
 const isModeSelectable = (interview: InterviewSummary, mode: InterviewMode) =>
-  AVAILABLE_INTERVIEW_MODES.includes(mode) && interview.template.modes.includes(mode);
+  AVAILABLE_INTERVIEW_MODES.includes(mode) &&
+  interview.template.modes.includes(mode) &&
+  (!interview.campaign || interview.campaign.modes.includes(mode));
+
+const languageOptions = (interview: InterviewSummary): InterviewLanguagePreference[] =>
+  interview.campaign
+    ? InterviewLanguagePreference.options.filter((l) => interview.campaign!.languages.includes(l))
+    : InterviewLanguagePreference.options;
+
+/** The saved choice when it is still allowed, otherwise the first allowed one. */
+function initialMode(interview: InterviewSummary): InterviewMode {
+  if (isModeSelectable(interview, interview.mode)) return interview.mode;
+  return InterviewMode.options.find((m) => isModeSelectable(interview, m)) ?? interview.mode;
+}
+
+function initialLanguage(interview: InterviewSummary): InterviewLanguagePreference {
+  const options = languageOptions(interview);
+  return options.includes(interview.language) ? interview.language : (options[0] ?? 'auto');
+}
 
 const READY_BODY = {
   TEXT: 'setup.ready.body',
@@ -35,8 +55,8 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
   const id = useId();
   const api = useInterviewsApi();
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<InterviewMode>(interview.mode);
-  const [language, setLanguage] = useState(interview.language);
+  const [mode, setMode] = useState<InterviewMode>(() => initialMode(interview));
+  const [language, setLanguage] = useState(() => initialLanguage(interview));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +197,7 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
             {t('setup.languageHint')}
           </p>
           <div className="d-flex flex-wrap gap-3">
-            {InterviewLanguagePreference.options.map((lng) => (
+            {languageOptions(interview).map((lng) => (
               <div key={lng} className="form-check">
                 <input
                   id={`${id}-lang-${lng}`}
@@ -204,8 +224,17 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
             <dd className="col-sm-8">{formatMinutes(t, duration)}</dd>
             <dt className="col-sm-4">{t('setup.costTitle')}</dt>
             <dd className="col-sm-8">
-              {t('setup.credits', { count: interview.template.creditCost })}
-              <div className="small cb-text-secondary">{t('setup.creditsNote')}</div>
+              {interview.campaign?.sponsored ? (
+                <>
+                  {t('campaign.sponsoredBy', { company: interview.campaign.companyName })}
+                  <div className="small cb-text-secondary">{t('campaign.sponsoredNote')}</div>
+                </>
+              ) : (
+                <>
+                  {t('setup.credits', { count: interview.template.creditCost })}
+                  <div className="small cb-text-secondary">{t('setup.creditsNote')}</div>
+                </>
+              )}
             </dd>
           </dl>
         </section>
@@ -326,6 +355,7 @@ export function SetupPage() {
     <div className="container py-5">
       <h1 className="h3">{t('setup.title')}</h1>
       <p className="cb-text-secondary">{data.title}</p>
+      <CampaignBanner campaign={data.campaign} />
       {data.state === 'READY' ? (
         <>
           <SetupForm interview={data} />

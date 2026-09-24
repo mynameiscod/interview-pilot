@@ -13,7 +13,7 @@ import type {
   UploadJobTargetFields,
 } from '@cbi/shared-types';
 import type { ApiClient } from '@cbi/web-core';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useCandidateAuth } from '../../app/session';
 
@@ -150,6 +150,9 @@ export function useLibrarySearch(kind: 'companies' | 'roles', q: string, enabled
     queryFn: () => api.searchLibrary(kind, q),
     enabled,
     staleTime: 60_000,
+    // Keep the last results while the next query loads, so the list does not flicker
+    // (and an option being clicked is not unmounted mid-click).
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -4,9 +4,10 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { FEEDBACK_ANCHOR, useProcessingProgress } from '../reports/reports-api';
 import { queryKeys, useInterview } from './interviews-api';
-import { inputErrorMessage, interviewPath, isEnded } from './messages';
+import { inputErrorMessage, interviewPath, isEnded, reportVisible } from './messages';
 
 type Outcome = 'processing' | 'expired' | 'failed';
 
@@ -32,6 +33,15 @@ const STEPS: { key: string; stages: ProcessingStage[] }[] = [
 
 function CreditOutcome({ interview, outcome }: { interview: InterviewSummary; outcome: Outcome }) {
   const { t } = useTranslation();
+  if (interview.credit === 'SPONSORED') {
+    return (
+      <p className="mb-0">
+        {interview.campaign
+          ? t('complete.credit.SPONSORED', { company: interview.campaign.companyName })
+          : t('complete.credit.sponsoredGeneric')}
+      </p>
+    );
+  }
   if (interview.credit === 'CONSUMED') {
     return (
       <p className="mb-0">
@@ -120,9 +130,12 @@ export function CompletePage() {
   const queryClient = useQueryClient();
   const interview = useInterview(id);
   const state = interview.data?.state;
-  const evaluating = state === 'PROCESSING' || state === 'COMPLETING';
+  // A campaign may keep the report from the candidate: then nothing about it is loaded or linked.
+  const canSeeReport = interview.data ? reportVisible(interview.data) : false;
+  const evaluating = canSeeReport && (state === 'PROCESSING' || state === 'COMPLETING');
   const progress = useProcessingProgress(id, evaluating);
-  const reportReady = state === 'REPORT_READY' || Boolean(progress.data?.reportReady);
+  const reportReady =
+    canSeeReport && (state === 'REPORT_READY' || Boolean(progress.data?.reportReady));
 
   // Once the report exists the interview (and its credit) has moved on too.
   useEffect(() => {
@@ -162,7 +175,12 @@ export function CompletePage() {
           {t(`complete.${outcome}.title`)}
         </h1>
         <p className="cb-text-secondary">{data.title}</p>
-        {outcome === 'processing' ? (
+        <CampaignBanner campaign={data.campaign} />
+        {outcome === 'processing' && !canSeeReport ? (
+          <p role="status">
+            {t('campaign.submitted', { company: data.campaign?.companyName ?? '' })}
+          </p>
+        ) : outcome === 'processing' ? (
           <>
             <p role="status">
               {reportReady ? t('complete.reportReady') : t('complete.processing.body')}

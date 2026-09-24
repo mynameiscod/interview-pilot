@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { queryKeys, useCreditBalance, useInterview, useInterviewsApi } from './interviews-api';
 import {
   formatMinutes,
@@ -14,6 +15,21 @@ import {
   isLive,
   startErrorMessage,
 } from './messages';
+
+/** A sponsored campaign interview: the company pays, the candidate's credits stay untouched. */
+function SponsoredSummary({ companyName }: { companyName: string }) {
+  const { t } = useTranslation();
+  return (
+    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="start-credit">
+      <h2 id="start-credit" className="h5">
+        <i className="bi bi-gift me-2 text-secondary" aria-hidden="true" />
+        {t('start.creditTitle')}
+      </h2>
+      <p className="fw-semibold mb-1">{t('campaign.sponsoredBy', { company: companyName })}</p>
+      <p className="small cb-text-secondary mb-0">{t('campaign.sponsoredNote')}</p>
+    </section>
+  );
+}
 
 function CreditSummary({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
@@ -205,7 +221,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       {isVoice && <VoiceReadinessCard interview={interview} />}
       {!isVoice && interview.consentsPending && <ConsentCard interview={interview} />}
 
-      <CreditSummary interview={interview} />
+      {interview.campaign?.sponsored ? (
+        <SponsoredSummary companyName={interview.campaign.companyName} />
+      ) : (
+        <CreditSummary interview={interview} />
+      )}
 
       {error && (
         <div className="alert alert-danger mb-0" role="alert">
@@ -281,6 +301,7 @@ export function StartPage() {
     <div className="container py-5">
       <h1 className="h3">{t('start.title')}</h1>
       <p className="cb-text-secondary">{data.title}</p>
+      <CampaignBanner campaign={data.campaign} />
       {data.state === 'READY' || data.state === 'READY_TO_START' ? (
         <StartScreen interview={data} />
       ) : (

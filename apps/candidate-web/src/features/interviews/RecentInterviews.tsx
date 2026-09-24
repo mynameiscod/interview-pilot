@@ -3,7 +3,7 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { useInterviews } from './interviews-api';
-import { formatDate, interviewPath, isLive } from './messages';
+import { formatDate, interviewPath, isLive, reportVisible } from './messages';
 
 const STATE_ICON: Partial<Record<string, string>> = {
   ROLE_ANALYSIS: 'bi-hourglass-split',
@@ -21,6 +21,9 @@ const STATE_ICON: Partial<Record<string, string>> = {
   EXPIRED: 'bi-hourglass-bottom',
 };
 
+/** Finished interviews whose results went to the company (the report may be hidden). */
+const SUBMITTED_STATES = new Set(['COMPLETING', 'PROCESSING', 'REPORT_READY']);
+
 /** The action label (and its accessible name) for an interview's link. */
 function linkLabels(t: TFunction, interview: InterviewSummary) {
   if (isLive(interview.state)) {
@@ -29,7 +32,7 @@ function linkLabels(t: TFunction, interview: InterviewSummary) {
       name: t('dashboard.resumeNamed', { title: interview.title }),
     };
   }
-  if (interview.state === 'REPORT_READY') {
+  if (interview.state === 'REPORT_READY' && reportVisible(interview)) {
     return {
       label: t('dashboard.viewReport'),
       name: t('dashboard.viewReportNamed', { title: interview.title }),
@@ -74,6 +77,22 @@ export function RecentInterviews() {
                     .filter(Boolean)
                     .join(' · ')}
                 </div>
+                {interview.campaign && (
+                  <div className="small">
+                    <i className="bi bi-building me-1 text-secondary" aria-hidden="true" />
+                    {t('campaign.banner.invitedBy', { company: interview.campaign.companyName })}
+                    {interview.campaign.sponsored && (
+                      <span className="badge text-bg-success fw-normal ms-2">
+                        {t('campaign.sponsoredBadge')}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!reportVisible(interview) && SUBMITTED_STATES.has(interview.state) && (
+                  <div className="small cb-text-secondary">
+                    {t('campaign.submitted', { company: interview.campaign?.companyName ?? '' })}
+                  </div>
+                )}
               </div>
               <span className="badge text-bg-light border cb-border fw-normal">
                 <i

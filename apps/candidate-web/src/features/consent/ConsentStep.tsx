@@ -1,4 +1,4 @@
-import type { SessionConsentItem, SessionConsents } from '@cbi/shared-types';
+import type { ConsentType, SessionConsentItem, SessionConsents } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,8 @@ const TYPE_ICON = {
   VOICE_PROCESSING: 'bi-soundwave',
   RECORDING: 'bi-record-circle',
   INTEGRITY: 'bi-eye',
-} as const;
+  CAMPAIGN_SHARING: 'bi-building',
+} as const satisfies Record<ConsentType, string>;
 
 /** Consent texts are plain text; a blank line starts a new paragraph. */
 function Paragraphs({ body }: { body: string }) {

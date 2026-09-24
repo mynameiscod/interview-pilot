@@ -37,6 +37,8 @@ export function inputErrorMessage(t: TFunction, err: unknown): string {
       case 'AI_UNAVAILABLE':
       case 'SERVICE_UNAVAILABLE':
         return t('inputs.serviceUnavailable');
+      case 'CAMPAIGN_CLOSED':
+        return t('campaign.errors.closed');
     }
   }
   return errorMessage(t, err);
@@ -67,15 +69,27 @@ export const isEnded = (
   ENDED_STATES.includes(interview.state) ||
   (interview.state === 'FAILED' && Boolean(interview.startedAt));
 
+/**
+ * False when a campaign keeps the report from the candidate (the company decides);
+ * such interviews never link to or load the report.
+ */
+export const reportVisible = (interview: {
+  campaign?: Pick<NonNullable<InterviewSummary['campaign']>, 'reportVisible'> | null;
+}) => interview.campaign?.reportVisible !== false;
+
 /** Where an interview in this state is best continued. */
 export function interviewPath(
-  interview: Pick<InterviewSummary, 'id' | 'state'> & { startedAt?: string | null },
+  interview: Pick<InterviewSummary, 'id' | 'state'> & {
+    startedAt?: string | null;
+    campaign?: Pick<NonNullable<InterviewSummary['campaign']>, 'reportVisible'> | null;
+  },
 ): string {
   const base = `/app/interviews/${interview.id}`;
   if (interview.state === 'READY') return `${base}/setup`;
   if (interview.state === 'READY_TO_START') return `${base}/start`;
   if (isLive(interview.state)) return `${base}/room`;
-  if (interview.state === 'REPORT_READY') return `/app/reports/${interview.id}`;
+  if (interview.state === 'REPORT_READY' && reportVisible(interview))
+    return `/app/reports/${interview.id}`;
   if (isEnded(interview)) return `${base}/complete`;
   return `${base}/analysis`;
 }

@@ -658,7 +658,9 @@
       "REFUNDED": "Your credit was returned because the interview ended early.",
       "refundedGeneric": "Your credit was returned.",
       "RESERVED": "We are finalising your credit.",
-      "NONE": "No credit was used."
+      "NONE": "No credit was used.",
+      "SPONSORED": "Sponsored by {{company}} — no credits used.",
+      "sponsoredGeneric": "Sponsored — no credits used."
     },
     "reportReady": "Your readiness report is ready.",
     "stalled": "This is taking longer than usual — our team has been notified; your answers are saved.",
@@ -1325,6 +1327,69 @@
       "submitted": "Solution submitted ({{passed}}/{{total}} tests passed)",
       "submittedNotRun": "Solution submitted (not run)",
       "notSubmitted": "Solution not submitted"
+    }
+  },
+  "campaign": {
+    "invitedBy": "Interview invitation from {{company}}",
+    "intro": "{{company}} has invited you to an interview for the {{role}} role.",
+    "sponsoredFree": "Free for you — {{company}} covers this interview",
+    "sponsoredBadge": "Sponsored",
+    "sponsoredBy": "Sponsored by {{company}}",
+    "sponsoredNote": "Your credits are not used for this interview.",
+    "continue": "Continue your interview",
+    "alreadyJoined": "You have already joined this interview.",
+    "submitted": "Your interview has been submitted to {{company}}. They will contact you about next steps.",
+    "loadError": "We could not load this invitation",
+    "notFound": {
+      "title": "This invitation link is not valid",
+      "body": "Check the link you were sent, or ask the company for a new one."
+    },
+    "banner": {
+      "label": "Company interview",
+      "invitedBy": "Invited by {{company}}"
+    },
+    "details": {
+      "title": "About this interview",
+      "role": "Role",
+      "assesses": "What is assessed",
+      "duration": "Duration",
+      "modes": "Interview modes",
+      "languages": "Languages",
+      "window": "Open",
+      "windowRange": "{{start}} – {{end}}",
+      "windowFrom": "From {{start}}"
+    },
+    "notices": {
+      "title": "Before you join",
+      "ownCredits": "This interview uses your own credits.",
+      "sharing": "Your answers and results are shared with {{company}}.",
+      "reportVisible": "You will also get your own readiness report.",
+      "reportHidden": "{{company}} keeps the report; you will not see a report for this interview.",
+      "recording": {
+        "OFF": "Interviews are not recorded.",
+        "OPTIONAL": "Video interviews are recorded only if you agree; it is your choice.",
+        "REQUIRED": "Video interviews are recorded; you will be asked to agree before you start."
+      },
+      "observations": "Tab switches, focus changes and pastes are noted during the interview (observations, never judgements)."
+    },
+    "join": {
+      "title": "Join",
+      "action": "Join interview",
+      "joining": "Joining…",
+      "signInFirst": "Sign in or create a free account to join. You will come back here afterwards.",
+      "resumeLabel": "Resume (optional)",
+      "noResume": "Do not use a resume",
+      "resumeHint": "A resume helps tailor the questions to your experience."
+    },
+    "closed": {
+      "NOT_STARTED": "This interview opens on {{date}}. Come back then to join.",
+      "ENDED": "This interview closed on {{date}} and is no longer accepting candidates.",
+      "PAUSED": "{{company}} has paused this interview for now. Please check back later.",
+      "CLOSED": "This interview is closed and no longer accepting candidates.",
+      "FULL": "This interview has reached its limit of candidates and cannot accept more."
+    },
+    "errors": {
+      "closed": "This interview is not open right now. The company may have paused or closed it."
     }
   }
 }

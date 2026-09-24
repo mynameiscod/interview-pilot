@@ -49,6 +49,13 @@ export const routes: RouteObject[] = [
         }),
       },
       {
+        // Company invite links: public, so candidates see the interview before signing in.
+        path: 'campaign/:token',
+        lazy: async () => ({
+          Component: (await import('../features/campaigns/CampaignPage')).CampaignPage,
+        }),
+      },
+      {
         element: <RedirectIfSignedIn />,
         children: [
           {

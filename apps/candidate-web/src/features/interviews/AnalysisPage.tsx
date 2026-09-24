@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { CampaignBanner } from '../campaigns/CampaignBanner';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
 import { formatMinutes, inputErrorMessage } from './messages';
 
@@ -302,9 +303,11 @@ export function AnalysisPage() {
               {code ? t('analysis.retry') : t('analysis.draft.start')}
             </button>
           )}
-          <Link to={editLink} className="btn btn-outline-primary">
-            {t('analysis.editInputs')}
-          </Link>
+          {!data.campaign && (
+            <Link to={editLink} className="btn btn-outline-primary">
+              {t('analysis.editInputs')}
+            </Link>
+          )}
         </div>
       </section>
     );
@@ -328,9 +331,11 @@ export function AnalysisPage() {
             <Link to={`/app/interviews/${data.id}/setup`} className="btn btn-primary btn-lg">
               {t('analysis.looksRight')}
             </Link>
-            <Link to={editLink} className="btn btn-outline-primary btn-lg">
-              {t('analysis.editInputs')}
-            </Link>
+            {!data.campaign && (
+              <Link to={editLink} className="btn btn-outline-primary btn-lg">
+                {t('analysis.editInputs')}
+              </Link>
+            )}
           </div>
         )}
       </>
@@ -341,6 +346,7 @@ export function AnalysisPage() {
     <div className="container py-5">
       <h1 className="h3">{t('analysis.title')}</h1>
       <p className="cb-text-secondary">{data.title}</p>
+      <CampaignBanner campaign={data.campaign} />
       {body}
     </div>
   );
