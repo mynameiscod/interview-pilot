@@ -1,10 +1,4 @@
-import {
-  DeviceCheckBody,
-  SwitchModeBody,
-  TranscribeFields,
-  VOICE_LIMITS,
-  VoiceConsentBody,
-} from '@cbi/shared-types';
+import { DeviceCheckBody, SwitchModeBody, TranscribeFields, VOICE_LIMITS } from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
 import type { Container } from '../../container.js';
@@ -63,18 +57,6 @@ export function voiceInterviewRouter(c: Container): Router {
     const body = DeviceCheckBody.parse(req.body);
     res.json({
       data: await c.voice.recordDeviceCheck(requireAuth(req).userId, String(req.params.id), body),
-    });
-  });
-
-  router.post('/:id/voice-consent', async (req, res) => {
-    const body = VoiceConsentBody.parse(req.body);
-    res.json({
-      data: await c.voice.recordConsent(
-        requireAuth(req).userId,
-        String(req.params.id),
-        body,
-        clientContext(req),
-      ),
     });
   });
 

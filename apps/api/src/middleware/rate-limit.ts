@@ -15,7 +15,8 @@ export type RateLimiterName =
   | 'jdUrl'
   | 'analysis'
   | 'payment'
-  | 'voice';
+  | 'voice'
+  | 'media';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -41,6 +42,8 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   payment: { windowMs: 10 * 60_000, limit: 40, failOpen: false },
   /** Transcriptions and question audio: billed speech calls (about one of each per question). */
   voice: { windowMs: 10 * 60_000, limit: 150, failOpen: false },
+  /** Recording segments: one per 10 s while recording, plus retries after a network drop. */
+  media: { windowMs: 10 * 60_000, limit: 300, failOpen: false },
 };
 
 /** Limiters mounted after authentication count per user rather than per IP. */
@@ -52,6 +55,7 @@ const PER_USER = new Set<RateLimiterName>([
   'analysis',
   'payment',
   'voice',
+  'media',
 ]);
 
 /** @param redis null → in-process memory counters (single-process tests only). */
@@ -90,5 +94,6 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     analysis: make('analysis'),
     payment: make('payment'),
     voice: make('voice'),
+    media: make('media'),
   };
 }

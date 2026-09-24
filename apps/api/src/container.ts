@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { createAccessTokenIssuer } from '@cbi/auth-core';
 import type { ApiEnv, Logger } from '@cbi/config';
 import type { Redis } from '@cbi/db';
@@ -34,6 +35,8 @@ import { createLiveInterviewService, createRoomEmitter } from './modules/live/li
 import { createPaymentsService } from './modules/payments/payments.service.js';
 import { createReportsService } from './modules/reports/reports.service.js';
 import { createTranscriptStore, createVoiceService } from './modules/voice/voice.service.js';
+import { createConsentService } from './modules/consent/consent.service.js';
+import { createMediaService } from './modules/media/media.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -136,11 +139,20 @@ export function buildContainer(opts: ContainerOptions) {
   const storage = opts.overrides?.storage ?? createStorage(env);
   const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
   const inputs = createInputsService({ storage, jobs, audit, logger });
-  const interviews = createInterviewService({ jobs, audit, logger });
+  const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
+  const interviews = createInterviewService({ jobs, audit, logger, consent });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
   const transcripts = createTranscriptStore(redis);
-  const voice = createVoiceService({ ai, redis, logger, rooms, audit, transcripts });
+  const voice = createVoiceService({ ai, redis, logger, rooms, audit, transcripts, consent });
+  const media = createMediaService({
+    storage,
+    audit,
+    logger,
+    retentionDays: env.MEDIA_RETENTION_DAYS_DEFAULT,
+    // A separate key per purpose, derived from the server secret.
+    signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
+  });
   const live = createLiveInterviewService({
     ai,
     redis,
@@ -149,6 +161,7 @@ export function buildContainer(opts: ContainerOptions) {
     audit,
     jobs,
     transcripts,
+    consent,
     onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
   });
   const reports = createReportsService({ storage, jobs, audit });
@@ -184,6 +197,8 @@ export function buildContainer(opts: ContainerOptions) {
     rooms,
     live,
     voice,
+    consent,
+    media,
     reports,
     payments,
     paymentMock,

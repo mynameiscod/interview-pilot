@@ -1,6 +1,5 @@
-import { VOICE_CONSENT_VERSION } from '@cbi/shared-types';
 import { describe, expect, it } from 'vitest';
-import { sniffAudio, voiceReadiness, voiceStartBlocker } from './voice.service.js';
+import { sniffAudio } from './voice.service.js';
 
 const bytes = (...parts: (string | number[])[]) =>
   new Uint8Array(
@@ -21,43 +20,5 @@ describe('sniffAudio', () => {
     expect(sniffAudio(bytes('%PDF-1.7'))).toBeNull();
     expect(sniffAudio(bytes('<html>'))).toBeNull();
     expect(sniffAudio(new Uint8Array())).toBeNull();
-  });
-});
-
-describe('voice readiness', () => {
-  const now = new Date('2026-09-24T12:00:00Z');
-  const check = (passed: boolean, hoursAgo = 1) => ({
-    microphone: passed ? ('PASS' as const) : ('FAIL' as const),
-    recorder: 'PASS' as const,
-    speaker: 'WARN' as const,
-    network: 'PASS' as const,
-    speechService: 'PASS' as const,
-    mimeType: 'audio/webm',
-    rttMs: 100,
-    browser: null,
-    at: new Date(now.getTime() - hoursAgo * 3600_000),
-    passed,
-  });
-  const consent = { version: VOICE_CONSENT_VERSION, at: now };
-  const session = (
-    deviceCheck: ReturnType<typeof check> | null,
-    c = consent as typeof consent | null,
-  ) => ({
-    voice: { deviceCheck, consent: c, modeHistory: [] },
-  });
-
-  it('is ready with a recent passing check and current consent', () => {
-    expect(voiceReadiness(session(check(true)), now).ready).toBe(true);
-    expect(voiceStartBlocker(session(check(true)), now)).toBeNull();
-  });
-
-  it('explains what is missing', () => {
-    expect(voiceStartBlocker({ voice: null }, now)).toMatch(/device check/);
-    expect(voiceStartBlocker(session(check(false)), now)).toMatch(/microphone/);
-    expect(voiceStartBlocker(session(check(true, 25)), now)).toMatch(/expired/);
-    expect(voiceStartBlocker(session(check(true), null), now)).toMatch(/notice/);
-    expect(
-      voiceReadiness(session(check(true), { version: 'voice-2020-01', at: now }), now).ready,
-    ).toBe(false);
   });
 });

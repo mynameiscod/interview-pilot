@@ -4,6 +4,7 @@ import type { Redis } from '@cbi/db';
 import {
   AnswerTextPayload,
   HeartbeatPayload,
+  IntegrityEventPayload,
   JoinPayload,
   RT_NAMESPACE,
   RtEvent,
@@ -129,6 +130,26 @@ export async function createRealtime(opts: {
         if (payload.sessionId !== data.sessionId)
           throw new LiveError('INVALID_STATE', 'Join the interview first.');
         await c.live.heartbeat(data.userId, payload.sessionId);
+        ack?.({ ok: true });
+      } catch (err) {
+        fail(ack, err);
+      }
+    });
+
+    // Integrity observations: at most 5 a second per connection; extra ones are dropped.
+    let windowStart = 0;
+    let inWindow = 0;
+    socket.on(RtEvent.INTEGRITY, async (raw: unknown, ack?: Ack) => {
+      try {
+        const payload = IntegrityEventPayload.parse(raw);
+        if (payload.sessionId !== data.sessionId)
+          throw new LiveError('INVALID_STATE', 'Join the interview first.');
+        const t = Date.now();
+        if (t - windowStart > 1000) {
+          windowStart = t;
+          inWindow = 0;
+        }
+        if (++inWindow <= 5) await c.media.recordIntegrity(data.userId, payload);
         ack?.({ ok: true });
       } catch (err) {
         fail(ack, err);

@@ -1,9 +1,22 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  ActivateConsentTextBody,
+  AdminIntegrityEvent,
+  AdminMediaAsset,
+  AdminMediaQuery,
+  ConsentDecisionBody,
+  ConsentTextSummary,
+  CreateConsentTextBody,
+  FinalizeMediaBody,
+  MediaAssetSummary,
+  PlaybackUrl,
+  PurgeMediaBody,
+  SegmentUploadResult,
+  SessionConsents,
+  UserConsentEntry,
   DeviceCheckBody,
   SwitchModeBody,
   TranscribeFields,
-  VoiceConsentBody,
   VoiceHealth,
   VoiceReadiness,
   VoiceTranscript,
@@ -771,14 +784,6 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: VoiceReadiness,
     errors: [400, 401, 404, 409],
   });
-  candidate('post', '/interviews/{id}/voice-consent', {
-    tag: 'Voice',
-    summary:
-      'Accept the voice processing notice (audio goes to speech providers and is not stored)',
-    body: VoiceConsentBody,
-    response: VoiceReadiness,
-    errors: [400, 401, 404, 409],
-  });
   candidate('post', '/interviews/{id}/voice/transcribe', {
     tag: 'Voice',
     summary:
@@ -808,6 +813,118 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: SwitchModeBody,
     response: z.object({ mode: z.enum(['TEXT', 'VOICE']) }),
     errors: [400, 401, 404, 409],
+  });
+
+  // ---- Consent, recordings and integrity (Phase 8) ------------------------------------------
+  candidate('get', '/interviews/{id}/consents', {
+    tag: 'Consent',
+    summary:
+      'The consents this interview asks for (by mode and template policy) and your decisions',
+    response: SessionConsents,
+    errors: [401, 404],
+  });
+  candidate('post', '/interviews/{id}/consents', {
+    tag: 'Consent',
+    summary:
+      'Accept or decline the current consent texts (before starting; every decision is kept)',
+    body: ConsentDecisionBody,
+    response: SessionConsents,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('get', '/users/me/consents', {
+    tag: 'Consent',
+    summary: 'My consent history',
+    response: z.array(UserConsentEntry),
+  });
+  route('post', '/interviews/{id}/media/segments/{idx}', {
+    tag: 'Recordings',
+    auth: 'bearer',
+    summary:
+      'Upload one MediaRecorder segment as the raw body (Content-Type video/webm or video/mp4, ≤ 8 MB). Idempotent by index: 200 duplicate, 201 stored; 503 means retry later',
+    response: SegmentUploadResult,
+    status: 201,
+    errors: [400, 401, 404, 409, 413, 415, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/media/finalize', {
+    tag: 'Recordings',
+    summary:
+      'Close the recording with the number of segments produced (COMPLETE, PARTIAL or FAILED)',
+    body: FinalizeMediaBody,
+    response: MediaAssetSummary.nullable(),
+    errors: [400, 401, 404, 409],
+  });
+  candidate('get', '/interviews/{id}/media', {
+    tag: 'Recordings',
+    summary: 'My recording of this interview, or null',
+    response: MediaAssetSummary.nullable(),
+    errors: [401, 404],
+  });
+  candidate('get', '/interviews/{id}/media/playback-url', {
+    tag: 'Recordings',
+    summary: 'A signed playback link for my recording (valid 5 minutes)',
+    response: PlaybackUrl,
+    errors: [401, 404],
+  });
+  candidate('delete', '/interviews/{id}/media', {
+    tag: 'Recordings',
+    summary: 'Delete my recording now (the record of the deletion is kept)',
+    response: MediaAssetSummary,
+    errors: [401, 404, 503],
+  });
+  route('get', '/media/play/{assetId}', {
+    tag: 'Recordings',
+    summary:
+      'Stream a recording from a signed link (exp and sig query parameters; no Authorization header, for <video>)',
+    response: null,
+    status: 200,
+    errors: [403, 404],
+  });
+  const media = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin recordings',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  media('get', '/admin/media', {
+    summary:
+      'Recordings with retention and deletion state; q matches session, user or email (media.read)',
+    query: AdminMediaQuery,
+    response: z.array(AdminMediaAsset),
+  });
+  media('get', '/admin/media/{id}', {
+    summary: 'One recording (media.read)',
+    response: AdminMediaAsset,
+  });
+  media('post', '/admin/media/{id}/playback', {
+    summary: 'A signed playback link; every issue is audited (media.read)',
+    response: PlaybackUrl,
+  });
+  media('post', '/admin/media/{id}/purge', {
+    summary: 'Delete a recording now, audited (media.manage)',
+    body: PurgeMediaBody,
+    response: AdminMediaAsset,
+    errors: [400, 401, 403, 404, 409, 503],
+  });
+  media('get', '/admin/interviews/{id}/integrity', {
+    summary: 'Integrity observations of an interview, in order (media.read)',
+    response: z.array(AdminIntegrityEvent),
+  });
+  media('get', '/admin/consent-texts', {
+    summary: 'Consent text versions (consent.read)',
+    response: z.array(ConsentTextSummary),
+  });
+  media('post', '/admin/consent-texts', {
+    summary: 'Add the next version of a consent text, inactive (consent.manage)',
+    body: CreateConsentTextBody,
+    response: ConsentTextSummary,
+    status: 201,
+  });
+  media('post', '/admin/consent-texts/{id}/activate', {
+    summary:
+      'Make a version current; candidates are asked again before their next start (consent.manage)',
+    body: ActivateConsentTextBody,
+    response: ConsentTextSummary,
   });
 
   // ---- Plans and payments (Phase 6) -------------------------------------------------

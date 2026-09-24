@@ -7,6 +7,7 @@ import {
   connectMongo,
   createRedis,
   disconnectMongo,
+  ensureConsentTexts,
   ensureIndexes,
   mongoose,
   type Redis,
@@ -56,6 +57,8 @@ export function useIntegrationServices() {
       await db.collection(name).deleteMany({});
     }
     await redis.flushdb();
+    // Seeded at API start in real deployments.
+    await ensureConsentTexts();
   });
 
   afterAll(async () => {

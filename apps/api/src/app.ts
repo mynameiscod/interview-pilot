@@ -24,6 +24,11 @@ import {
 import { feedbackRouter, reportsRouter } from './modules/reports/reports.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
 import { voiceInterviewRouter, voiceRouter } from './modules/voice/voice.routes.js';
+import {
+  mediaInterviewRouter,
+  mediaPlaybackRouter,
+  userConsentsRouter,
+} from './modules/media/media.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
@@ -94,10 +99,13 @@ export function createApp(deps: AppDependencies): Express {
   const v1 = express.Router();
   v1.use(c.limiters.public);
   v1.use('/auth', authRouter('candidate', c));
+  v1.use('/users', userConsentsRouter(c));
   v1.use('/users', usersRouter(c));
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
   v1.use('/interviews', voiceInterviewRouter(c));
+  v1.use('/interviews', mediaInterviewRouter(c));
+  v1.use('/media', mediaPlaybackRouter(c));
   v1.use('/interviews', interviewsRouter(c));
   v1.use('/voice', voiceRouter(c));
   v1.use('/credits', creditsRouter(c));

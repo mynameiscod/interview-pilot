@@ -9,6 +9,7 @@ import {
   createRedis,
   disconnectMongo,
   ensureCommerceCatalog,
+  ensureConsentTexts,
   ensureIndexes,
   ensureLibraryCatalog,
   pingMongo,
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   const seeded = await ensureLibraryCatalog();
   logger.info(seeded, 'interview library checked');
   logger.info({ created: await ensureCommerceCatalog() }, 'plan catalogue checked');
+  logger.info({ created: await ensureConsentTexts() }, 'consent texts checked');
   const stopAiListener = await container.ai.listenForChanges();
   const app = createApp({
     container,

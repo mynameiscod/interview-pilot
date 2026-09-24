@@ -24,7 +24,7 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { JobQueues } from '../../lib/jobs.js';
 import type { ClientContext } from '../../lib/request-context.js';
-import { voiceReadiness } from '../voice/voice.service.js';
+import type { ConsentService } from '../consent/consent.service.js';
 
 export const DEFAULT_TEMPLATE_KEY = 'standard-practice';
 /** Analysis runs billed AI calls; repeated retries of one draft are capped. */
@@ -54,9 +54,10 @@ interface Deps {
   jobs: JobQueues;
   audit: AuditService;
   logger: Logger;
+  consent: ConsentService;
 }
 
-export function createInterviewService({ jobs, audit, logger }: Deps) {
+export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
   async function summary(
     session: InterviewSessionRecord,
     loaded?: { template?: InterviewTemplateRecord | null; target?: JobTargetRecord | null },
@@ -70,6 +71,7 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
         : JobTargetModel.findById(session.jobTargetId, { rawText: 0 }).lean(),
     ]);
     if (!template) throw new Error(`template ${String(session.templateId)} missing`);
+    const readiness = await consent.readiness(session);
     const role = target?.roleId
       ? await RoleModel.findById(target.roleId, { title: 1 }).lean()
       : null;
@@ -94,7 +96,8 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
       startedAt: session.startedAt ? iso(session.startedAt) : null,
       endedAt: session.endedAt ? iso(session.endedAt) : null,
       credit: session.credit?.status ?? 'NONE',
-      voice: session.mode === 'VOICE' || session.voice ? voiceReadiness(session) : null,
+      voice: readiness.voice,
+      consentsPending: readiness.consentsPending,
       createdAt: iso(session.createdAt),
       updatedAt: iso(session.updatedAt),
     };

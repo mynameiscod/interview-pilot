@@ -45,7 +45,8 @@ import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
 import type { ClientContext } from '../../lib/request-context.js';
-import { voiceStartBlocker, type TranscriptStore } from '../voice/voice.service.js';
+import type { ConsentService } from '../consent/consent.service.js';
+import type { TranscriptStore } from '../voice/voice.service.js';
 
 /** Where realtime events go; attached once the Socket.IO server exists. */
 export interface RoomEmitter {
@@ -140,6 +141,8 @@ interface Deps {
   jobs: Pick<JobQueues, 'evaluateInterview'>;
   /** Spoken answers waiting to be submitted (voice interviews). */
   transcripts: TranscriptStore;
+  /** Consents and device-check readiness (the start gate). */
+  consent: ConsentService;
   /** Called after a question is asked (voice interviews prepare its audio). */
   onQuestion?: (s: InterviewSessionRecord, turn: InterviewTurnRecord) => void;
   now?: () => Date;
@@ -155,6 +158,7 @@ export function createLiveInterviewService({
   audit,
   jobs,
   transcripts,
+  consent,
   onQuestion,
   now = () => new Date(),
 }: Deps) {
@@ -334,7 +338,9 @@ export function createLiveInterviewService({
       sessionId: String(s._id),
       state: s.state,
       mode: s.mode,
-      voiceEnabled: s.mode === 'VOICE' || Boolean(s.voice?.consent),
+      voiceEnabled: s.mode !== 'TEXT' || Boolean(s.voice?.spokenMode),
+      recording: Boolean(s.recording?.enabled),
+      integrityTracking: (s.consents ?? []).some((c) => c.type === 'INTEGRITY' && c.accepted),
       language: s.language,
       title: s.analysis?.detectedRole.title ?? template?.content.name ?? 'Interview',
       rounds: (s.planner?.rounds ?? []).map((r) => ({
@@ -535,13 +541,9 @@ export function createLiveInterviewService({
         throw new AppError(409, 'INVALID_STATE', 'This interview cannot be started now.');
       }
       if (!s.blueprintId) throw new AppError(409, 'INVALID_STATE', 'Analyse the interview first.');
-      if (s.mode === 'VIDEO') {
-        throw new AppError(409, 'INVALID_STATE', 'Video interviews are not available yet.');
-      }
-      if (s.mode === 'VOICE') {
-        const blocker = voiceStartBlocker(s, now());
-        if (blocker) throw new AppError(409, 'INVALID_STATE', blocker);
-      }
+      // Device check (voice and video) and consents, whatever the mode asks for.
+      const readiness = await consent.readiness(s, now());
+      if (readiness.blocker) throw new AppError(409, 'INVALID_STATE', readiness.blocker);
       const planner = await templateAndPlan(s);
       // Every verified account gets its welcome credit, however it first reaches this point.
       await grantFreeCredits(userId);
@@ -582,7 +584,8 @@ export function createLiveInterviewService({
             userId,
             event: { type: 'START' },
             expectedVersion: version,
-            set: { planner },
+            // Recording is decided once, at start: video, allowed by the template, and consented.
+            set: { planner, recording: { enabled: readiness.recording } },
             now: now(),
             session: tx,
           });

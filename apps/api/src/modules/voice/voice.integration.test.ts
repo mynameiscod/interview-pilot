@@ -17,8 +17,7 @@ import {
   InterviewSummary,
   RT_NAMESPACE,
   RtEvent,
-  VOICE_CONSENT_VERSION,
-  VoiceReadiness,
+  SessionConsents,
   VoiceTranscript,
   type DegradedEvent,
   type DeviceCheckBody,
@@ -107,14 +106,24 @@ const goodCheck: DeviceCheckBody = {
   mimeType: 'audio/webm;codecs=opus',
   rttMs: 240,
   browser: 'Chrome 140',
+  camera: null,
+  videoMimeType: null,
 };
 
 async function prepareVoice(call: Call, id: string) {
   await call('post', `/interviews/${id}/device-check`).send(goodCheck).expect(200);
-  const consent = await call('post', `/interviews/${id}/voice-consent`)
-    .send({ accepted: true, version: VOICE_CONSENT_VERSION })
+  return acceptConsents(call, id);
+}
+
+/** Accepts every consent the interview asks for (voice: the voice processing notice). */
+async function acceptConsents(call: Call, id: string) {
+  const current = SessionConsents.parse(
+    (await call('get', `/interviews/${id}/consents`)).body.data,
+  );
+  const res = await call('post', `/interviews/${id}/consents`)
+    .send({ decisions: current.items.map((i) => ({ consentTextId: i.text.id, accepted: true })) })
     .expect(200);
-  return VoiceReadiness.parse(consent.body.data);
+  return SessionConsents.parse(res.body.data);
 }
 
 function socketFor(token: string): Socket {
@@ -187,12 +196,12 @@ describe('voice readiness', () => {
 
     await call('post', `/interviews/${id}/device-check`).send(goodCheck).expect(200);
     const noConsent = await call('post', `/interviews/${id}/start`).expect(409);
-    expect(noConsent.body.error.message).toMatch(/voice processing notice/i);
-    await call('post', `/interviews/${id}/voice-consent`)
-      .send({ accepted: true, version: 'old-version' })
+    expect(noConsent.body.error.message).toMatch(/consent notices/i);
+    await call('post', `/interviews/${id}/consents`)
+      .send({ decisions: [{ consentTextId: '64b000000000000000000000', accepted: true }] })
       .expect(400);
-    const readiness = await prepareVoice(call, id);
-    expect(readiness.ready).toBe(true);
+    const consents = await prepareVoice(call, id);
+    expect(consents).toMatchObject({ complete: true, items: [{ type: 'VOICE_PROCESSING' }] });
 
     const summary = InterviewSummary.parse((await call('get', `/interviews/${id}`)).body.data);
     expect(summary.voice).toMatchObject({ ready: true, deviceCheck: { network: 'WARN' } });
@@ -206,7 +215,7 @@ describe('voice readiness', () => {
       'READY_TO_START',
       'ACTIVE',
     ]);
-    expect(await AuditLogModel.countDocuments({ action: 'interview.voice_consent' })).toBe(1);
+    expect(await AuditLogModel.countDocuments({ action: 'interview.consent' })).toBe(1);
     // Voice set-up is refused once the interview is running, and for text interviews.
     await call('post', `/interviews/${id}/device-check`).send(goodCheck).expect(409);
     const text = await readyInterview(userId, 'TEXT');

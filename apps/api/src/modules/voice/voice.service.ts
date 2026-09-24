@@ -11,59 +11,25 @@ import {
 } from '@cbi/db';
 import {
   deviceCheckPassed,
+  isSpokenMode,
   RtEvent,
-  VOICE_CONSENT_VERSION,
   VOICE_LIMITS,
   type DegradedEvent,
   type DeviceCheckBody,
   type ModeChangedEvent,
   type SwitchModeBody,
   type TranscribeFields,
-  type VoiceConsentBody,
   type VoiceHealth,
-  type VoiceReadiness,
   type VoiceTranscript,
 } from '@cbi/shared-types';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
-import { iso, objectId } from '../../lib/ids.js';
+import { objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import type { ConsentService } from '../consent/consent.service.js';
 import type { RoomEmitter } from '../live/live.service.js';
 
 type Session = InterviewSessionRecord;
-
-// ---- Readiness (pure) -----------------------------------------------------------------------
-
-/** Device check and consent for a voice interview; `ready` when both are current. */
-export function voiceReadiness(s: Pick<Session, 'voice'>, now = new Date()): VoiceReadiness {
-  const check = s.voice?.deviceCheck ?? null;
-  const consent = s.voice?.consent ?? null;
-  const fresh =
-    check !== null &&
-    now.getTime() - new Date(check.at).getTime() <= VOICE_LIMITS.deviceCheckMaxAgeMs;
-  return {
-    deviceCheck: check ? { ...check, at: iso(check.at) } : null,
-    consentAt: consent ? iso(consent.at) : null,
-    ready:
-      Boolean(check?.passed) &&
-      fresh &&
-      consent !== null &&
-      consent.version === VOICE_CONSENT_VERSION,
-  };
-}
-
-/** Why a voice interview cannot start yet, or null. */
-export function voiceStartBlocker(s: Pick<Session, 'voice'>, now = new Date()): string | null {
-  const r = voiceReadiness(s, now);
-  if (!r.deviceCheck) return 'Run the device check before starting a voice interview.';
-  if (!r.deviceCheck.passed)
-    return 'Your microphone check did not pass. Fix it or switch to a text interview.';
-  if (now.getTime() - Date.parse(r.deviceCheck.at) > VOICE_LIMITS.deviceCheckMaxAgeMs)
-    return 'Your device check has expired. Please run it again.';
-  if (!r.consentAt) return 'Please accept the voice processing notice to continue.';
-  if (!r.ready) return 'Please accept the updated voice processing notice.';
-  return null;
-}
 
 // ---- Audio sniffing --------------------------------------------------------------------------
 
@@ -146,11 +112,12 @@ interface Deps {
   rooms: RoomEmitter;
   audit: AuditService;
   transcripts: TranscriptStore;
+  consent: ConsentService;
   now?: () => Date;
 }
 
 export function createVoiceService(deps: Deps) {
-  const { ai, redis, logger, rooms, audit, transcripts } = deps;
+  const { ai, redis, logger, rooms, audit, transcripts, consent } = deps;
   const now = deps.now ?? (() => new Date());
   /** One synthesis per question per process, however many requests wait for it. */
   const inFlight = new Map<string, Promise<{ audio: Buffer; mimeType: string }>>();
@@ -217,50 +184,17 @@ export function createVoiceService(deps: Deps) {
           'INVALID_STATE',
           'The device check is done before the interview starts.',
         );
-      if (s.mode !== 'VOICE')
-        throw new AppError(409, 'INVALID_STATE', 'Choose a voice interview first.');
-      const deviceCheck = { ...body, at: now(), passed: deviceCheckPassed(body) };
+      if (!isSpokenMode(s.mode))
+        throw new AppError(409, 'INVALID_STATE', 'Choose a voice or video interview first.');
+      const deviceCheck = { ...body, at: now(), passed: deviceCheckPassed(body, s.mode) };
       const updated = await InterviewSessionModel.findOneAndUpdate(
         { _id: s._id, userId },
         s.voice
-          ? { $set: { 'voice.deviceCheck': deviceCheck } }
-          : { $set: { voice: { deviceCheck, consent: null, modeHistory: [] } } },
+          ? { $set: { 'voice.deviceCheck': deviceCheck, 'voice.spokenMode': s.mode } }
+          : { $set: { voice: { deviceCheck, spokenMode: s.mode, modeHistory: [] } } },
         { returnDocument: 'after' },
       ).lean<Session>();
-      return voiceReadiness(updated!, now());
-    },
-
-    async recordConsent(
-      userId: string,
-      sessionId: string,
-      body: VoiceConsentBody,
-      ctx: ClientContext,
-    ) {
-      const s = await own(userId, sessionId);
-      if (!PRE_START.has(s.state))
-        throw new AppError(409, 'INVALID_STATE', 'Consent is given before the interview starts.');
-      if (s.mode !== 'VOICE')
-        throw new AppError(409, 'INVALID_STATE', 'Choose a voice interview first.');
-      const consent = { version: body.version, at: now() };
-      const updated = await InterviewSessionModel.findOneAndUpdate(
-        { _id: s._id, userId },
-        s.voice
-          ? { $set: { 'voice.consent': consent } }
-          : { $set: { voice: { deviceCheck: null, consent, modeHistory: [] } } },
-        { returnDocument: 'after' },
-      ).lean<Session>();
-      await audit.record(
-        {
-          actorType: 'USER',
-          actorId: userId,
-          action: 'interview.voice_consent',
-          resourceType: 'interviewSession',
-          resourceId: sessionId,
-          details: { version: body.version },
-        },
-        ctx,
-      );
-      return voiceReadiness(updated!, now());
+      return (await consent.readiness(updated!, now())).voice!;
     },
 
     /**
@@ -277,7 +211,7 @@ export function createVoiceService(deps: Deps) {
       const s = await own(userId, sessionId);
       if (!LIVE.has(s.state))
         throw new AppError(409, 'INVALID_STATE', 'The interview is not active.');
-      if (s.mode !== 'VOICE')
+      if (!isSpokenMode(s.mode))
         throw new AppError(409, 'INVALID_STATE', 'This interview is in text mode.');
       const turn = await InterviewTurnModel.findOne({
         sessionId: s._id,
@@ -363,7 +297,7 @@ export function createVoiceService(deps: Deps) {
 
     /** Called when a question is asked in a voice interview: prepare its audio before the room asks. */
     warmQuestionAudio(s: Session, turn: Pick<InterviewTurnRecord, 'questionId' | 'question'>) {
-      if (s.mode !== 'VOICE') return;
+      if (!isSpokenMode(s.mode)) return;
       void synthesize(s, turn).catch((err: unknown) => {
         // The room's request reports the failure (and the degraded event); here it is only logged.
         logger.warn({ err, sessionId: String(s._id) }, 'question audio could not be prepared');
@@ -375,8 +309,11 @@ export function createVoiceService(deps: Deps) {
       const s = await own(userId, sessionId);
       if (!SWITCHABLE.has(s.state))
         throw new AppError(409, 'INVALID_STATE', 'The interview is not in progress.');
-      if (body.mode === 'VOICE' && !s.voice?.consent) {
-        throw new AppError(409, 'INVALID_STATE', 'This interview was not set up for voice.');
+      if (
+        body.mode !== 'TEXT' &&
+        (body.mode !== s.voice?.spokenMode || !consent.accepted(s, 'VOICE_PROCESSING'))
+      ) {
+        throw new AppError(409, 'INVALID_STATE', 'This interview was not set up for that mode.');
       }
       if (s.mode === body.mode) return { mode: s.mode };
       const at = now();
