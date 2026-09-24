@@ -143,6 +143,42 @@ function emailIssues(env: EmailEnv, issue: (path: string, message: string) => vo
   }
 }
 
+/** Payments (Phase 6). The API creates and verifies orders; the worker reconciles and refunds. */
+const paymentShape = {
+  /** `mock` is an in-memory gateway for development and tests (refused in staging/production). */
+  PAYMENT_PROVIDER: z.enum(['razorpay', 'mock']).default('mock'),
+  /** Public key id (also given to the browser for Checkout). */
+  RAZORPAY_KEY_ID: optionalString,
+  RAZORPAY_KEY_SECRET: optionalString,
+  RAZORPAY_WEBHOOK_SECRET: optionalString,
+};
+
+type PaymentEnv = {
+  APP_ENV: AppEnv;
+  PAYMENT_PROVIDER: 'razorpay' | 'mock';
+  RAZORPAY_KEY_ID?: string;
+  RAZORPAY_KEY_SECRET?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
+};
+
+function paymentIssues(env: PaymentEnv, issue: (path: string, message: string) => void) {
+  if (
+    env.PAYMENT_PROVIDER === 'razorpay' &&
+    (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET || !env.RAZORPAY_WEBHOOK_SECRET)
+  ) {
+    issue(
+      'RAZORPAY_KEY_ID',
+      'RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are required when PAYMENT_PROVIDER=razorpay',
+    );
+  }
+  if (isDeployed(env.APP_ENV) && env.PAYMENT_PROVIDER === 'mock') {
+    issue(
+      'PAYMENT_PROVIDER',
+      `the mock payment gateway is for development only, not ${env.APP_ENV}`,
+    );
+  }
+}
+
 type SharedEnv = {
   APP_ENV: AppEnv;
   AI_SECRETS_MASTER_KEY: string;
@@ -199,6 +235,7 @@ function sharedIssues(env: SharedEnv, issue: (path: string, message: string) => 
 const apiObjectSchema = baseEnvSchema.extend({
   ...aiRuntimeShape,
   ...storageShape,
+  ...paymentShape,
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
   /** Number of trusted reverse-proxy hops (NGINX = 1). Needed for correct client IPs. */
@@ -250,6 +287,7 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
     ctx.addIssue({ code: 'custom', path: [path], message });
 
   emailIssues(env, issue);
+  paymentIssues(env, issue);
   if (env.SMS_PROVIDER === 'msg91' && (!env.MSG91_AUTH_KEY || !env.MSG91_OTP_TEMPLATE_ID)) {
     issue(
       'MSG91_AUTH_KEY',
@@ -277,6 +315,7 @@ export const workerEnvSchema = baseEnvSchema
   .extend({
     ...aiRuntimeShape,
     ...storageShape,
+    ...paymentShape,
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
     /** How often AI usage is rolled up into providerHealth. */
@@ -308,6 +347,7 @@ export const workerEnvSchema = baseEnvSchema
       ctx.addIssue({ code: 'custom', path: [path], message });
     sharedIssues(env, issue);
     emailIssues(env, issue);
+    paymentIssues(env, issue);
   });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

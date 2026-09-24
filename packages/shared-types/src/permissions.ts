@@ -30,6 +30,9 @@ export const Permission = z.enum([
   'library.manage',
   // Interview operations: re-run evaluation (Phase 5)
   'interviews.manage',
+  // Plans, coupons, purchases, payments and refunds (Phase 6)
+  'payments.read',
+  'payments.manage',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
@@ -47,8 +50,8 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'interviews.manage',
   ],
   CONTENT_ADMIN: ['prompts.read', 'prompts.manage', 'library.read', 'library.manage'],
-  SUPPORT_ADMIN: ['candidates.read'],
-  FINANCE_ADMIN: ['audit.read', 'ai_usage.read'],
+  SUPPORT_ADMIN: ['candidates.read', 'payments.read'],
+  FINANCE_ADMIN: ['audit.read', 'ai_usage.read', 'payments.read', 'payments.manage'],
 };
 
 export function permissionsFor(roles: readonly AdminRole[]): Set<Permission> {

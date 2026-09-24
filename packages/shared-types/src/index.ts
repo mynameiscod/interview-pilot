@@ -11,6 +11,7 @@ export * from './i18n.js';
 export * from './interviews.js';
 export * from './interview-runtime.js';
 export * from './library.js';
+export * from './payments.js';
 export * from './permissions.js';
 export * from './queues.js';
 export * from './users.js';

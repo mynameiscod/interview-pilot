@@ -25,3 +25,22 @@ export {
   type SafeFetchOptions,
   type SafeFetchResult,
 } from './web/safe-fetch.js';
+export {
+  createPaymentGateway,
+  mockGatewayControls,
+  type PaymentSettings,
+} from './payments/factory.js';
+export { createMockGateway, MOCK_PAYMENT_SECRET, MOCK_WEBHOOK_SECRET } from './payments/mock.js';
+export {
+  createRazorpayGateway,
+  hmacHex,
+  safeEqualHex,
+  type RazorpayOptions,
+} from './payments/razorpay.js';
+export type {
+  GatewayOrder,
+  GatewayPayment,
+  GatewayRefund,
+  GatewayWebhookEvent,
+  PaymentGateway,
+} from './payments/types.js';

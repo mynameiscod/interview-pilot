@@ -37,6 +37,9 @@ export const ErrorCode = z.enum([
   // Live interviews and credits (Phase 4)
   /** Starting an interview needs an available credit. */
   'INSUFFICIENT_CREDITS',
+  // Payments (Phase 6)
+  /** The payment could not be verified (bad signature, amount or order mismatch). */
+  'PAYMENT_VERIFICATION_FAILED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

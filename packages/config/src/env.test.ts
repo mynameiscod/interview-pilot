@@ -29,7 +29,33 @@ const deployed = {
   STORAGE_PROVIDER: 'bunny',
   BUNNY_STORAGE_ZONE: 'cbi-private',
   BUNNY_STORAGE_ACCESS_KEY: 'bunny-storage-password',
+  PAYMENT_PROVIDER: 'razorpay',
+  RAZORPAY_KEY_ID: 'rzp_live_example',
+  RAZORPAY_KEY_SECRET: 'razorpay-secret',
+  RAZORPAY_WEBHOOK_SECRET: 'razorpay-webhook-secret',
 };
+
+describe('payment settings', () => {
+  it('defaults to the mock gateway in development', () => {
+    expect(loadEnv(apiEnvSchema, base).PAYMENT_PROVIDER).toBe('mock');
+  });
+
+  it('requires all Razorpay keys when Razorpay is selected', () => {
+    expect(() =>
+      loadEnv(apiEnvSchema, {
+        ...base,
+        PAYMENT_PROVIDER: 'razorpay',
+        RAZORPAY_KEY_ID: 'rzp_test_x',
+      }),
+    ).toThrow(/RAZORPAY_KEY_ID/);
+  });
+
+  it('refuses the mock gateway in production', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...deployed, PAYMENT_PROVIDER: 'mock' })).toThrow(
+      /PAYMENT_PROVIDER/,
+    );
+  });
+});
 
 describe('loadEnv', () => {
   it('parses a valid API environment with defaults', () => {
