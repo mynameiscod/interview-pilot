@@ -1,4 +1,3 @@
-import { renderPrompt, untrusted, type PromptValue } from '@cbi/ai-core';
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import {
@@ -25,15 +24,13 @@ import {
   readinessBand,
   strengthScore,
 } from '@cbi/scoring-core';
+import { ProcessingStage, type BlueprintContent, type ReportContent } from '@cbi/shared-types';
 import {
-  ExtractEvidenceAi,
-  ProcessingStage,
-  RecommendationsAi,
-  ScoreDimensionAi,
-  type AiFeature,
-  type ReportContent,
-} from '@cbi/shared-types';
-import type { z } from 'zod';
+  bullets,
+  extractEvidenceWithAi,
+  recommendationsWithAi,
+  scoreDimensionWithAi,
+} from './ai-steps.js';
 import { renderReportPdf } from './pdf.js';
 import { buildReportContent, fallbackRecommendations } from './report-content.js';
 
@@ -59,41 +56,6 @@ const SUFFICIENCY_STRENGTH = { STRONG: 2, ADEQUATE: 1, WEAK: -1, NO_ANSWER: -2 }
 
 type Session = InterviewSessionRecord;
 
-async function runAi<T>(
-  deps: EvaluationDeps,
-  feature: AiFeature,
-  schema: z.ZodType<T>,
-  values: Record<string, PromptValue>,
-  s: Session,
-): Promise<{ data: T; promptVersion: number } | null> {
-  const prompt = await deps.ai.prompts.getActive(feature);
-  if (!prompt) {
-    deps.logger.error({ feature }, 'no active prompt');
-    return null;
-  }
-  try {
-    const result = await deps.ai.router.run<T>(
-      feature,
-      {
-        messages: renderPrompt(prompt, values),
-        output: { name: feature.replace('.', '_'), schema },
-      },
-      {
-        userId: String(s.userId),
-        sessionId: String(s._id),
-        prompt: { key: prompt.key, version: prompt.version },
-      },
-    );
-    return { data: result.data, promptVersion: prompt.version };
-  } catch (err) {
-    deps.logger.warn(
-      { err, feature, sessionId: String(s._id) },
-      'evaluation ai call failed; using fallback',
-    );
-    return null;
-  }
-}
-
 async function context(s: Session) {
   const [blueprint, template, turns] = await Promise.all([
     RoleBlueprintModel.findById(s.blueprintId).lean(),
@@ -105,8 +67,8 @@ async function context(s: Session) {
   return { blueprint: blueprint.content, template: template.content, turns };
 }
 
-const bullets = (items: readonly string[]) =>
-  items.length ? items.map((x) => `- ${x}`).join('\n') : '-';
+const ctxOf = (s: Session) => ({ userId: String(s.userId), sessionId: String(s._id) });
+const roleOf = (b: BlueprintContent) => `${b.role.title} (${b.role.seniority.toLowerCase()})`;
 
 // ---- Stages ----------------------------------------------------------------------------------------
 
@@ -122,9 +84,6 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   const { blueprint, turns } = await context(s);
   const run = s.processing!.run;
   const keys = new Set(blueprint.competencies.map((c) => c.key));
-  const competencies = blueprint.competencies
-    .map((c) => `${c.key}: ${c.name} - ${c.expectedEvidence.join('; ')}`)
-    .join('\n');
   const rounds = [...new Set(turns.map((t) => t.roundIdx))].sort((a, b) => a - b);
 
   for (const roundIdx of rounds) {
@@ -132,29 +91,22 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
     // Idempotent per run and round: a retried job replaces its own previous output.
     await InterviewEvidenceModel.deleteMany({ sessionId: s._id, run, roundIdx });
     if (answered.length === 0) continue;
-    const questionIds = new Set(answered.map((t) => t.questionId));
-    const result = await runAi(
+    const result = await extractEvidenceWithAi(
       deps,
-      'evaluation.extractEvidence',
-      ExtractEvidenceAi,
       {
         roundType: answered[0]!.roundType,
-        competencies,
-        turns: untrusted(
-          answered
-            .map(
-              (t) =>
-                `[${t.questionId}] Competency: ${t.question.competencyKey ?? 'any'}\nQuestion: ${t.question.text}\nAnswer: ${t.answer!.text}`,
-            )
-            .join('\n\n'),
-        ),
+        competencies: blueprint.competencies,
+        turns: answered.map((t) => ({
+          questionId: t.questionId,
+          competencyKey: t.question.competencyKey,
+          question: t.question.text,
+          answer: t.answer!.text,
+        })),
       },
-      s,
+      ctxOf(s),
     );
     const extracted = result
-      ? result.data.items
-          .filter((i) => questionIds.has(i.questionId) && keys.has(i.competencyKey))
-          .map((i) => ({ ...i, extractorVersion: result.promptVersion }))
+      ? result.items.map((i) => ({ ...i, extractorVersion: result.promptVersion }))
       : [];
     // No usable evidence for answered questions (model unavailable, or it named unknown
     // questions or competencies): fall back to the assessments made during the interview.
@@ -195,7 +147,14 @@ async function scoreDimensions(deps: EvaluationDeps, s: Session) {
   }).lean();
   const drafts: DraftDimensionScore[] = [];
   for (const c of blueprint.competencies) {
-    const items = evidence.filter((e) => e.competencyKey === c.key);
+    const items = evidence
+      .filter((e) => e.competencyKey === c.key)
+      .map((e) => ({
+        id: String(e._id),
+        strength: e.strength,
+        practical: e.practical,
+        claim: e.claim,
+      }));
     if (items.length === 0) {
       drafts.push({
         key: c.key,
@@ -206,32 +165,16 @@ async function scoreDimensions(deps: EvaluationDeps, s: Session) {
       });
       continue;
     }
-    const ids = new Set(items.map((e) => String(e._id)));
-    const result = await runAi(
+    const result = await scoreDimensionWithAi(
       deps,
-      'evaluation.scoreDimension',
-      ScoreDimensionAi,
-      {
-        role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
-        competency: c.name,
-        description: c.description,
-        expectedEvidence: bullets(c.expectedEvidence),
-        evidence: untrusted(
-          items
-            .map(
-              (e) =>
-                `${String(e._id)} | ${e.strength} | ${e.practical ? 'practical' : '-'} | ${e.claim}`,
-            )
-            .join('\n'),
-        ),
-      },
-      s,
+      { role: roleOf(blueprint), competency: c, evidence: items },
+      ctxOf(s),
     );
     drafts.push({
       key: c.key,
-      aiScore: result?.data.score ?? null,
-      rationale: result?.data.rationale ?? null,
-      evidenceIds: result ? result.data.evidenceIds.filter((id) => ids.has(id)) : [...ids],
+      aiScore: result?.score ?? null,
+      rationale: result?.rationale ?? null,
+      evidenceIds: result ? result.evidenceIds : items.map((i) => i.id),
       promptVersion: result?.promptVersion ?? null,
     });
   }
@@ -334,27 +277,22 @@ async function recommendations(deps: EvaluationDeps, s: Session) {
   const notable = [...evidence.slice(0, 4), ...evidence.slice(-4)].filter(
     (e, i, a) => a.indexOf(e) === i,
   );
-  const result = await runAi(
+  const result = await recommendationsWithAi(
     deps,
-    'report.recommendations',
-    RecommendationsAi,
     {
-      language: 'English',
-      role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
+      role: roleOf(blueprint),
       overall:
         score.overall === null ? 'not enough evidence' : `${score.overall}/100 (${score.band})`,
       confidence: score.confidence.level,
       dimensions: score.dimensions
         .map((d) => `${d.key} | ${d.name} | ${d.score ?? 'not assessed'} | ${d.rationale ?? '-'}`)
         .join('\n'),
-      evidence: untrusted(
-        notable
-          .map((e) => `${e.competencyKey} (${e.strength > 0 ? '+' : ''}${e.strength}): ${e.claim}`)
-          .join('\n') || '-',
-      ),
-      gaps: untrusted(bullets(s.analysis?.gaps ?? [])),
+      evidence: notable
+        .map((e) => `${e.competencyKey} (${e.strength > 0 ? '+' : ''}${e.strength}): ${e.claim}`)
+        .join('\n'),
+      gaps: bullets(s.analysis?.gaps ?? []),
     },
-    s,
+    ctxOf(s),
   );
   const recs = result
     ? { ...result.data, promptVersion: result.promptVersion, fallback: false }

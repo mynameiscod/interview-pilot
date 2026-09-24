@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "ai:eval": "tsx --env-file-if-exists=../../.env --conditions=@cbi/source src/ai-evals/cli.ts"
   },
   "dependencies": {
     "@cbi/ai-core": "workspace:*",
