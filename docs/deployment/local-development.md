@@ -58,6 +58,8 @@ With `PAYMENT_PROVIDER=mock` (the default), buying a plan at `/pricing` opens a 
 
 Voice interviews work without speech keys: with `AI_MOCK_MODE=true` the mock text-to-speech plays a short chime for each question and the mock speech-to-text returns a labelled placeholder for anything you say, so you can walk through the device check, consent, recording, transcript review and degrade-to-text flows. To hear real voices and real transcripts, add Deepgram, ElevenLabs or OpenAI keys under **AI providers** in the admin console and press **Test** on the speech models. `GET /api/v1/voice/health` shows `DEGRADED` while only the mock can serve. Details: [Voice interviews](../architecture/voice.md).
 
+Video interviews add the camera: the device check shows a preview, and the consent step asks whether to record (the seeded templates make recording optional). Recordings are uploaded in 10-second segments to `LOCAL_STORAGE_DIR` (`media/…`) and can be watched from the interview page or under **Recordings** in the admin console. Consent texts are edited under **Consent texts** (super admins). Integrity observations are only noted for templates with tab-switch tracking turned on. Details: [Consent, recordings and retention](../architecture/media-and-consent.md).
+
 ### Uploads and background jobs locally
 
 Resumes and JD files are stored under `.data/storage` in the repository (`STORAGE_PROVIDER=local`, git-ignored). The API and the worker must point at the same folder, so start both with `pnpm dev`. Parsing, JD URL fetching and role analysis run in the **worker**: if the worker is not running, inputs stay "processing" and analysis fails after 3 minutes with `INPUT_TIMEOUT`. In Option B both containers share the `storage-data` volume.
