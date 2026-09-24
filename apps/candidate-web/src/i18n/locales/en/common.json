@@ -849,6 +849,13 @@
       "seconds_one": "{{formatted}} second",
       "seconds_other": "{{formatted}} seconds",
       "away": "Time away from the interview page: about {{away}}."
+    },
+    "coding": {
+      "title": "Coding",
+      "language": "Language: {{language}}",
+      "passed": "{{passed}} of {{total}} tests passed",
+      "notRun": "Not run (the code judge was unavailable) — reviewed from your code",
+      "notSubmitted": "Not submitted before time ran out"
     }
   },
   "history": {
@@ -1224,5 +1231,100 @@
     "declined": "Declined",
     "entryMeta": "{{date}} · version {{version}}",
     "interview": "Interview"
+  },
+  "coding": {
+    "problemLabel": "Coding problem",
+    "loading": "Loading the coding problem…",
+    "loadError": "We could not load this coding problem.",
+    "retry": "Try again",
+    "difficultyLabel": "Difficulty",
+    "difficulty": {
+      "EASY": "Easy",
+      "MEDIUM": "Medium",
+      "HARD": "Hard"
+    },
+    "limits": "Time limit {{cpu}} ms per test · memory {{memory}} MB",
+    "examples": "Examples",
+    "example": "Example {{n}}",
+    "input": "Input",
+    "expectedOutput": "Expected output",
+    "yourOutput": "Your output",
+    "explanation": "Explanation",
+    "hiddenTests_one": "+ {{count}} hidden test",
+    "hiddenTests_other": "+ {{count}} hidden tests",
+    "hiddenNote": "Hidden tests are checked when you submit; you only see whether they pass.",
+    "language": "Programming language",
+    "editor": {
+      "region": "Code editor",
+      "loading": "Loading the code editor…",
+      "label": "Code editor ({{language}})",
+      "shortcuts": "Ctrl+Enter (Cmd+Enter on Mac) runs your code. Ctrl+Shift+Enter submits."
+    },
+    "switchLanguage": {
+      "title": "Switch to {{language}}?",
+      "body": "Your current code will be replaced by the {{language}} starter code.",
+      "confirm": "Switch and replace my code",
+      "cancel": "Keep my code"
+    },
+    "save": {
+      "saved": "Saved",
+      "dirty": "Unsaved changes",
+      "saving": "Saving…",
+      "retrying": "Not saved — retrying",
+      "tooLong": "Not saved — too long",
+      "closed": "Saving has stopped for this question"
+    },
+    "tooLong": "Your code is longer than {{max}} KB. Shorten it to save, run or submit.",
+    "run": "Run",
+    "running": "Running your code…",
+    "submit": "Submit",
+    "submitting": "Submitting…",
+    "submitConfirm": {
+      "title": "Submit your solution? You can't change it afterwards.",
+      "body": "Your code is checked against every test, including the hidden ones.",
+      "confirm": "Yes, submit",
+      "cancel": "Keep working"
+    },
+    "judgeDown": "Running code is temporarily unavailable — keep working; you can still submit.",
+    "problems": {
+      "rateLimited": "You are running code very often. Wait a moment and try again.",
+      "runFailed": "We could not run your code. It is still here — please try again.",
+      "submitFailed": "We could not submit your solution. It is still here — please try again.",
+      "closed": "This question is closed, so the solution could not be submitted."
+    },
+    "results": {
+      "title": "Results",
+      "empty": "Run your code to check it against the examples.",
+      "runSummary": "{{passed}} of {{total}} example tests passed",
+      "test": "Test {{n}}",
+      "hiddenTest": "Hidden test {{n}}",
+      "compileOutput": "Compiler output",
+      "time": "{{ms}} ms",
+      "noOutput": "(no output)"
+    },
+    "verdicts": {
+      "ACCEPTED": "Passed",
+      "WRONG_ANSWER": "Wrong answer",
+      "COMPILE_ERROR": "Compilation error",
+      "RUNTIME_ERROR": "Runtime error",
+      "TIME_LIMIT": "Time limit exceeded",
+      "MEMORY_LIMIT": "Memory limit exceeded",
+      "JUDGE_ERROR": "Could not be checked"
+    },
+    "submitted": {
+      "summary": "Submitted. {{passed}} of {{total}} tests passed, including hidden tests.",
+      "judgeUnavailable": "Submitted. The code could not be run right now; it will be reviewed from the code.",
+      "next": "The interview continues with the next question."
+    },
+    "mobile": {
+      "body": "Coding is easier on a laptop or desktop. You can still continue here.",
+      "dismiss": "Dismiss"
+    },
+    "submitReminder": "Remember to submit your solution",
+    "transcript": {
+      "submitted": "Solution submitted ({{passed}}/{{total}} tests passed)",
+      "submittedNotRun": "Solution submitted (not run)",
+      "notSubmitted": "Solution not submitted"
+    }
   }
 }

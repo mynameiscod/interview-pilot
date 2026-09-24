@@ -2,6 +2,7 @@ import {
   ANSWER_LIMITS,
   isSpokenMode,
   RtEvent,
+  type CodingSubmission,
   type DegradedEvent,
   type IntegrityEventPayload,
   type IntegrityEventType,
@@ -63,6 +64,15 @@ const MAX_BUFFERED_OBSERVATIONS = 100;
 /** Speech features currently failing (speech-to-text, text-to-speech). */
 export type SpeechKind = DegradedEvent['kind'];
 
+/** What the room knows about a coding question (for the transcript). */
+export interface CodingTurnInfo {
+  title: string;
+  submitted: boolean;
+  passed: number | null;
+  total: number | null;
+  judgeUnavailable: boolean;
+}
+
 export interface RoomState {
   status: 'connecting' | 'connected' | 'reconnecting';
   /** At least one snapshot has arrived. */
@@ -93,6 +103,8 @@ export interface RoomState {
   thinking: boolean;
   /** Every question seen so far, oldest first; answered ones carry the answer. */
   turns: LiveTurn[];
+  /** Coding questions seen in this tab, by question id. */
+  coding: Record<string, CodingTurnInfo>;
   sending: boolean;
   ending: boolean;
   problem: RoomProblem | null;
@@ -108,6 +120,7 @@ type Action =
   | { type: 'question'; question: LiveQuestion }
   | { type: 'transition'; event: RoundTransitionEvent }
   | { type: 'answered'; questionId: string; text: string; source: 'TEXT' | 'VOICE' }
+  | { type: 'codingSubmitted'; questionId: string; submission: CodingSubmission }
   | { type: 'mode'; mode: InterviewMode }
   | { type: 'switchingMode'; switching: boolean }
   | { type: 'degraded'; kind: SpeechKind; on: boolean }
@@ -138,12 +151,30 @@ export const initialRoomState: RoomState = {
   question: null,
   thinking: false,
   turns: [],
+  coding: {},
   sending: false,
   ending: false,
   problem: null,
   retryInSec: null,
   finished: null,
 };
+
+function withCoding(
+  coding: Record<string, CodingTurnInfo>,
+  q: LiveQuestion | null,
+): Record<string, CodingTurnInfo> {
+  if (!q?.coding || coding[q.questionId]) return coding;
+  return {
+    ...coding,
+    [q.questionId]: {
+      title: q.coding.title,
+      submitted: false,
+      passed: null,
+      total: null,
+      judgeUnavailable: false,
+    },
+  };
+}
 
 const bySeq = (a: LiveTurn, b: LiveTurn) => a.seq - b.seq;
 
@@ -213,6 +244,7 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         syncedAt: action.at,
         clockRunning: s.clockRunning,
         question,
+        coding: withCoding(state.coding, s.currentQuestion),
         thinking: pushedIsNewer ? false : s.thinking,
         turns: [...merged.values()].sort(bySeq),
       };
@@ -225,6 +257,7 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
       return {
         ...state,
         question: action.question,
+        coding: withCoding(state.coding, action.question),
         thinking: false,
         roundIdx: Math.max(state.roundIdx, action.question.roundIdx),
         turns: withTurn(state.turns, questionTurn(action.question)),
@@ -253,6 +286,24 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         turns,
         question: wasCurrent ? null : state.question,
         thinking: wasCurrent ? true : state.thinking,
+      };
+    }
+    case 'codingSubmitted': {
+      // The question stays on screen (showing the result) until the server moves on.
+      const known = state.coding[action.questionId];
+      const result = action.submission.result;
+      return {
+        ...state,
+        coding: {
+          ...state.coding,
+          [action.questionId]: {
+            title: known?.title ?? '',
+            submitted: true,
+            passed: result?.passed ?? null,
+            total: result?.total ?? null,
+            judgeUnavailable: action.submission.judgeUnavailable || !result,
+          },
+        },
       };
     }
     case 'sending':
@@ -747,6 +798,13 @@ export function useInterviewRoom(sessionId: string) {
     }
   }, [api, sessionId]);
 
+  /** A coding solution was submitted (answering the question over HTTP, not the socket). */
+  const codingSubmitted = useCallback(
+    (questionId: string, submission: CodingSubmission) =>
+      dispatch({ type: 'codingSubmitted', questionId, submission }),
+    [],
+  );
+
   const retryNow = useCallback(() => retryNowRef.current(), []);
   const dismissProblem = useCallback(() => dispatch({ type: 'problem', problem: null }), []);
 
@@ -764,6 +822,7 @@ export function useInterviewRoom(sessionId: string) {
     reportDegraded,
     dismissDegraded,
     reportIntegrity,
+    codingSubmitted,
   };
 }
 

@@ -6,6 +6,7 @@ import { Link, useLocation, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
+import { CodingResults } from './components/CodingResults';
 import { DimensionBars } from './components/DimensionBars';
 import { FeedbackCard } from './components/FeedbackCard';
 import { OverallReadiness } from './components/OverallReadiness';
@@ -66,6 +67,7 @@ function ReportView({ report }: { report: ReportSummary }) {
       </section>
       <DimensionBars dimensions={content.dimensions} />
       <StrengthsAndGaps content={content} />
+      {content.coding && content.coding.length > 0 && <CodingResults items={content.coding} />}
       <RoundsAndCoverage content={content} />
       <PlanTabs plan={content.plan} />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />

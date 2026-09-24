@@ -1,4 +1,4 @@
-import { ANSWER_LIMITS } from '@cbi/shared-types';
+import { ANSWER_LIMITS, type CodingSubmission } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
@@ -13,6 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
+import { CodingWorkspace } from '../coding/CodingWorkspace';
 import { queryKeys } from '../interviews/interviews-api';
 import { useCameraStream, useInterviewRecording, type TrackKind } from '../media/video-hooks';
 import { clearDraft, loadDraft, saveDraft } from './drafts';
@@ -381,6 +382,22 @@ export function RoomPage() {
     onTtsDown,
   );
   const [recording, setRecording] = useState(false);
+  /** The coding question just submitted: its result stays until the next question. */
+  const [keptCodingId, setKeptCodingId] = useState<string | null>(null);
+  const { codingSubmitted } = room;
+  const onCodingSubmitted = useCallback(
+    (questionId: string, submission: CodingSubmission) => {
+      codingSubmitted(questionId, submission);
+      setKeptCodingId(questionId);
+    },
+    [codingSubmitted],
+  );
+  const onCodePaste = useCallback(
+    (length: number) => {
+      if (observing) reportIntegrity('PASTE', length);
+    },
+    [observing, reportIntegrity],
+  );
 
   useEffect(() => {
     if (!finished) return;
@@ -422,7 +439,18 @@ export function RoomPage() {
     );
   }
 
-  const earlier = room.turns.filter((turn) => turn.questionId !== room.question?.questionId);
+  // A coding question is answered in the editor (in every mode; it is still read aloud).
+  // After submitting, the workspace stays (showing the result) until the next question.
+  const codingId = room.question?.coding
+    ? room.question.questionId
+    : room.question === null && keptCodingId && room.coding[keptCodingId]?.submitted
+      ? keptCodingId
+      : null;
+  const codingPending = Boolean(
+    room.question?.coding && !room.coding[room.question.questionId]?.submitted,
+  );
+  const shownId = codingId ?? room.question?.questionId;
+  const earlier = room.turns.filter((turn) => turn.questionId !== shownId);
   const problemKey =
     room.problem && room.problem in PROBLEM_KEYS
       ? PROBLEM_KEYS[room.problem as keyof typeof PROBLEM_KEYS]
@@ -438,6 +466,7 @@ export function RoomPage() {
               remainingMs={room.remainingMs}
               syncedAt={room.syncedAt}
               running={room.clockRunning && room.connection === 'connected'}
+              submitReminder={codingPending}
             />
             <ConnectionPill status={room.connection} />
           </div>
@@ -466,8 +495,8 @@ export function RoomPage() {
         </div>
       )}
 
-      <div className="row g-4">
-        <div className="col-lg-5 d-flex flex-column gap-4">
+      {codingId ? (
+        <div className="d-flex flex-column gap-4">
           {voiceMode && room.degraded.TTS && <TtsDownBanner room={room} />}
           <InterviewerPanel
             question={room.question}
@@ -475,36 +504,65 @@ export function RoomPage() {
             questionTextId="room-question-text"
             speaking={voiceMode && audio.status === 'playing'}
             controls={
-              voiceMode ? <QuestionAudioControls audio={audio} recording={recording} /> : undefined
+              voiceMode ? <QuestionAudioControls audio={audio} recording={false} /> : undefined
             }
+          />
+          <CodingWorkspace
+            key={codingId}
+            sessionId={id}
+            questionId={codingId}
+            onSubmitted={(submission) => onCodingSubmitted(codingId, submission)}
+            onPaste={onCodePaste}
           />
           <p className="small cb-text-secondary mb-0">
             <i className="bi bi-shield-check me-1" aria-hidden="true" />
             {t('room.noScoresNote')}
           </p>
+          <Transcript turns={earlier} coding={room.coding} />
         </div>
-        <div className="col-lg-7 d-flex flex-column gap-4">
-          <ModeSwitch room={room} />
-          {(room.voiceEnabled || room.mode === 'VOICE') && (
-            <p className="visually-hidden" aria-live="polite">
-              {t(`voice.room.modeNow.${room.mode}`)}
-            </p>
-          )}
-          {voiceMode ? (
-            <VoiceAnswer
-              key={room.question?.questionId ?? 'waiting'}
-              room={room}
-              sessionId={id}
+      ) : (
+        <div className="row g-4">
+          <div className="col-lg-5 d-flex flex-column gap-4">
+            {voiceMode && room.degraded.TTS && <TtsDownBanner room={room} />}
+            <InterviewerPanel
               question={room.question}
-              onBeforeRecord={audio.stop}
-              onRecordingChange={setRecording}
+              thinking={room.thinking}
+              questionTextId="room-question-text"
+              speaking={voiceMode && audio.status === 'playing'}
+              controls={
+                voiceMode ? (
+                  <QuestionAudioControls audio={audio} recording={recording} />
+                ) : undefined
+              }
             />
-          ) : (
-            <AnswerForm room={room} sessionId={id} />
-          )}
-          <Transcript turns={earlier} />
+            <p className="small cb-text-secondary mb-0">
+              <i className="bi bi-shield-check me-1" aria-hidden="true" />
+              {t('room.noScoresNote')}
+            </p>
+          </div>
+          <div className="col-lg-7 d-flex flex-column gap-4">
+            <ModeSwitch room={room} />
+            {(room.voiceEnabled || room.mode === 'VOICE') && (
+              <p className="visually-hidden" aria-live="polite">
+                {t(`voice.room.modeNow.${room.mode}`)}
+              </p>
+            )}
+            {voiceMode ? (
+              <VoiceAnswer
+                key={room.question?.questionId ?? 'waiting'}
+                room={room}
+                sessionId={id}
+                question={room.question}
+                onBeforeRecord={audio.stop}
+                onRecordingChange={setRecording}
+              />
+            ) : (
+              <AnswerForm room={room} sessionId={id} />
+            )}
+            <Transcript turns={earlier} coding={room.coding} />
+          </div>
         </div>
-      </div>
+      )}
 
       {videoMode && (
         <SelfView

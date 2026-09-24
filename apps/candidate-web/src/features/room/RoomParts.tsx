@@ -1,7 +1,10 @@
 import type { LiveQuestion, LiveRound, LiveTurn } from '@cbi/shared-types';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { ConnectionStatus } from './useInterviewRoom';
+import type { CodingTurnInfo, ConnectionStatus } from './useInterviewRoom';
+
+/** In a coding question, a reminder to submit shows when this little time is left. */
+export const SUBMIT_REMINDER_MS = 120_000;
 
 /** How often the local countdown redraws. */
 export const TIMER_TICK_MS = 1_000;
@@ -22,10 +25,13 @@ export function RoomTimer({
   remainingMs,
   syncedAt,
   running,
+  submitReminder = false,
 }: {
   remainingMs: number;
   syncedAt: number;
   running: boolean;
+  /** A coding solution is waiting to be submitted. */
+  submitReminder?: boolean;
 }) {
   const { t } = useTranslation();
   const [now, setNow] = useState(syncedAt);
@@ -53,6 +59,12 @@ export function RoomTimer({
       <span className="visually-hidden" aria-live="polite">
         {warning ? t(`room.timeWarning.${warning}`) : ''}
       </span>
+      {submitReminder && left > 0 && left <= SUBMIT_REMINDER_MS && (
+        <span className="small text-warning-emphasis d-inline-flex align-items-center gap-1">
+          <i className="bi bi-info-circle" aria-hidden="true" />
+          {t('coding.submitReminder')}
+        </span>
+      )}
     </div>
   );
 }
@@ -195,8 +207,43 @@ export function InterviewerPanel({
   );
 }
 
+/**
+ * A submitted solution as the server records it ("Submitted a Python 3
+ * solution: 3 of 5 tests passed …" followed by the code). Only the summary is
+ * read from it; the code is never shown in the transcript.
+ */
+const SUBMITTED_ANSWER = /^Submitted an? .+? solution(?:: (\d+) of (\d+) tests passed)?/;
+
+/** The one-line outcome of a coding turn, or null when the turn is not a coding one. */
+function codingOutcome(
+  t: ReturnType<typeof useTranslation>['t'],
+  turn: LiveTurn,
+  info: CodingTurnInfo | undefined,
+): string | null {
+  if (info?.submitted) {
+    return info.passed !== null && info.total !== null && !info.judgeUnavailable
+      ? t('coding.transcript.submitted', { passed: info.passed, total: info.total })
+      : t('coding.transcript.submittedNotRun');
+  }
+  const match = turn.answer ? SUBMITTED_ANSWER.exec(turn.answer) : null;
+  if (match) {
+    return match[1] && match[2]
+      ? t('coding.transcript.submitted', { passed: Number(match[1]), total: Number(match[2]) })
+      : t('coding.transcript.submittedNotRun');
+  }
+  if (!info) return null;
+  return turn.answer ? t('coding.transcript.submittedNotRun') : t('coding.transcript.notSubmitted');
+}
+
 /** Earlier questions and answers, newest last; collapsed by default. */
-export function Transcript({ turns }: { turns: LiveTurn[] }) {
+export function Transcript({
+  turns,
+  coding = {},
+}: {
+  turns: LiveTurn[];
+  /** Coding questions seen in this tab: shown by title and result, never the code. */
+  coding?: Record<string, CodingTurnInfo>;
+}) {
   const { t } = useTranslation();
   const id = useId();
   const [open, setOpen] = useState(false);
@@ -216,30 +263,44 @@ export function Transcript({ turns }: { turns: LiveTurn[] }) {
         </button>
       </h2>
       <ol id={`${id}-list`} className="list-unstyled mb-0 mt-3" hidden={!open}>
-        {turns.map((turn) => (
-          <li key={turn.seq} className="mb-3 pb-3 border-bottom cb-border">
-            <p className="small fw-semibold mb-1">{t('room.interviewer')}</p>
-            <p className="mb-2" style={{ whiteSpace: 'pre-wrap' }}>
-              {turn.question}
-            </p>
-            <p className="small fw-semibold mb-1">
-              {t('room.you')}
-              {turn.answerSource === 'VOICE' && (
-                <>
-                  <i className="bi bi-mic ms-2 cb-text-secondary" aria-hidden="true" />
-                  <span className="visually-hidden"> ({t('voice.room.spokenAnswer')})</span>
-                </>
+        {turns.map((turn) => {
+          const info = coding[turn.questionId];
+          const outcome = codingOutcome(t, turn, info);
+          return (
+            <li key={turn.seq} className="mb-3 pb-3 border-bottom cb-border">
+              <p className="small fw-semibold mb-1">{t('room.interviewer')}</p>
+              {outcome !== null && info?.title ? (
+                <p className="mb-2">
+                  <i className="bi bi-code-slash me-1" aria-hidden="true" />
+                  <span className="visually-hidden">{t('coding.problemLabel')}: </span>
+                  <span className="fw-semibold">{info.title}</span>
+                </p>
+              ) : (
+                <p className="mb-2" style={{ whiteSpace: 'pre-wrap' }}>
+                  {turn.question}
+                </p>
               )}
-            </p>
-            {turn.answer ? (
-              <p className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
-                {turn.answer}
+              <p className="small fw-semibold mb-1">
+                {t('room.you')}
+                {turn.answerSource === 'VOICE' && outcome === null && (
+                  <>
+                    <i className="bi bi-mic ms-2 cb-text-secondary" aria-hidden="true" />
+                    <span className="visually-hidden"> ({t('voice.room.spokenAnswer')})</span>
+                  </>
+                )}
               </p>
-            ) : (
-              <p className="mb-0 cb-text-secondary fst-italic">{t('room.noAnswer')}</p>
-            )}
-          </li>
-        ))}
+              {outcome !== null ? (
+                <p className="mb-0">{outcome}</p>
+              ) : turn.answer ? (
+                <p className="mb-0" style={{ whiteSpace: 'pre-wrap' }}>
+                  {turn.answer}
+                </p>
+              ) : (
+                <p className="mb-0 cb-text-secondary fst-italic">{t('room.noAnswer')}</p>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

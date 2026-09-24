@@ -230,6 +230,61 @@ describe('readiness report', () => {
     );
   });
 
+  it('shows coding problems with their results, run or not', async () => {
+    const base = {
+      verdict: null,
+      judgeUnavailable: false,
+      submitted: true,
+      language: 'python' as const,
+    };
+    await openReport(
+      reportApi(
+        makeReport({
+          content: {
+            coding: [
+              { ...base, title: 'Two sum', difficulty: 'EASY', passed: 4, total: 5 },
+              {
+                ...base,
+                title: 'Merge intervals',
+                difficulty: 'MEDIUM',
+                language: 'java',
+                passed: null,
+                total: null,
+                judgeUnavailable: true,
+              },
+              {
+                ...base,
+                title: 'Word ladder',
+                difficulty: 'HARD',
+                language: null,
+                submitted: false,
+                passed: null,
+                total: null,
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const section = screen.getByRole('region', { name: 'Coding' });
+    const items = within(section).getAllByRole('listitem');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent('Two sum');
+    expect(items[0]).toHaveTextContent('Easy · Language: Python 3');
+    expect(items[0]).toHaveTextContent('4 of 5 tests passed');
+    expect(items[1]).toHaveTextContent('Language: Java');
+    expect(items[1]).toHaveTextContent(
+      'Not run (the code judge was unavailable) — reviewed from your code',
+    );
+    expect(items[2]).toHaveTextContent('Hard');
+    expect(items[2]).toHaveTextContent('Not submitted before time ran out');
+  });
+
+  it('has no coding section for interviews without coding', async () => {
+    await openReport();
+    expect(screen.queryByRole('region', { name: 'Coding' })).not.toBeInTheDocument();
+  });
+
   it('shows the transcript collapsed', async () => {
     await openReport();
     const user = userEvent.setup();

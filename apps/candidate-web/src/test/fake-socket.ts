@@ -139,6 +139,7 @@ export function makeQuestion(overrides: Partial<LiveQuestion> = {}): LiveQuestio
     roundType: 'INTRO',
     isFollowUp: false,
     askedAt: NOW,
+    coding: null,
     ...overrides,
   };
 }
