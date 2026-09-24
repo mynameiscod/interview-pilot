@@ -55,3 +55,24 @@ export {
   mockSpeechFailure,
 } from './speech/mock.js';
 export { createOpenAiSttAdapter, createOpenAiTtsAdapter } from './speech/openai.js';
+export {
+  createCodeBegunJudge,
+  createJudge,
+  createJudge0Adapter,
+  createMockJudge,
+  JUDGE0_LANGUAGE_IDS,
+  judge0Verdict,
+  type JudgeSettings,
+} from './judge/adapters.js';
+export {
+  JUDGE_CLOCK_WINDOW_MS,
+  JudgeUnavailableError,
+  runOnJudge,
+  signJudgeRequest,
+  verifyJudgeSignature,
+  type JudgeAdapter,
+  type JudgeRequest,
+  type JudgeResult,
+  type JudgeTestCase,
+  type JudgeTestResult,
+} from './judge/types.js';

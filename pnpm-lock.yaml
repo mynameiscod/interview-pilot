@@ -551,6 +551,9 @@ importers:
       '@cbi/ai-core':
         specifier: workspace:*
         version: link:../ai-core
+      '@cbi/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       '@google/genai':
         specifier: 2.24.0
         version: 2.24.0

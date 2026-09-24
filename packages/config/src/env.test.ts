@@ -33,6 +33,9 @@ const deployed = {
   RAZORPAY_KEY_ID: 'rzp_live_example',
   RAZORPAY_KEY_SECRET: 'razorpay-secret',
   RAZORPAY_WEBHOOK_SECRET: 'razorpay-webhook-secret',
+  JUDGE_PROVIDER: 'judge0',
+  JUDGE_BASE_URL: 'https://judge.internal.codebegun.com',
+  JUDGE_HMAC_SECRET: 'j'.repeat(40),
 };
 
 describe('payment settings', () => {
@@ -197,5 +200,33 @@ describe('AI provider settings', () => {
     expect(() => loadEnv(apiEnvSchema, { ...base, AI_SECRETS_PREVIOUS_KEYS: `k1:${k0}` })).toThrow(
       /must not repeat/,
     );
+  });
+});
+
+describe('judge settings', () => {
+  it('defaults to the mock judge in development', () => {
+    expect(loadEnv(apiEnvSchema, base).JUDGE_PROVIDER).toBe('mock');
+  });
+
+  it('needs a URL and a strong secret for a real judge, and refuses the mock when deployed', () => {
+    expect(() =>
+      loadEnv(apiEnvSchema, {
+        ...base,
+        JUDGE_PROVIDER: 'judge0',
+        JUDGE_HMAC_SECRET: 'j'.repeat(40),
+      }),
+    ).toThrow(/JUDGE_BASE_URL/);
+    expect(() =>
+      loadEnv(workerEnvSchema, {
+        ...base,
+        JUDGE_PROVIDER: 'codebegun',
+        JUDGE_BASE_URL: 'https://judge.example',
+        JUDGE_HMAC_SECRET: 'short',
+      }),
+    ).toThrow(/JUDGE_HMAC_SECRET/);
+    const withoutJudge = Object.fromEntries(
+      Object.entries(deployed).filter(([k]) => !k.startsWith('JUDGE')),
+    );
+    expect(() => loadEnv(apiEnvSchema, withoutJudge)).toThrow(/mock judge/);
   });
 });

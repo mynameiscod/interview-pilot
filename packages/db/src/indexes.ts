@@ -7,6 +7,7 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
+import { CodingAttemptModel, ProblemModel } from './models/coding.js';
 import { ConsentModel, ConsentTextModel } from './models/consent.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
@@ -76,6 +77,8 @@ const MODELS = [
   ConsentModel,
   MediaAssetModel,
   IntegrityEventModel,
+  ProblemModel,
+  CodingAttemptModel,
 ];
 
 /**

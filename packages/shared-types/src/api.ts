@@ -43,6 +43,9 @@ export const ErrorCode = z.enum([
   // Voice (Phase 7)
   /** Every speech model for the feature failed; the room offers text instead. */
   'SPEECH_UNAVAILABLE',
+  // Coding (Phase 9)
+  /** The code judge could not run the code right now (submitting still works). */
+  'JUDGE_UNAVAILABLE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

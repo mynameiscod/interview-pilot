@@ -181,6 +181,44 @@ function paymentIssues(env: PaymentEnv, issue: (path: string, message: string) =
   }
 }
 
+/** Code judge (Phase 9). Candidate code runs only on a separate judge host, never here. */
+const judgeShape = {
+  /** `mock` decides results from markers in the code (development/test only; refused in staging/production). */
+  JUDGE_PROVIDER: z.enum(['codebegun', 'judge0', 'mock']).default('mock'),
+  JUDGE_BASE_URL: optionalString,
+  /** Shared secret for HMAC-signed judge requests. */
+  JUDGE_HMAC_SECRET: optionalString,
+  /** Judge0 only: its X-Auth-Token, when authentication is enabled on the judge. */
+  JUDGE0_AUTH_TOKEN: optionalString,
+};
+
+type JudgeEnv = {
+  APP_ENV: AppEnv;
+  JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock';
+  JUDGE_BASE_URL?: string;
+  JUDGE_HMAC_SECRET?: string;
+};
+
+function judgeIssues(env: JudgeEnv, issue: (path: string, message: string) => void) {
+  if (env.JUDGE_PROVIDER !== 'mock') {
+    if (!env.JUDGE_BASE_URL || !/^https?:\/\//.test(env.JUDGE_BASE_URL)) {
+      issue(
+        'JUDGE_BASE_URL',
+        `JUDGE_BASE_URL (http/https) is required when JUDGE_PROVIDER=${env.JUDGE_PROVIDER}`,
+      );
+    }
+    if (!env.JUDGE_HMAC_SECRET || env.JUDGE_HMAC_SECRET.length < 32) {
+      issue(
+        'JUDGE_HMAC_SECRET',
+        'JUDGE_HMAC_SECRET (at least 32 characters) is required for a real judge',
+      );
+    }
+  }
+  if (isDeployed(env.APP_ENV) && env.JUDGE_PROVIDER === 'mock') {
+    issue('JUDGE_PROVIDER', `the mock judge is for development only, not ${env.APP_ENV}`);
+  }
+}
+
 type SharedEnv = {
   APP_ENV: AppEnv;
   AI_SECRETS_MASTER_KEY: string;
@@ -238,6 +276,7 @@ const apiObjectSchema = baseEnvSchema.extend({
   ...aiRuntimeShape,
   ...storageShape,
   ...paymentShape,
+  ...judgeShape,
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
   /** Number of trusted reverse-proxy hops (NGINX = 1). Needed for correct client IPs. */
@@ -290,6 +329,7 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
 
   emailIssues(env, issue);
   paymentIssues(env, issue);
+  judgeIssues(env, issue);
   if (env.SMS_PROVIDER === 'msg91' && (!env.MSG91_AUTH_KEY || !env.MSG91_OTP_TEMPLATE_ID)) {
     issue(
       'MSG91_AUTH_KEY',
@@ -318,6 +358,7 @@ export const workerEnvSchema = baseEnvSchema
     ...aiRuntimeShape,
     ...storageShape,
     ...paymentShape,
+    ...judgeShape,
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
     /** How often AI usage is rolled up into providerHealth. */
@@ -362,6 +403,7 @@ export const workerEnvSchema = baseEnvSchema
     sharedIssues(env, issue);
     emailIssues(env, issue);
     paymentIssues(env, issue);
+    judgeIssues(env, issue);
   });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

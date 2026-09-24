@@ -52,6 +52,8 @@ export const LiveQuestion = z.object({
   roundType: RoundType,
   isFollowUp: z.boolean(),
   askedAt: z.iso.datetime(),
+  /** A coding problem: answered in the editor with Run/Submit (Phase 9). */
+  coding: z.object({ problemId: z.string(), title: z.string() }).nullable(),
 });
 export type LiveQuestion = z.infer<typeof LiveQuestion>;
 

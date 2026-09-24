@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { InterviewCreditStatus } from './interviews.js';
 import { CompetencyCategory, InterviewMode, RoundType } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
+import { CodingReportItem } from './coding.js';
 import { IntegritySummary } from './media.js';
 
 /**
@@ -125,6 +126,8 @@ export const ReportContent = z.object({
   schemaVersion: z.literal(1),
   /** Session observations when the interview tracked them (Phase 8); absent in older reports. */
   integrity: IntegritySummary.nullable().optional(),
+  /** Coding problems and their results (Phase 9); absent in older reports. */
+  coding: z.array(CodingReportItem).optional(),
   header: z.object({
     title: z.string(),
     companyName: z.string().nullable(),

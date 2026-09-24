@@ -33,6 +33,8 @@ export interface InterviewTurnRecord {
     probeTopic: string | null;
     promptVersion: number | null;
     model: string | null;
+    /** Coding rounds: the problem asked (answered in the editor). */
+    coding: { problemId: Types.ObjectId; title: string } | null;
   };
   askedAt: Date;
   answer: {
@@ -87,6 +89,16 @@ const turnSchema = new Schema<InterviewTurnRecord>(
           followUpOf: { type: String, default: null },
           followUpDepth: { type: Number, default: 0 },
           probeTopic: { type: String, default: null },
+          coding: {
+            type: new Schema(
+              {
+                problemId: { type: Schema.Types.ObjectId, ref: 'Problem', required: true },
+                title: { type: String, required: true },
+              },
+              { _id: false },
+            ),
+            default: null,
+          },
           promptVersion: { type: Number, default: null },
           model: { type: String, default: null },
         },

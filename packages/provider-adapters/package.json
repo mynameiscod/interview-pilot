@@ -29,6 +29,7 @@
     "@anthropic-ai/sdk": "0.128.0",
     "@aws-sdk/client-sesv2": "3.1138.0",
     "@cbi/ai-core": "workspace:*",
+    "@cbi/shared-types": "workspace:*",
     "@google/genai": "2.24.0",
     "@mozilla/readability": "0.6.0",
     "ipaddr.js": "2.5.0",

@@ -1,6 +1,7 @@
 export * from './ai-runtime.js';
 export * from './models/ai.js';
 export * from './models/audit-log.js';
+export * from './models/coding.js';
 export * from './models/commerce.js';
 export * from './models/consent.js';
 export * from './models/credits.js';
@@ -25,5 +26,6 @@ export * from './mongo.js';
 export * from './redis.js';
 export * from './seed/consent-texts.js';
 export * from './seed/library.js';
+export * from './seed/problems.js';
 export { DEFAULT_TEMPLATE_KEY, SEED_ROLES, SEED_TEMPLATES } from './seed/library-content.js';
 export { SEED_PROMPTS } from './seed/prompts-content.js';
