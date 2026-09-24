@@ -38,11 +38,13 @@ import {
   type InterviewSnapshot,
   type LiveQuestion,
   type RtErrorCode,
+  type MaintenanceSetting,
 } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
 import type { z } from 'zod';
 import type { AuditService } from '../../lib/audit.js';
 import type { JobQueues } from '../../lib/jobs.js';
+import { refuseDuringMaintenance } from '../../lib/maintenance.js';
 import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
@@ -152,6 +154,8 @@ interface Deps {
     s: InterviewSessionRecord,
     target: QuestionTarget,
   ) => Promise<{ _id: Types.ObjectId; title: string; text: string } | null>;
+  /** Maintenance mode refuses new starts (running interviews continue). */
+  maintenance?: () => Promise<MaintenanceSetting>;
   now?: () => Date;
 }
 
@@ -168,6 +172,7 @@ export function createLiveInterviewService({
   consent,
   onQuestion,
   pickCodingProblem,
+  maintenance,
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -577,6 +582,7 @@ export function createLiveInterviewService({
         throw new AppError(409, 'INVALID_STATE', 'This interview cannot be started now.');
       }
       if (!s.blueprintId) throw new AppError(409, 'INVALID_STATE', 'Analyse the interview first.');
+      await refuseDuringMaintenance(maintenance);
       // Device check (voice and video) and consents, whatever the mode asks for.
       const readiness = await consent.readiness(s, now());
       if (readiness.blocker) throw new AppError(409, 'INVALID_STATE', readiness.blocker);

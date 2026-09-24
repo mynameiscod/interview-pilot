@@ -1,5 +1,27 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  ClientFlags,
+  CostQuery,
+  CostReport,
+  CreateShareBody,
+  CreatedShareLink,
+  Dashboard,
+  DateRangeQuery,
+  FailedJob,
+  FailedJobsQuery,
+  FeatureFlag,
+  ProofView,
+  PublicSystemStatus,
+  QueueCounts,
+  RetryJobBody,
+  RollupBody,
+  SettingEntry,
+  ShareLinkSummary,
+  SystemHealth,
+  TrackEventsBody,
+  TrackEventsResult,
+  UpdateFlagBody,
+  UpdateSettingBody,
   AdminInterviewDetail,
   AdminInterviewQuery,
   AdminInterviewRow,
@@ -1226,6 +1248,118 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: ScoreRevisionSummary,
     status: 201,
     errors: [400, 401, 403, 404, 409],
+  });
+
+  // ---- Analytics, operations and Candidate Proof (Phase 11) -------------------------------------
+  route('post', '/analytics/events', {
+    tag: 'Analytics',
+    summary:
+      'Send up to 25 allow-listed product events (no personal data; route patterns only). Signed-in callers are linked by their token',
+    body: TrackEventsBody,
+    response: TrackEventsResult,
+    status: 202,
+    errors: [400, 429],
+  });
+  route('get', '/flags', {
+    tag: 'Operations',
+    summary: 'Client-visible feature flags, evaluated for the caller (token optional)',
+    response: ClientFlags,
+    errors: [429],
+  });
+  route('get', '/system/status', {
+    tag: 'Operations',
+    summary: 'Public status: the maintenance banner',
+    response: PublicSystemStatus,
+    errors: [429],
+  });
+  candidate('get', '/reports/{sessionId}/shares', {
+    tag: 'Candidate Proof',
+    summary: 'My proof links for a report (flag reports.publicProof; 404 while off)',
+    response: z.array(ShareLinkSummary),
+    errors: [401, 404],
+  });
+  candidate('post', '/reports/{sessionId}/shares', {
+    tag: 'Candidate Proof',
+    summary:
+      'Create a proof link (1–30 days, at most 5 active per report). The path is shown only here',
+    body: CreateShareBody,
+    response: CreatedShareLink,
+    status: 201,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('delete', '/reports/shares/{id}', {
+    tag: 'Candidate Proof',
+    summary: 'Revoke a proof link',
+    response: ShareLinkSummary,
+    errors: [401, 404],
+  });
+  route('get', '/proof/{token}', {
+    tag: 'Candidate Proof',
+    summary:
+      'Public proof page: scores only, never the transcript, evidence or contact details. Expired, revoked and unknown links answer 404',
+    response: ProofView,
+    errors: [404, 429],
+  });
+  const opsAdmin = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin analytics & operations',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  opsAdmin('get', '/admin/analytics/dashboard', {
+    summary:
+      'KPIs with targets, daily series, cohort funnel and provider health for a range of India-time days (analytics.read)',
+    query: DateRangeQuery,
+    response: Dashboard,
+  });
+  opsAdmin('get', '/admin/analytics/costs', {
+    summary: 'AI cost by feature, provider, model or day, with revenue and margin (analytics.read)',
+    query: CostQuery,
+    response: CostReport,
+  });
+  opsAdmin('post', '/admin/analytics/rollup', {
+    summary: 'Recompute the daily rollups of a range now (queues.manage; audited)',
+    body: RollupBody,
+    response: z.object({ days: z.number().int() }),
+  });
+  opsAdmin('get', '/admin/system/health', {
+    summary: 'Dependencies, worker heartbeats, queue counts and stuck interviews (system.read)',
+    response: SystemHealth,
+  });
+  opsAdmin('get', '/admin/system/queues', {
+    summary: 'Job counts per queue (system.read)',
+    response: z.array(QueueCounts),
+  });
+  opsAdmin('get', '/admin/system/queues/{name}/failed', {
+    summary: 'Failed jobs of a queue (ids only; system.read)',
+    query: FailedJobsQuery,
+    response: z.array(FailedJob),
+  });
+  opsAdmin('post', '/admin/system/queues/{name}/jobs/{jobId}/retry', {
+    summary: 'Retry one failed job (queues.manage; audited)',
+    body: RetryJobBody,
+    response: z.object({ retried: z.boolean() }),
+  });
+  opsAdmin('get', '/admin/flags', {
+    summary: 'Feature flags (system.read)',
+    response: z.array(FeatureFlag),
+  });
+  opsAdmin('put', '/admin/flags/{key}', {
+    summary: 'Switch a flag and set its rollout (system.manage; audited)',
+    body: UpdateFlagBody,
+    response: FeatureFlag,
+  });
+  opsAdmin('get', '/admin/settings', {
+    summary:
+      'System settings: maintenance, finance (exchange rate, gateway fee), KPI targets (system.read)',
+    response: z.array(SettingEntry),
+  });
+  opsAdmin('put', '/admin/settings/{key}', {
+    summary:
+      'Update one setting; the value is validated against its schema (system.manage; audited)',
+    body: UpdateSettingBody,
+    response: SettingEntry,
   });
 
   const generator = new OpenApiGeneratorV31(registry.definitions);

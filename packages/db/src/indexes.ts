@@ -8,6 +8,13 @@ import {
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
 import { CampaignApplicationModel, CampaignModel, ReviewRevisionModel } from './models/campaign.js';
+import {
+  AnalyticsDailyModel,
+  AnalyticsEventModel,
+  FeatureFlagModel,
+  ShareLinkModel,
+  SystemSettingModel,
+} from './models/ops.js';
 import { CodingAttemptModel, ProblemModel } from './models/coding.js';
 import { ConsentModel, ConsentTextModel } from './models/consent.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
@@ -83,6 +90,11 @@ const MODELS = [
   CampaignModel,
   CampaignApplicationModel,
   ReviewRevisionModel,
+  AnalyticsEventModel,
+  AnalyticsDailyModel,
+  FeatureFlagModel,
+  SystemSettingModel,
+  ShareLinkModel,
 ];
 
 /**

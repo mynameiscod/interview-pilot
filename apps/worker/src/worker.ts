@@ -1,5 +1,5 @@
 import type { Logger } from '@cbi/config';
-import type { MediaStorage, ReconcileGateway, Redis } from '@cbi/db';
+import { istDay, rollupDays, type MediaStorage, type ReconcileGateway, type Redis } from '@cbi/db';
 import {
   AnalysisJob,
   DocumentJob,
@@ -36,6 +36,7 @@ export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
 export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
 export const MEDIA_SWEEP_JOB = 'media-sweep' as const;
+export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -58,6 +59,8 @@ export interface WorkerRuntimeOptions {
   payments?: { gateway: ReconcileGateway; intervalMs: number };
   /** Recording finalization and retention; omit to disable. */
   media?: { storage: MediaStorage; intervalMs: number };
+  /** Analytics rollups for today and yesterday; omit to disable. */
+  analyticsRollupIntervalMs?: number;
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
   evaluation?: { deps: EvaluationDeps; concurrency: number };
 }
@@ -117,6 +120,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.analyticsRollupIntervalMs) {
+    await systemQueue.upsertJobScheduler(
+      ANALYTICS_ROLLUP_JOB,
+      { every: opts.analyticsRollupIntervalMs },
+      { name: ANALYTICS_ROLLUP_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   if (opts.media) {
     await systemQueue.upsertJobScheduler(
       MEDIA_SWEEP_JOB,
@@ -168,6 +179,13 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
           case MEDIA_SWEEP_JOB: {
             if (!opts.media) return;
             await runMediaSweep({ storage: opts.media.storage, logger: opts.logger });
+            return;
+          }
+          case ANALYTICS_ROLLUP_JOB: {
+            // Recomputing both days is idempotent; yesterday catches late updates after midnight.
+            const today = istDay(new Date());
+            const yesterday = istDay(new Date(Date.now() - 24 * 3600 * 1000));
+            await rollupDays(yesterday, today);
             return;
           }
           case PROVIDER_HEALTH_JOB: {

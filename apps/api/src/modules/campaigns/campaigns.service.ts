@@ -36,6 +36,7 @@ import {
   type JoinCampaignBody,
   type JoinCampaignResult,
   type PublicCampaign,
+  type MaintenanceSetting,
   type UpdateCampaignBody,
 } from '@cbi/shared-types';
 import type { AuditService } from '../../lib/audit.js';
@@ -43,6 +44,7 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
+import { refuseDuringMaintenance } from '../../lib/maintenance.js';
 import { buildZip, type ZipEntry } from '../../lib/zip.js';
 
 /** Invite tokens: 144 random bits, URL-safe. Only the SHA-256 is stored. */
@@ -148,6 +150,8 @@ interface Deps {
   storage: StorageProvider;
   /** Starts role analysis for a new campaign interview (the interview service). */
   analyze: (userId: string, sessionId: string, ctx: ClientContext) => Promise<unknown>;
+  /** Maintenance mode refuses new joins. */
+  maintenance?: () => Promise<MaintenanceSetting>;
   now?: () => Date;
 }
 
@@ -156,6 +160,7 @@ export function createCampaignService({
   logger,
   storage,
   analyze,
+  maintenance,
   now = () => new Date(),
 }: Deps) {
   async function byId(id: string) {
@@ -643,6 +648,7 @@ export function createCampaignService({
         CampaignApplicationModel.findOne({ campaignId: c._id, userId }, { sessionId: 1 }).lean();
       const before = await existing();
       if (before) return { interviewId: String(before.sessionId), created: false };
+      await refuseDuringMaintenance(maintenance);
       const reason = closedReason(c, now());
       if (reason) throw new AppError(409, 'CAMPAIGN_CLOSED', CLOSED_MESSAGES[reason]);
       if (body.resumeId) {

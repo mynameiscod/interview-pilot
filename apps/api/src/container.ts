@@ -42,6 +42,11 @@ import { createMediaService } from './modules/media/media.service.js';
 import { codingQuestionText, createCodingService } from './modules/coding/coding.service.js';
 import { createCampaignService } from './modules/campaigns/campaigns.service.js';
 import { createReviewService } from './modules/review/review.service.js';
+import { createQueueAdmin, type QueueAdmin } from './lib/queue-admin.js';
+import { createAnalyticsService } from './modules/ops/analytics.service.js';
+import { createFlagService, createSettingsService } from './modules/ops/ops.service.js';
+import { createProofService } from './modules/ops/proof.service.js';
+import { createSystemService } from './modules/ops/system.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -64,6 +69,8 @@ export interface ContainerOptions {
     payments?: { gateway: PaymentGateway; mock: ReturnType<typeof mockGatewayControls> };
     /** A code judge (tests pass a controllable mock). */
     judge?: JudgeAdapter;
+    /** The admin queue view (tests pass one on the test Redis). */
+    queueAdmin?: QueueAdmin;
   };
 }
 
@@ -149,6 +156,8 @@ export function buildContainer(opts: ContainerOptions) {
   const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
   const inputs = createInputsService({ storage, jobs, audit, logger });
   const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
+  const flags = createFlagService({ audit });
+  const settings = createSettingsService({ audit });
   const interviews = createInterviewService({ jobs, audit, logger, consent });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
@@ -180,6 +189,7 @@ export function buildContainer(opts: ContainerOptions) {
     jobs,
     transcripts,
     consent,
+    maintenance: () => settings.get('maintenance'),
     onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
     pickCodingProblem: async (s, target) => {
       const p = await coding.pickProblem(s, target);
@@ -193,8 +203,20 @@ export function buildContainer(opts: ContainerOptions) {
     logger,
     storage,
     analyze: (userId, sessionId, ctx) => interviews.analyze(userId, sessionId, ctx),
+    maintenance: () => settings.get('maintenance'),
   });
   const review = createReviewService({ audit, jobs, logger });
+  const analytics = createAnalyticsService({ audit, settings });
+  const queueAdmin = opts.overrides?.queueAdmin ?? createQueueAdmin(opts.queueRedis ?? redis);
+  const system = createSystemService({
+    redis,
+    queues: queueAdmin,
+    audit,
+    settings,
+    version: env.APP_VERSION,
+    env: env.APP_ENV,
+  });
+  const proof = createProofService({ flags, audit });
   const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
   const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
   // Mock Checkout controls exist only with the mock gateway (refused outside development/test).
@@ -234,6 +256,12 @@ export function buildContainer(opts: ContainerOptions) {
     reports,
     campaigns,
     review,
+    flags,
+    settings,
+    analytics,
+    queueAdmin,
+    system,
+    proof,
     payments,
     paymentMock,
     cookies,

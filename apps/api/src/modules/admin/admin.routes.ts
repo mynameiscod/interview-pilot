@@ -21,6 +21,7 @@ import { mediaAdminRouter } from '../media/media.routes.js';
 import { codingAdminRouter } from '../coding/coding.routes.js';
 import { interviewsAdminRouter } from '../reports/reports.routes.js';
 import { campaignsAdminRouter } from '../campaigns/campaigns.routes.js';
+import { opsAdminRouter } from '../ops/ops.routes.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
 export function adminRouter(c: Container): Router {
@@ -123,6 +124,7 @@ export function adminRouter(c: Container): Router {
   router.use(mediaAdminRouter(c));
   router.use(codingAdminRouter(c));
   router.use(campaignsAdminRouter(c));
+  router.use(opsAdminRouter(c));
 
   return router;
 }

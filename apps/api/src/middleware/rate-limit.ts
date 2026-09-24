@@ -17,7 +17,8 @@ export type RateLimiterName =
   | 'payment'
   | 'voice'
   | 'media'
-  | 'coding';
+  | 'coding'
+  | 'analytics';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -47,6 +48,8 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   media: { windowMs: 10 * 60_000, limit: 300, failOpen: false },
   /** Code runs and submissions (each is a judge execution). */
   coding: { windowMs: 10 * 60_000, limit: 60, failOpen: false },
+  /** Analytics batches (losing some events is fine when Redis is down). */
+  analytics: { windowMs: 60_000, limit: 60, failOpen: true },
 };
 
 /** Limiters mounted after authentication count per user rather than per IP. */
@@ -100,5 +103,6 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     voice: make('voice'),
     media: make('media'),
     coding: make('coding'),
+    analytics: make('analytics'),
   };
 }

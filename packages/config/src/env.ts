@@ -377,6 +377,12 @@ export const workerEnvSchema = baseEnvSchema
       .int()
       .min(60_000)
       .default(15 * 60_000),
+    /** How often today's and yesterday's analytics rollups are recomputed (Phase 11). */
+    WORKER_ANALYTICS_ROLLUP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .default(15 * 60_000),
     /** Parallel evaluation stages (AI calls and PDF rendering). */
     WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */
