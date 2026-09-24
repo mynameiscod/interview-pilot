@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger } from '@cbi/config';
 import {
+  CampaignModel,
   AiRouteModel,
   connectMongo,
   createRedis,
@@ -311,6 +312,40 @@ describe('interview analysis', () => {
     expect(blueprint).toMatchObject({ roleId: null, userId, sourceJobTargetId: target._id });
     expect(blueprint!.content.competencies.reduce((a, c) => a + c.weight, 0)).toBe(100);
     expect(saved!.promptVersions).toMatchObject({ 'role.analyze': 1, 'blueprint.generate': 1 });
+  });
+
+  it("uses a campaign's pinned blueprint even with a job description", async () => {
+    const role = await RoleModel.findOne({ slug: 'backend-engineer' }).lean();
+    const template = await InterviewTemplateModel.findOne({ key: 'standard-practice' }).lean();
+    const campaign = await CampaignModel.create({
+      name: 'Hiring',
+      companyName: 'Acme',
+      roleId: role!._id,
+      roleTitle: role!.title,
+      blueprintId: role!.activeBlueprintId!,
+      blueprintVersion: 1,
+      templateId: template!._id,
+      templateKey: template!.key,
+      templateVersion: template!.version,
+      templateName: template!.content.name,
+      modes: ['TEXT'],
+      languages: ['en'],
+      window: { startAt: new Date(), endAt: null },
+      proctoring: { recording: 'OFF', tabSwitchTracking: false },
+      candidateSeesReport: true,
+      tokenHash: 'h'.repeat(64),
+      tokenHint: 'abcd',
+      createdBy: userId,
+    });
+    const target = await readyTarget({ source: 'PASTE', rawText: JD_TEXT, roleId: role!._id });
+    const s = await session(target, { campaignId: campaign._id });
+    await analyze(s._id);
+    const saved = await InterviewSessionModel.findById(s._id).lean();
+    expect(saved!.state).toBe('READY');
+    expect(String(saved!.blueprintId)).toBe(String(role!.activeBlueprintId));
+    expect(saved!.analysis!.blueprint.origin).toBe('CANONICAL');
+    expect(saved!.promptVersions['blueprint.generate']).toBeUndefined();
+    expect(await RoleBlueprintModel.countDocuments({ origin: 'AI_GENERATED' })).toBe(0);
   });
 
   it('falls back to the chosen role when AI is unavailable', async () => {

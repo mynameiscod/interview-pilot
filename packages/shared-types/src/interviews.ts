@@ -123,8 +123,18 @@ export const InterviewSummary = z.object({
   /** Consents the interview asks for that still need a decision (any mode). */
   consentsPending: z.boolean(),
   /** A campaign interview (fixed role, template and rules; results shared with the company). */
+  /** Set when the interview came from a company's campaign invite (Phase 10). */
   campaign: z
-    .object({ id: z.string(), name: z.string(), companyName: z.string(), sponsored: z.boolean() })
+    .object({
+      id: z.string(),
+      name: z.string(),
+      companyName: z.string(),
+      sponsored: z.boolean(),
+      /** Whether the candidate will see their own report (the company decides). */
+      reportVisible: z.boolean(),
+      modes: z.array(InterviewMode),
+      languages: z.array(InterviewLanguagePreference),
+    })
     .nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),

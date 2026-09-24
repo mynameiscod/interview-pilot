@@ -36,6 +36,8 @@ export type AnalysisJob = (typeof AnalysisJob)[keyof typeof AnalysisJob];
 /** Jobs on the EVALUATION queue: one job per pipeline stage, chained stage by stage. */
 export const EvaluationJob = {
   STAGE: 'evaluation.stage',
+  /** The PDF of a report revision created after the pipeline (manual review). */
+  REPORT_PDF: 'evaluation.report_pdf',
 } as const;
 export type EvaluationJob = (typeof EvaluationJob)[keyof typeof EvaluationJob];
 
@@ -44,6 +46,11 @@ export interface EvaluationStageJobData {
   stage: ProcessingStage;
   /** Pipeline run: bumped when an admin re-runs processing, so ids never collide. */
   run: number;
+}
+
+export interface ReportPdfJobData {
+  sessionId: string;
+  revision: number;
 }
 
 /** Deterministic id per session, stage and run: enqueueing a stage twice is a no-op. */

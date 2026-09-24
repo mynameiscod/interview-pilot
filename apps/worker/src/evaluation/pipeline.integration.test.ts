@@ -1,6 +1,7 @@
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger } from '@cbi/config';
 import {
+  CampaignModel,
   CodingAttemptModel,
   ensureProblemBank,
   IntegrityEventModel,
@@ -31,7 +32,13 @@ import { createMemoryStorage, createRecordingEmailProvider } from '@cbi/provider
 import { ReportContent, type ProcessingStage } from '@cbi/shared-types';
 import { Queue } from 'bullmq';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { nextStage, runEvaluationStage, STAGES, type EvaluationDeps } from './pipeline.js';
+import {
+  nextStage,
+  renderRevisionPdf,
+  runEvaluationStage,
+  STAGES,
+  type EvaluationDeps,
+} from './pipeline.js';
 import { sweepEvaluations } from './sweep.js';
 
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -263,6 +270,63 @@ describe('evaluation pipeline', () => {
     expect(mail.sent).toHaveLength(1);
     expect(mail.sent[0]).toMatchObject({ to: `c-${String(userId)}@example.com` });
     expect(mail.sent[0]!.text).toContain(`https://interview.example.com/app/reports/${id}`);
+  });
+
+  it('hides a campaign report from the candidate when the company keeps it', async () => {
+    const { id } = await finishedInterview();
+    const session = await InterviewSessionModel.findById(id).lean();
+    const campaign = await CampaignModel.create({
+      name: 'Hiring',
+      companyName: 'Acme',
+      roleId: new mongoose.Types.ObjectId(),
+      roleTitle: 'Backend Engineer',
+      blueprintId: session!.blueprintId!,
+      blueprintVersion: 1,
+      templateId: session!.templateId,
+      templateKey: 'standard-practice',
+      templateVersion: 1,
+      templateName: 'Standard',
+      modes: ['TEXT'],
+      languages: ['en'],
+      window: { startAt: new Date(), endAt: null },
+      proctoring: { recording: 'OFF', tabSwitchTracking: false },
+      candidateSeesReport: false,
+      tokenHash: 'h'.repeat(64),
+      tokenHint: 'abcd',
+      createdBy: new mongoose.Types.ObjectId(),
+    });
+    await InterviewSessionModel.updateOne({ _id: id }, { $set: { campaignId: campaign._id } });
+    await beginEvaluation(id);
+    await runAll(id, 1);
+    const report = await InterviewReportModel.findOne({ sessionId: id, revision: 0 }).lean();
+    expect(report!.visibility.candidate).toBe(false);
+    expect(mail.sent).toHaveLength(1);
+    expect(mail.sent[0]!.subject).toBe('Your interview has been submitted');
+    expect(mail.sent[0]!.text).not.toContain('/app/reports/');
+  });
+
+  it('renders the PDF of a later report revision on its own key', async () => {
+    const { id, userId } = await finishedInterview();
+    await beginEvaluation(id);
+    await runAll(id, 1);
+    const r0 = await InterviewReportModel.findOne({ sessionId: id, revision: 0 }).lean();
+    await InterviewReportModel.create({
+      sessionId: id,
+      userId,
+      revision: 1,
+      scoreRevision: 1,
+      content: r0!.content,
+      roleKey: r0!.roleKey,
+      overall: r0!.overall,
+      generatedAt: new Date(),
+    });
+    await renderRevisionPdf(deps, id, 1);
+    await renderRevisionPdf(deps, id, 1); // once
+    const r1 = await InterviewReportModel.findOne({ sessionId: id, revision: 1 }).lean();
+    expect(r1!.pdf).toMatchObject({
+      status: 'READY',
+      storageKey: `reports/${String(userId)}/${id}/r1.pdf`,
+    });
   });
 
   it('adds session observations to the report when tracked, without changing the score', async () => {

@@ -1,5 +1,22 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  AdminInterviewDetail,
+  AdminInterviewQuery,
+  AdminInterviewRow,
+  CampaignResults,
+  CampaignResultsQuery,
+  CampaignStatusBody,
+  CampaignSummary,
+  CampaignWithInvite,
+  CreateCampaignBody,
+  JoinCampaignBody,
+  JoinCampaignResult,
+  PublicCampaign,
+  ReviewFlagBody,
+  ReviseScoreBody,
+  RotateInviteBody,
+  ScoreRevisionSummary,
+  UpdateCampaignBody,
   CodingWorkspace,
   CreateProblemVersionBody,
   ProblemActivationBody,
@@ -1104,6 +1121,111 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Ask the gateway what happened to a purchase and apply it (payments.manage)',
     response: AdminReconcileResult,
     errors: [401, 403, 404, 503],
+  });
+
+  // ---- Campaigns and review (Phase 10) --------------------------------------------------------
+  route('get', '/campaigns/{token}', {
+    tag: 'Campaigns',
+    summary:
+      'An invite link landing page (public). With a candidate token it also says whether you already joined',
+    response: PublicCampaign,
+    errors: [404, 429],
+  });
+  candidate('post', '/campaigns/{token}/join', {
+    tag: 'Campaigns',
+    summary:
+      'Join a campaign: 201 with a new interview, or 200 with the one you already have. 409 CAMPAIGN_CLOSED when not open',
+    body: JoinCampaignBody,
+    response: JoinCampaignResult,
+    status: 201,
+    errors: [400, 401, 404, 409],
+  });
+  const camp = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin campaigns',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  camp('get', '/admin/campaigns', {
+    summary: 'Campaigns, newest first (campaigns.read)',
+    response: z.array(CampaignSummary),
+  });
+  camp('post', '/admin/campaigns', {
+    summary:
+      'Create a draft campaign, pinning the role blueprint and template versions. The invite path is shown only here (campaigns.manage)',
+    body: CreateCampaignBody,
+    response: CampaignWithInvite,
+    status: 201,
+  });
+  camp('get', '/admin/campaigns/{id}', {
+    summary: 'One campaign (campaigns.read)',
+    response: CampaignSummary,
+  });
+  camp('put', '/admin/campaigns/{id}', {
+    summary: 'Change name, dates, limit, budget and report visibility (campaigns.manage)',
+    body: UpdateCampaignBody,
+    response: CampaignSummary,
+    errors: [400, 401, 403, 404, 409],
+  });
+  camp('post', '/admin/campaigns/{id}/status', {
+    summary: 'Activate, pause or close (closed is final) (campaigns.manage)',
+    body: CampaignStatusBody,
+    response: CampaignSummary,
+    errors: [400, 401, 403, 404, 409],
+  });
+  camp('post', '/admin/campaigns/{id}/rotate-invite', {
+    summary: 'Replace the invite link; the old one stops working (campaigns.manage)',
+    body: RotateInviteBody,
+    response: CampaignWithInvite,
+    errors: [400, 401, 403, 404, 409],
+  });
+  camp('get', '/admin/campaigns/{id}/results', {
+    summary: 'Results grid: candidates, status, latest scores by dimension (campaigns.read)',
+    query: CampaignResultsQuery,
+    response: CampaignResults,
+  });
+  camp('get', '/admin/campaigns/{id}/results.csv', {
+    summary: 'Results as CSV, same filters (campaigns.manage; audited)',
+    query: CampaignResultsQuery,
+    response: null,
+    status: 200,
+  });
+  camp('get', '/admin/campaigns/{id}/package.zip', {
+    summary:
+      'ZIP with results.csv, the campaign settings and each report (JSON, and PDF when ready) (campaigns.manage; audited)',
+    response: null,
+    status: 200,
+  });
+  const review = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin review',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  review('get', '/admin/interviews', {
+    summary: 'Interviews by state, campaign, flag, id or email (interviews.read)',
+    query: AdminInterviewQuery,
+    response: z.array(AdminInterviewRow),
+  });
+  review('get', '/admin/interviews/{id}', {
+    summary:
+      'Transcript, evidence and every score and report revision (interviews.read; each view is audited)',
+    response: AdminInterviewDetail,
+  });
+  review('post', '/admin/interviews/{id}/flag', {
+    summary: 'Flag or unflag for review (interviews.review)',
+    body: ReviewFlagBody,
+    response: AdminInterviewRow,
+  });
+  review('post', '/admin/interviews/{id}/revise-score', {
+    summary:
+      'Revise dimension scores: a new score and report revision with the reviewer note; earlier revisions never change (interviews.review)',
+    body: ReviseScoreBody,
+    response: ScoreRevisionSummary,
+    status: 201,
+    errors: [400, 401, 403, 404, 409],
   });
 
   const generator = new OpenApiGeneratorV31(registry.definitions);

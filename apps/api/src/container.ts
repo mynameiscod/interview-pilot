@@ -40,6 +40,8 @@ import { createTranscriptStore, createVoiceService } from './modules/voice/voice
 import { createConsentService } from './modules/consent/consent.service.js';
 import { createMediaService } from './modules/media/media.service.js';
 import { codingQuestionText, createCodingService } from './modules/coding/coding.service.js';
+import { createCampaignService } from './modules/campaigns/campaigns.service.js';
+import { createReviewService } from './modules/review/review.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -186,6 +188,13 @@ export function buildContainer(opts: ContainerOptions) {
   });
   liveRef = live;
   const reports = createReportsService({ storage, jobs, audit });
+  const campaigns = createCampaignService({
+    audit,
+    logger,
+    storage,
+    analyze: (userId, sessionId, ctx) => interviews.analyze(userId, sessionId, ctx),
+  });
+  const review = createReviewService({ audit, jobs, logger });
   const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
   const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
   // Mock Checkout controls exist only with the mock gateway (refused outside development/test).
@@ -223,6 +232,8 @@ export function buildContainer(opts: ContainerOptions) {
     coding,
     judge,
     reports,
+    campaigns,
+    review,
     payments,
     paymentMock,
     cookies,

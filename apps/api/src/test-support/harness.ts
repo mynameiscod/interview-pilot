@@ -48,7 +48,8 @@ export type RecordedJob =
   | { kind: 'resume'; id: string }
   | { kind: 'jobTarget'; id: string }
   | { kind: 'analyze'; id: string; attempt: number }
-  | { kind: 'evaluate'; id: string; rerun: boolean };
+  | { kind: 'evaluate'; id: string; rerun: boolean }
+  | { kind: 'reportPdf'; id: string; revision: number };
 
 /** Records enqueued work instead of sending it to Redis; `fail` simulates a queue outage. */
 export function createRecordingJobQueues() {
@@ -66,6 +67,7 @@ export function createRecordingJobQueues() {
       await record({ kind: 'evaluate', id, rerun: Boolean(opts.rerun) });
       return 1;
     },
+    renderReportPdf: (id, revision) => record({ kind: 'reportPdf', id, revision }),
     close: async () => undefined,
   };
   return { queues, jobs, state };

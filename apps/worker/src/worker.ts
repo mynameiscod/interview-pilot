@@ -6,12 +6,17 @@ import {
   EvaluationJob,
   QueueName,
   type EvaluationStageJobData,
+  type ReportPdfJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
   type ResumeExtractJobData,
 } from '@cbi/shared-types';
 import { DelayedError, Queue, Worker, type Job } from 'bullmq';
-import { runEvaluationStage, type EvaluationDeps } from './evaluation/pipeline.js';
+import {
+  renderRevisionPdf,
+  runEvaluationStage,
+  type EvaluationDeps,
+} from './evaluation/pipeline.js';
 import { createEvaluationQueue, ensureStageJob } from './evaluation/queue.js';
 import { sweepEvaluations } from './evaluation/sweep.js';
 import { writeHeartbeat } from './processors/heartbeat.js';
@@ -239,6 +244,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
       new Worker(
         QueueName.EVALUATION,
         async (job) => {
+          if (job.name === EvaluationJob.REPORT_PDF) {
+            const { sessionId, revision } = job.data as ReportPdfJobData;
+            await renderRevisionPdf(deps, sessionId, revision);
+            return;
+          }
           if (job.name !== EvaluationJob.STAGE)
             throw new Error(`Unknown evaluation job: ${job.name}`);
           const data = job.data as EvaluationStageJobData;

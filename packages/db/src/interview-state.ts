@@ -21,6 +21,7 @@ import {
 import type { InterviewState } from '@cbi/shared-types';
 import type { ClientSession, Types, UpdateQuery } from 'mongoose';
 import { inTransaction, reserveCredit, settleCredit } from './credits.js';
+import { CampaignModel } from './models/campaign.js';
 import {
   InterviewSessionModel,
   type InterviewSessionRecord,
@@ -196,8 +197,17 @@ export async function applySessionEvent(input: ApplyEventInput): Promise<ApplyEv
         case 'CONSUME_CREDIT':
         case 'REFUND_CREDIT': {
           const refund = effect.type === 'REFUND_CREDIT';
-          // Sponsored interviews never touched the candidate's credits: nothing to settle.
-          if (s.credit?.status === 'SPONSORED') break;
+          if (s.credit?.status === 'SPONSORED') {
+            // The candidate's credits were never touched; a refund returns the campaign's budget.
+            if (refund && s.campaignId) {
+              await CampaignModel.updateOne(
+                { _id: s.campaignId, 'sponsoredCredits.used': { $gt: 0 } },
+                { $inc: { 'sponsoredCredits.used': -1 } },
+                { session: tx },
+              );
+            }
+            break;
+          }
           await settleCredit(s.userId, s._id, refund ? 'REFUND' : 'CONSUME', {
             session: tx,
             reason: input.reason ?? null,

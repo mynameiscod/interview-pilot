@@ -1,5 +1,6 @@
 import type { Logger } from '@cbi/config';
 import {
+  CampaignModel,
   InterviewSessionModel,
   InterviewTemplateModel,
   JobTargetModel,
@@ -75,6 +76,16 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
     const role = target?.roleId
       ? await RoleModel.findById(target.roleId, { title: 1 }).lean()
       : null;
+    const campaign = session.campaignId
+      ? await CampaignModel.findById(session.campaignId, {
+          name: 1,
+          companyName: 1,
+          sponsoredCredits: 1,
+          candidateSeesReport: 1,
+          modes: 1,
+          languages: 1,
+        }).lean()
+      : null;
     return {
       id: String(session._id),
       state: session.state,
@@ -96,6 +107,24 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
       startedAt: session.startedAt ? iso(session.startedAt) : null,
       endedAt: session.endedAt ? iso(session.endedAt) : null,
       credit: session.credit?.status ?? 'NONE',
+      campaign: campaign
+        ? {
+            id: String(campaign._id),
+            name: campaign.name,
+            companyName: campaign.companyName,
+            // Sponsored once started with the campaign's budget; before that, while budget remains.
+            sponsored:
+              session.sponsored ||
+              ((session.credit?.status ?? 'NONE') === 'NONE' &&
+                Boolean(
+                  campaign.sponsoredCredits &&
+                  campaign.sponsoredCredits.used < campaign.sponsoredCredits.total,
+                )),
+            reportVisible: campaign.candidateSeesReport,
+            modes: campaign.modes,
+            languages: campaign.languages,
+          }
+        : null,
       voice: readiness.voice,
       consentsPending: readiness.consentsPending,
       createdAt: iso(session.createdAt),
@@ -261,6 +290,19 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
         !AVAILABLE_INTERVIEW_MODES.includes(body.mode)
       ) {
         throw AppError.validation('That interview mode is not available for this interview.');
+      }
+      if (session.campaignId) {
+        // A campaign fixes the modes and languages every candidate may use.
+        const campaign = await CampaignModel.findById(session.campaignId, {
+          modes: 1,
+          languages: 1,
+        }).lean();
+        if (campaign && !campaign.modes.includes(body.mode)) {
+          throw AppError.validation('This campaign does not offer that interview mode.');
+        }
+        if (campaign && !campaign.languages.includes(body.language)) {
+          throw AppError.validation('This campaign does not offer that language.');
+        }
       }
       const updated = await InterviewSessionModel.findOneAndUpdate(
         { _id: session._id, userId, state: 'READY', stateVersion: session.stateVersion },

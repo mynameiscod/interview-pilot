@@ -9,6 +9,7 @@ import {
   type EvaluationStageJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
+  type ReportPdfJobData,
   type ResumeExtractJobData,
 } from '@cbi/shared-types';
 import { Queue, type JobsOptions } from 'bullmq';
@@ -24,6 +25,8 @@ export interface JobQueues {
    * run with `rerun`. Returns the run number, or null when nothing started.
    */
   evaluateInterview(sessionId: string, opts?: { rerun?: boolean }): Promise<number | null>;
+  /** Renders the PDF of a report revision created by a manual review. */
+  renderReportPdf(sessionId: string, revision: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -68,6 +71,12 @@ export function createBullJobQueues(connection: Redis): JobQueues {
         jobId: evaluationJobId(sessionId, FIRST_STAGE, run),
       });
       return run;
+    },
+    async renderReportPdf(sessionId, revision) {
+      const data: ReportPdfJobData = { sessionId, revision };
+      await evaluation.add(EvaluationJob.REPORT_PDF, data, {
+        jobId: `report-pdf-${sessionId}-${revision}`,
+      });
     },
     async close() {
       await Promise.all([documents.close(), analysis.close(), evaluation.close()]);

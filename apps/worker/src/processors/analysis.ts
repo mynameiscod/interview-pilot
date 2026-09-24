@@ -9,6 +9,7 @@ import {
   JobTargetModel,
   mongoose,
   ResumeModel,
+  CampaignModel,
   RoleBlueprintModel,
   RoleModel,
   transitionSession,
@@ -219,9 +220,15 @@ async function analyze(
   const promptVersions: Record<string, number> = { ...session.promptVersions };
   if (analyzed) promptVersions['role.analyze'] = analyzed.promptVersion;
 
+  // A campaign pins one blueprint so every candidate is assessed on the same competencies.
+  const pinned = session.campaignId
+    ? await CampaignModel.findById(session.campaignId, { blueprintId: 1 })
+        .lean()
+        .then((c) => (c ? RoleBlueprintModel.findById(c.blueprintId).lean() : null))
+    : null;
   const hasContext = Boolean(jdText || resumeText);
   const generated =
-    hasContext || !canonical
+    !pinned && (hasContext || !canonical)
       ? await runPrompt(
           deps,
           'blueprint.generate',
@@ -244,7 +251,14 @@ async function analyze(
     }
   }
 
-  if (generated && generatedContent) {
+  if (pinned) {
+    blueprint = {
+      id: String(pinned._id),
+      origin: pinned.origin === 'AI_GENERATED' ? 'AI_GENERATED' : 'CANONICAL',
+      version: pinned.version,
+      content: pinned.content,
+    };
+  } else if (generated && generatedContent) {
     const [doc] = await RoleBlueprintModel.create([
       {
         roleId: null,

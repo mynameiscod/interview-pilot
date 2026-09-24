@@ -1,5 +1,6 @@
 import { keyedHash } from '@cbi/auth-core';
 import {
+  CampaignModel,
   ConsentModel,
   ConsentTextModel,
   InterviewSessionModel,
@@ -64,7 +65,12 @@ export function createConsentService(deps: { audit: AuditService; hashSecret: st
     );
   }
 
+  /** A campaign's proctoring rules replace the template's for its interviews. */
   async function policyOf(s: Session) {
+    if (s.campaignId) {
+      const campaign = await CampaignModel.findById(s.campaignId, { proctoring: 1 }).lean();
+      if (campaign) return campaign.proctoring;
+    }
     const template = await InterviewTemplateModel.findById(s.templateId, {
       'content.proctoringPolicy': 1,
     }).lean();
@@ -74,7 +80,9 @@ export function createConsentService(deps: { audit: AuditService; hashSecret: st
   }
 
   async function sessionConsents(s: Session): Promise<SessionConsents> {
-    const requirements = consentRequirements(s.mode, await policyOf(s));
+    const requirements = consentRequirements(s.mode, await policyOf(s), {
+      campaign: Boolean(s.campaignId),
+    });
     const items: SessionConsents['items'] = [];
     for (const r of requirements) {
       const text = await activeText(r.type, localeOf(s));

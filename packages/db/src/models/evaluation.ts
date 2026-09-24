@@ -161,6 +161,7 @@ const scoreSchema = new Schema<InterviewScoreRecord>(
             fallback: { type: Boolean, default: false },
             rationale: { type: String, default: null },
             evidenceIds: { type: [String], default: [] },
+            reviewNote: { type: String, default: null },
           },
           { _id: false },
         ),

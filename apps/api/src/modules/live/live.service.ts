@@ -3,6 +3,7 @@ import { renderPrompt, untrusted, type PromptValue } from '@cbi/ai-core';
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import {
+  CampaignModel,
   applySessionEvent,
   grantFreeCredits,
   inTransaction,
@@ -580,6 +581,24 @@ export function createLiveInterviewService({
       const readiness = await consent.readiness(s, now());
       if (readiness.blocker) throw new AppError(409, 'INVALID_STATE', readiness.blocker);
       const planner = await templateAndPlan(s);
+      if (s.campaignId) {
+        const campaign = await CampaignModel.findById(s.campaignId, {
+          status: 1,
+          window: 1,
+        }).lean();
+        const at = now();
+        if (
+          !campaign ||
+          campaign.status !== 'ACTIVE' ||
+          (campaign.window.endAt && at >= campaign.window.endAt)
+        ) {
+          throw new AppError(
+            409,
+            'CAMPAIGN_CLOSED',
+            'This interview campaign is not accepting interviews now.',
+          );
+        }
+      }
       // Every verified account gets its welcome credit, however it first reaches this point.
       await grantFreeCredits(userId);
       let started: Session;
@@ -614,13 +633,27 @@ export function createLiveInterviewService({
           if (state !== 'READY_TO_START') {
             throw new AppError(409, 'INVALID_STATE', 'This interview cannot be started now.');
           }
+          // A sponsored campaign pays while its budget lasts (claimed atomically, in this transaction).
+          const sponsored = s.campaignId
+            ? Boolean(
+                await CampaignModel.findOneAndUpdate(
+                  {
+                    _id: s.campaignId,
+                    'sponsoredCredits.total': { $exists: true },
+                    $expr: { $lt: ['$sponsoredCredits.used', '$sponsoredCredits.total'] },
+                  },
+                  { $inc: { 'sponsoredCredits.used': 1 } },
+                  { session: tx, projection: { _id: 1 } },
+                ).lean(),
+              )
+            : false;
           const result = await applySessionEvent({
             sessionId: s._id,
             userId,
             event: { type: 'START' },
             expectedVersion: version,
             // Recording is decided once, at start: video, allowed by the template, and consented.
-            set: { planner, recording: { enabled: readiness.recording } },
+            set: { planner, recording: { enabled: readiness.recording }, sponsored },
             now: now(),
             session: tx,
           });

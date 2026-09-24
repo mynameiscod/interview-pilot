@@ -1,6 +1,7 @@
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import {
+  CampaignModel,
   applySessionEvent,
   InterviewEvidenceModel,
   InterviewReportModel,
@@ -334,6 +335,12 @@ function roleKeyOf(s: Session): string | null {
   return title ? `title:${title.replace(/\s+/g, ' ')}` : null;
 }
 
+async function candidateSeesReport(s: Session) {
+  if (!s.campaignId) return true;
+  const campaign = await CampaignModel.findById(s.campaignId, { candidateSeesReport: 1 }).lean();
+  return campaign?.candidateSeesReport ?? false;
+}
+
 /** 6. Report revision 0, then the session becomes REPORT_READY. */
 async function buildReport(deps: EvaluationDeps, s: Session) {
   if (!(await InterviewReportModel.exists({ sessionId: s._id, revision: 0 }))) {
@@ -436,6 +443,8 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       revision: 0,
       scoreRevision: 0,
       content,
+      // A campaign decides whether its candidates see their own report.
+      visibility: { candidate: await candidateSeesReport(s) },
       roleKey,
       overall: score.overall,
       generatedAt: deps.now?.() ?? new Date(),
@@ -454,11 +463,20 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
 
 /** 7. The PDF copy of the report (the report is already visible without it). */
 async function renderPdf(deps: EvaluationDeps, s: Session) {
-  const report = await InterviewReportModel.findOne({ sessionId: s._id, revision: 0 }).lean();
+  await renderRevisionPdf(deps, String(s._id), 0);
+}
+
+/** Renders (once) the PDF of one report revision: revision 0 in the pipeline, later ones after a review. */
+export async function renderRevisionPdf(
+  deps: Pick<EvaluationDeps, 'storage' | 'now'>,
+  sessionId: string,
+  revision: number,
+) {
+  const report = await InterviewReportModel.findOne({ sessionId, revision }).lean();
   if (!report) throw new Error('report missing');
   if (report.pdf.status === 'READY') return;
   const pdf = await renderReportPdf(report.content);
-  const key = `reports/${String(s.userId)}/${String(s._id)}/r0.pdf`;
+  const key = `reports/${String(report.userId)}/${sessionId}/r${revision}.pdf`;
   await deps.storage.put(key, pdf, 'application/pdf');
   await InterviewReportModel.updateOne(
     { _id: report._id },
@@ -476,6 +494,14 @@ async function notify(deps: EvaluationDeps, s: Session) {
   }
   const user = await UserModel.findById(s.userId, { primaryEmail: 1, emailVerifiedAt: 1 }).lean();
   if (!user?.primaryEmail || !user.emailVerifiedAt) return;
+  if (!(await candidateSeesReport(s))) {
+    await deps.email.send({
+      to: user.primaryEmail,
+      subject: 'Your interview has been submitted',
+      text: `Thank you for completing your interview. It has been evaluated and shared with the company that invited you, which will contact you about next steps.\n\nCareerPilot Interview by CodeBegun`,
+    });
+    return;
+  }
   const link = `${deps.candidateUrl.replace(/\/$/, '')}/app/reports/${String(s._id)}`;
   await deps.email.send({
     to: user.primaryEmail,

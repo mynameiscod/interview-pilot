@@ -46,6 +46,9 @@ export const ErrorCode = z.enum([
   // Coding (Phase 9)
   /** The code judge could not run the code right now (submitting still works). */
   'JUDGE_UNAVAILABLE',
+  // Campaigns (Phase 10)
+  /** The campaign is not open (not started, ended, paused, closed or full). */
+  'CAMPAIGN_CLOSED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

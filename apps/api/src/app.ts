@@ -30,6 +30,7 @@ import {
   mediaPlaybackRouter,
   userConsentsRouter,
 } from './modules/media/media.routes.js';
+import { campaignsRouter } from './modules/campaigns/campaigns.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
@@ -113,6 +114,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/credits', creditsRouter(c));
   v1.use('/reports', reportsRouter(c));
   v1.use('/feedback', feedbackRouter(c));
+  v1.use('/campaigns', campaignsRouter(c));
   v1.use('/plans', plansRouter(c));
   v1.use('/payments', paymentsRouter(c));
   v1.use(librarySearchRouter());
