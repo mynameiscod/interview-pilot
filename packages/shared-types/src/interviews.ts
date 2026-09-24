@@ -85,6 +85,9 @@ export const RoleAnalysis = z.object({
 });
 export type RoleAnalysis = z.infer<typeof RoleAnalysis>;
 
+export const InterviewCreditStatus = z.enum(['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED']);
+export type InterviewCreditStatus = z.infer<typeof InterviewCreditStatus>;
+
 export const InterviewSummary = z.object({
   id: z.string(),
   state: InterviewState,
@@ -103,6 +106,10 @@ export const InterviewSummary = z.object({
   }),
   analysis: RoleAnalysis.nullable(),
   failure: z.object({ code: AnalysisFailureCode, at: z.iso.datetime() }).nullable(),
+  startedAt: z.iso.datetime().nullable(),
+  endedAt: z.iso.datetime().nullable(),
+  /** What happened to the interview's credit: held while in progress, then used or returned. */
+  credit: InterviewCreditStatus,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

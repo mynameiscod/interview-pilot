@@ -90,6 +90,9 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
       },
       analysis: session.analysis,
       failure: session.failure ? { code: session.failure.code, at: iso(session.failure.at) } : null,
+      startedAt: session.startedAt ? iso(session.startedAt) : null,
+      endedAt: session.endedAt ? iso(session.endedAt) : null,
+      credit: session.credit?.status ?? 'NONE',
       createdAt: iso(session.createdAt),
       updatedAt: iso(session.updatedAt),
     };
