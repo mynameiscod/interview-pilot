@@ -51,7 +51,7 @@ async function main() {
       mode,
       repeat: Number(arg('repeat') ?? 1),
     });
-    console.log(formatReport(report));
+    process.stdout.write(`${formatReport(report)}\n`);
     const out = arg('out');
     if (out) await writeFile(out, JSON.stringify(report, null, 2));
     process.exitCode = report.passed ? 0 : 1;
@@ -61,6 +61,6 @@ async function main() {
 }
 
 main().catch((err: unknown) => {
-  console.error(err);
+  process.stderr.write(`${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`);
   process.exit(2);
 });
