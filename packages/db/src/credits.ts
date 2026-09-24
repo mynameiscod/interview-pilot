@@ -291,3 +291,47 @@ export async function recomputeCreditAccount(userId: Id, session?: ClientSession
     return account!;
   });
 }
+
+/**
+ * Withdraws whatever is left of a lot (e.g. after a refund). Credits already
+ * spent or reserved by an interview in progress are not touched. Returns the
+ * number withdrawn; idempotent per key.
+ */
+export async function revokeLotCredits(
+  userId: Id,
+  lotId: Id,
+  idempotencyKey: string,
+  reason: string,
+  session?: ClientSession,
+): Promise<number> {
+  return inTransaction(session, async (s) => {
+    const account = await loadAccount(userId, s);
+    if (await findEntry(idempotencyKey, s)) return 0;
+    const lot = account.lots.find((l) => String(l.lotId) === String(lotId));
+    const remaining = lot?.remaining ?? 0;
+    await CreditLedgerModel.create(
+      [
+        {
+          userId: oid(userId),
+          type: 'ADMIN_ADJUSTMENT',
+          amount: -remaining,
+          reservedDelta: 0,
+          lotId: oid(lotId),
+          refType: 'lot',
+          refId: String(lotId),
+          idempotencyKey,
+          reason,
+        },
+      ],
+      { session: s },
+    );
+    if (remaining > 0) {
+      await CreditAccountModel.updateOne(
+        { userId: oid(userId) },
+        { $inc: { balance: -remaining, version: 1, 'lots.$[lot].remaining': -remaining } },
+        { session: s, arrayFilters: [{ 'lot.lotId': oid(lotId) }] },
+      );
+    }
+    return remaining;
+  });
+}

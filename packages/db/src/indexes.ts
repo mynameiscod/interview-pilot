@@ -7,6 +7,14 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
+import {
+  CouponModel,
+  CouponRedemptionModel,
+  PaymentModel,
+  PlanModel,
+  PurchaseModel,
+  WebhookEventModel,
+} from './models/commerce.js';
 import { CreditAccountModel, CreditLedgerModel } from './models/credits.js';
 import {
   FeedbackModel,
@@ -56,6 +64,12 @@ const MODELS = [
   InterviewScoreModel,
   InterviewReportModel,
   FeedbackModel,
+  PlanModel,
+  CouponModel,
+  CouponRedemptionModel,
+  PurchaseModel,
+  PaymentModel,
+  WebhookEventModel,
 ];
 
 /**

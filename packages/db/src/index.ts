@@ -1,6 +1,7 @@
 export * from './ai-runtime.js';
 export * from './models/ai.js';
 export * from './models/audit-log.js';
+export * from './models/commerce.js';
 export * from './models/credits.js';
 export * from './models/evaluation.js';
 export * from './models/inputs.js';
@@ -15,6 +16,7 @@ export * from './models/user.js';
 export * from './credits.js';
 export * from './evaluation-state.js';
 export * from './indexes.js';
+export * from './purchases.js';
 export * from './interview-state.js';
 export * from './mongo.js';
 export * from './redis.js';
