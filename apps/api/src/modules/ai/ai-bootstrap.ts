@@ -3,7 +3,7 @@ import type { ApiEnv, Logger } from '@cbi/config';
 import { AiProviderModel, ensureAiCatalog } from '@cbi/db';
 import type { AiProviderKey } from '@cbi/shared-types';
 import type { AuditService } from '../../lib/audit.js';
-import type { AiRuntime } from './ai-runtime.js';
+import type { AiRuntime } from '@cbi/ai-runtime';
 
 interface BootstrapDeps {
   env: ApiEnv;

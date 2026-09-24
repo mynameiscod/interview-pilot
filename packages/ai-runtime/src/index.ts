@@ -10,7 +10,7 @@ import {
   type LlmAdapter,
   type UsageSink,
 } from '@cbi/ai-core';
-import type { ApiEnv, Logger } from '@cbi/config';
+import type { Logger } from '@cbi/config';
 import { createMongoUsageSink, loadActivePrompt, loadAiRuntimeConfig, type Redis } from '@cbi/db';
 import {
   createAnthropicLlmAdapter,
@@ -18,17 +18,27 @@ import {
   createMockLlmAdapter,
   createOpenAiLlmAdapter,
 } from '@cbi/provider-adapters';
-import type { AiProviderKey } from '@cbi/shared-types';
+import type { AiProviderKey, AppEnv } from '@cbi/shared-types';
+
+/** The environment settings the AI runtime reads (satisfied by ApiEnv and WorkerEnv). */
+export interface AiRuntimeSettings {
+  APP_ENV: AppEnv;
+  AI_MOCK_MODE: boolean;
+  AI_SECRETS_MASTER_KEY: string;
+  AI_SECRETS_KEY_ID: string;
+  AI_SECRETS_PREVIOUS_KEYS?: string;
+  AI_CONFIG_CACHE_TTL_SEC: number;
+}
 
 /** Redis pub/sub channel: any message means "AI config or prompts changed". */
 export const AI_CONFIG_CHANNEL = 'cbi:ai:config-changed' as const;
 
 /** The mock is registered only in development/test with AI_MOCK_MODE=true (env validation enforces the rest). */
-export function mockAllowed(env: Pick<ApiEnv, 'APP_ENV' | 'AI_MOCK_MODE'>): boolean {
+export function mockAllowed(env: Pick<AiRuntimeSettings, 'APP_ENV' | 'AI_MOCK_MODE'>): boolean {
   return env.AI_MOCK_MODE && (env.APP_ENV === 'development' || env.APP_ENV === 'test');
 }
 
-export function buildAdapterRegistry(env: ApiEnv): AdapterRegistry {
+export function buildAdapterRegistry(env: AiRuntimeSettings): AdapterRegistry {
   const adapters = new Map<AiProviderKey, LlmAdapter>([
     ['anthropic', createAnthropicLlmAdapter()],
     ['openai', createOpenAiLlmAdapter()],
@@ -38,7 +48,7 @@ export function buildAdapterRegistry(env: ApiEnv): AdapterRegistry {
   return { llm: (key) => adapters.get(key) };
 }
 
-export function buildSecretBox(env: ApiEnv) {
+export function buildSecretBox(env: AiRuntimeSettings) {
   return createSecretBox({
     currentKeyId: env.AI_SECRETS_KEY_ID,
     keys: {
@@ -49,7 +59,7 @@ export function buildSecretBox(env: ApiEnv) {
 }
 
 export interface AiRuntimeOptions {
-  env: ApiEnv;
+  env: AiRuntimeSettings;
   logger: Logger;
   redis: Redis;
   adapters?: AdapterRegistry;
@@ -57,9 +67,9 @@ export interface AiRuntimeOptions {
 }
 
 /**
- * Everything the API needs to make AI calls: the router (with Redis
+ * Everything a process needs to make AI calls: the router (with Redis
  * coordination and MongoDB metering), the prompt registry and the cache-bust
- * plumbing. Admin changes publish on AI_CONFIG_CHANNEL; every API/worker
+ * plumbing. Admin changes publish on AI_CONFIG_CHANNEL; every API and worker
  * process drops its cached config on receipt.
  */
 export function buildAiRuntime(opts: AiRuntimeOptions) {

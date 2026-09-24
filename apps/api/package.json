@@ -22,6 +22,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",
     "@cbi/ai-core": "workspace:*",
+    "@cbi/ai-runtime": "workspace:*",
     "@cbi/auth-core": "workspace:*",
     "@cbi/config": "workspace:*",
     "@cbi/db": "workspace:*",

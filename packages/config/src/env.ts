@@ -68,7 +68,91 @@ const base64Key32 = z
 const isExampleKey = (v: string) =>
   /dev-only|change-me/i.test(Buffer.from(v, 'base64').toString('latin1'));
 
+// --- Settings shared by the API and the worker ----------------------------------
+
+/** AI runtime: both processes make AI calls and decrypt provider keys. */
+const aiRuntimeShape = {
+  /** Encrypts provider API keys stored through Admin (AES-256-GCM). */
+  AI_SECRETS_MASTER_KEY: base64Key32,
+  AI_SECRETS_KEY_ID: z
+    .string()
+    .regex(/^[a-z0-9_-]{1,16}$/i, 'letters, digits, - and _ only (max 16)')
+    .default('k1'),
+  /** Older keys kept for decryption during rotation: `k0:base64,k1:base64`. */
+  AI_SECRETS_PREVIOUS_KEYS: optionalString,
+  /** Deterministic mock provider; development/test only. */
+  AI_MOCK_MODE: booleanString.default(false),
+  AI_CONFIG_CACHE_TTL_SEC: z.coerce.number().int().min(1).max(600).default(30),
+};
+
+/** Object storage for uploaded documents (and media from Phase 8). */
+const storageShape = {
+  /** `local` writes under LOCAL_STORAGE_DIR (development only). */
+  STORAGE_PROVIDER: z.enum(['bunny', 'local']).default('local'),
+  LOCAL_STORAGE_DIR: z.string().default('.data/storage'),
+  BUNNY_STORAGE_ZONE: optionalString,
+  /** Region endpoint, e.g. storage.bunnycdn.com (Falkenstein) or sg.storage.bunnycdn.com. */
+  BUNNY_STORAGE_REGION_HOST: z.string().default('storage.bunnycdn.com'),
+  BUNNY_STORAGE_ACCESS_KEY: optionalString,
+  UPLOAD_MAX_MB: z.coerce.number().int().min(1).max(25).default(8),
+};
+
+type SharedEnv = {
+  APP_ENV: AppEnv;
+  AI_SECRETS_MASTER_KEY: string;
+  AI_SECRETS_KEY_ID: string;
+  AI_SECRETS_PREVIOUS_KEYS?: string;
+  AI_MOCK_MODE: boolean;
+  STORAGE_PROVIDER: 'bunny' | 'local';
+  BUNNY_STORAGE_ZONE?: string;
+  BUNNY_STORAGE_ACCESS_KEY?: string;
+};
+
+function sharedIssues(env: SharedEnv, issue: (path: string, message: string) => void) {
+  if (env.AI_SECRETS_PREVIOUS_KEYS) {
+    for (const item of env.AI_SECRETS_PREVIOUS_KEYS.split(',').map((s) => s.trim())) {
+      const [keyId, key] = [item.slice(0, item.indexOf(':')), item.slice(item.indexOf(':') + 1)];
+      if (!keyId || !base64Key32.safeParse(key).success) {
+        issue('AI_SECRETS_PREVIOUS_KEYS', 'entries must look like keyId:base64 (32-byte keys)');
+        break;
+      }
+      if (keyId === env.AI_SECRETS_KEY_ID) {
+        issue('AI_SECRETS_PREVIOUS_KEYS', 'must not repeat AI_SECRETS_KEY_ID');
+        break;
+      }
+    }
+  }
+  if (
+    env.STORAGE_PROVIDER === 'bunny' &&
+    (!env.BUNNY_STORAGE_ZONE || !env.BUNNY_STORAGE_ACCESS_KEY)
+  ) {
+    issue(
+      'BUNNY_STORAGE_ZONE',
+      'BUNNY_STORAGE_ZONE and BUNNY_STORAGE_ACCESS_KEY are required when STORAGE_PROVIDER=bunny',
+    );
+  }
+  if (isDeployed(env.APP_ENV)) {
+    if (env.AI_MOCK_MODE) {
+      issue(
+        'AI_MOCK_MODE',
+        `the mock AI provider is for development and tests only, not ${env.APP_ENV}`,
+      );
+    }
+    if (isExampleKey(env.AI_SECRETS_MASTER_KEY)) {
+      issue(
+        'AI_SECRETS_MASTER_KEY',
+        `the example development key must not be used in ${env.APP_ENV}`,
+      );
+    }
+    if (env.STORAGE_PROVIDER === 'local') {
+      issue('STORAGE_PROVIDER', `local storage is for development only, not ${env.APP_ENV}`);
+    }
+  }
+}
+
 const apiObjectSchema = baseEnvSchema.extend({
+  ...aiRuntimeShape,
+  ...storageShape,
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
   /** Number of trusted reverse-proxy hops (NGINX = 1). Needed for correct client IPs. */
@@ -119,18 +203,6 @@ const apiObjectSchema = baseEnvSchema.extend({
   MSG91_OTP_TEMPLATE_ID: optionalString,
   MSG91_OTP_VARIABLE: z.string().default('otp'),
 
-  // --- AI providers ---------------------------------------------------------
-  /** Encrypts provider API keys stored through Admin (AES-256-GCM). */
-  AI_SECRETS_MASTER_KEY: base64Key32,
-  AI_SECRETS_KEY_ID: z
-    .string()
-    .regex(/^[a-z0-9_-]{1,16}$/i, 'letters, digits, - and _ only (max 16)')
-    .default('k1'),
-  /** Older keys kept for decryption during rotation: `k0:base64,k1:base64`. */
-  AI_SECRETS_PREVIOUS_KEYS: optionalString,
-  /** Deterministic mock provider; development/test only. */
-  AI_MOCK_MODE: booleanString.default(false),
-  AI_CONFIG_CACHE_TTL_SEC: z.coerce.number().int().min(1).max(600).default(30),
   /** Optional first-run keys; imported once (encrypted) when the provider has none. */
   AI_BOOTSTRAP_OPENAI_API_KEY: optionalString,
   AI_BOOTSTRAP_ANTHROPIC_API_KEY: optionalString,
@@ -159,32 +231,8 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
   if (env.JWT_ACCESS_SECRET === env.OTP_HMAC_SECRET) {
     issue('OTP_HMAC_SECRET', 'must differ from JWT_ACCESS_SECRET');
   }
-  if (env.AI_SECRETS_PREVIOUS_KEYS) {
-    for (const item of env.AI_SECRETS_PREVIOUS_KEYS.split(',').map((s) => s.trim())) {
-      const [keyId, key] = [item.slice(0, item.indexOf(':')), item.slice(item.indexOf(':') + 1)];
-      if (!keyId || !base64Key32.safeParse(key).success) {
-        issue('AI_SECRETS_PREVIOUS_KEYS', 'entries must look like keyId:base64 (32-byte keys)');
-        break;
-      }
-      if (keyId === env.AI_SECRETS_KEY_ID) {
-        issue('AI_SECRETS_PREVIOUS_KEYS', 'must not repeat AI_SECRETS_KEY_ID');
-        break;
-      }
-    }
-  }
+  sharedIssues(env, issue);
   if (isDeployed(env.APP_ENV)) {
-    if (env.AI_MOCK_MODE) {
-      issue(
-        'AI_MOCK_MODE',
-        `the mock AI provider is for development and tests only, not ${env.APP_ENV}`,
-      );
-    }
-    if (isExampleKey(env.AI_SECRETS_MASTER_KEY)) {
-      issue(
-        'AI_SECRETS_MASTER_KEY',
-        `the example development key must not be used in ${env.APP_ENV}`,
-      );
-    }
     if (env.SMS_PROVIDER === 'dev-mailbox') {
       issue('SMS_PROVIDER', `dev-mailbox is for local development only, not ${env.APP_ENV}`);
     }
@@ -200,12 +248,29 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
-export const workerEnvSchema = baseEnvSchema.extend({
-  WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
-  WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
-  /** How often AI usage is rolled up into providerHealth. */
-  WORKER_PROVIDER_HEALTH_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
-});
+export const workerEnvSchema = baseEnvSchema
+  .extend({
+    ...aiRuntimeShape,
+    ...storageShape,
+    WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
+    WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
+    /** How often AI usage is rolled up into providerHealth. */
+    WORKER_PROVIDER_HEALTH_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+    /** Parallel document jobs (parsing is CPU- and memory-heavy). */
+    WORKER_DOCUMENT_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+    WORKER_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(4),
+    /** Job-description URL fetching (SSRF-guarded). */
+    JD_FETCH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
+    JD_FETCH_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(64 * 1024)
+      .max(10 * 1024 * 1024)
+      .default(2 * 1024 * 1024),
+  })
+  .superRefine((env, ctx) =>
+    sharedIssues(env, (path, message) => ctx.addIssue({ code: 'custom', path: [path], message })),
+  );
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
 export class EnvValidationError extends Error {

@@ -51,7 +51,11 @@ const services = [
     name: 'worker',
     entry: 'apps/worker/dist/index.js',
     url: 'http://127.0.0.1:4902/readyz',
-    env: { ...shared, WORKER_HEALTH_PORT: '4902' },
+    env: {
+      ...shared,
+      WORKER_HEALTH_PORT: '4902',
+      AI_SECRETS_MASTER_KEY: Buffer.alloc(32, 42).toString('base64'),
+    },
   },
 ];
 

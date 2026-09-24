@@ -78,6 +78,10 @@ services:
       # Development-only AI settings: example master key and the labelled mock provider.
       AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
       AI_MOCK_MODE: 'true'
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_DIR: /data/storage
+    volumes:
+      - storage-data:/data/storage
     ports:
       - '127.0.0.1:4000:4000'
     depends_on:
@@ -103,6 +107,13 @@ services:
       MONGODB_URI: mongodb://mongo:27017/cbi_interview?directConnection=true
       REDIS_URL: redis://redis:6379
       WORKER_HEALTH_PORT: '4100'
+      # Same development-only AI settings and storage as the API.
+      AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
+      AI_MOCK_MODE: 'true'
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_DIR: /data/storage
+    volumes:
+      - storage-data:/data/storage
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -138,3 +149,4 @@ services:
 
 volumes:
   mongo-data:
+  storage-data:

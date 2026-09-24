@@ -15,6 +15,7 @@ const base = {
   SMTP_HOST: 'localhost',
   SMS_PROVIDER: 'dev-mailbox',
   AI_SECRETS_MASTER_KEY: 'ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=',
+  STORAGE_PROVIDER: 'local',
 };
 
 const productionAiKey = Buffer.alloc(32, 7).toString('base64');
@@ -25,6 +26,9 @@ const deployed = {
   CORS_ALLOWED_ORIGINS: 'https://interview.codebegun.com',
   SMS_PROVIDER: 'disabled',
   AI_SECRETS_MASTER_KEY: productionAiKey,
+  STORAGE_PROVIDER: 'bunny',
+  BUNNY_STORAGE_ZONE: 'cbi-private',
+  BUNNY_STORAGE_ACCESS_KEY: 'bunny-storage-password',
 };
 
 describe('loadEnv', () => {
@@ -112,6 +116,23 @@ describe('loadEnv', () => {
   it('parses worker environment', () => {
     const env = loadEnv(workerEnvSchema, base);
     expect(env.WORKER_HEALTH_PORT).toBe(4100);
+    expect(env.JD_FETCH_MAX_BYTES).toBe(2 * 1024 * 1024);
+    expect(env.UPLOAD_MAX_MB).toBe(8);
+  });
+
+  it('applies the shared AI and storage rules to the worker too', () => {
+    expect(() => loadEnv(workerEnvSchema, { ...deployed, AI_MOCK_MODE: 'true' })).toThrow(
+      /AI_MOCK_MODE/,
+    );
+    expect(() => loadEnv(workerEnvSchema, { ...deployed, STORAGE_PROVIDER: 'local' })).toThrow(
+      /local storage is for development only/,
+    );
+  });
+
+  it('requires Bunny credentials when STORAGE_PROVIDER=bunny', () => {
+    expect(() =>
+      loadEnv(apiEnvSchema, { ...base, STORAGE_PROVIDER: 'bunny', BUNNY_STORAGE_ZONE: 'zone' }),
+    ).toThrow(/BUNNY_STORAGE_ACCESS_KEY/);
   });
 });
 

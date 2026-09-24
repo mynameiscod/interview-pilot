@@ -1,0 +1,32 @@
+{
+  "name": "@cbi/ai-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Wires the AI router for a process: adapters, secrets, MongoDB config and metering, Redis coordination and cache busting",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@cbi/ai-core": "workspace:*",
+    "@cbi/config": "workspace:*",
+    "@cbi/db": "workspace:*",
+    "@cbi/provider-adapters": "workspace:*",
+    "@cbi/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6"
+  }
+}

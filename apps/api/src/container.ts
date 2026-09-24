@@ -15,7 +15,7 @@ import { createAuditService } from './lib/audit.js';
 import { createRateLimiters } from './middleware/rate-limit.js';
 import { createAdminUserService } from './modules/admin/admin-users.service.js';
 import { createAiAdminService } from './modules/ai/ai-admin.service.js';
-import { buildAiRuntime } from './modules/ai/ai-runtime.js';
+import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createAccountService } from './modules/auth/account.service.js';
 import type { CookieSettings } from './modules/auth/cookies.js';
 import { createGoogleVerifier } from './modules/auth/google-verifier.js';

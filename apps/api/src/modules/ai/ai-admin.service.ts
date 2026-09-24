@@ -48,7 +48,7 @@ import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
-import type { AiRuntime } from './ai-runtime.js';
+import type { AiRuntime } from '@cbi/ai-runtime';
 
 interface Deps {
   ai: AiRuntime;
