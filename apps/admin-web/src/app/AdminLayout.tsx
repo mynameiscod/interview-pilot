@@ -44,6 +44,13 @@ const NAV_ITEMS: NavItem[] = [
     group: 'library',
   },
   {
+    to: '/problems',
+    key: 'nav.problems',
+    icon: 'bi-code-square',
+    permission: 'library.read',
+    group: 'library',
+  },
+  {
     to: '/purchases',
     key: 'nav.purchases',
     icon: 'bi-receipt',

@@ -3,6 +3,7 @@ import type {
   BlueprintContent,
   BlueprintSummary,
   CompanySummary,
+  ProblemSummary,
   RoleSummary,
   TemplateContent,
   TemplateSummary,
@@ -154,5 +155,30 @@ export const template = (overrides: Partial<TemplateSummary> = {}): TemplateSumm
   totalDurationSec: 1500,
   createdAt: now,
   activatedAt: now,
+  ...overrides,
+});
+
+export const problem = (overrides: Partial<ProblemSummary> = {}): ProblemSummary => ({
+  id: 'prob-two-sum-2',
+  key: 'two-sum',
+  version: 2,
+  active: true,
+  title: 'Two sum',
+  statement:
+    'Given `n` numbers and a target, print the indices of the two numbers that add up to the target.\n\nPrint them in increasing order.',
+  difficulty: 'EASY',
+  tags: ['arrays', 'hashing'],
+  languages: ['python', 'javascript'],
+  starterCode: {
+    python: 'import sys\n\ndef solve():\n    pass\n',
+    javascript: "const data = require('fs').readFileSync(0, 'utf8');\n",
+  },
+  visibleTests: [{ input: '4\n2 7 11 15\n9\n', expectedOutput: '0 1\n', explanation: '2 + 7 = 9' }],
+  hiddenTests: [
+    { input: '3\n3 2 4\n6\n', expectedOutput: '1 2\n', explanation: null },
+    { input: '2\n3 3\n6\n', expectedOutput: '0 1\n', explanation: null },
+  ],
+  limits: { cpuMs: 2000, memoryMb: 256 },
+  createdAt: now,
   ...overrides,
 });

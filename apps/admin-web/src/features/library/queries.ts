@@ -1,4 +1,4 @@
-import type { BlueprintSummary, RoleSummary } from '@cbi/shared-types';
+import type { BlueprintSummary, ProblemSummary, RoleSummary } from '@cbi/shared-types';
 import { useQuery } from '@tanstack/react-query';
 import { useAdminAuth } from '../../app/session';
 
@@ -15,5 +15,16 @@ export function useRoleBlueprints(roleId: string) {
   return useQuery({
     queryKey: ['library', 'roles', roleId, 'blueprints'],
     queryFn: () => manager.api.get<BlueprintSummary[]>(`/admin/roles/${roleId}/blueprints`),
+  });
+}
+
+export const problemKeys = { all: ['library', 'problems'] as const };
+
+/** Every version of every coding problem, hidden tests included. */
+export function useProblems() {
+  const { manager } = useAdminAuth();
+  return useQuery({
+    queryKey: problemKeys.all,
+    queryFn: () => manager.api.get<ProblemSummary[]>('/admin/problems'),
   });
 }
