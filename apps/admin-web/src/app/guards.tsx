@@ -1,6 +1,7 @@
 import type { Permission } from '@cbi/shared-types';
 import { useTranslation } from 'react-i18next';
-import { Navigate, Outlet, useLocation } from 'react-router';
+import { safeNextPath } from '@cbi/web-core';
+import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { useAdminAuth, useCan } from './session';
 
 export function RouteLoading() {
@@ -26,10 +27,12 @@ export function RequireAdmin() {
   return <Outlet />;
 }
 
+/** Already signed in: continue to `?next=` (signing in lands here too). */
 export function RedirectIfSignedIn() {
   const { status } = useAdminAuth();
+  const [params] = useSearchParams();
   if (status === 'loading') return <RouteLoading />;
-  if (status === 'signedIn') return <Navigate to="/" replace />;
+  if (status === 'signedIn') return <Navigate to={safeNextPath(params.get('next'), '/')} replace />;
   return <Outlet />;
 }
 

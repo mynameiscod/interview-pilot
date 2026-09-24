@@ -154,7 +154,8 @@ describe('transition table (exhaustive)', () => {
     expect(checked).toBe(
       InterviewState.options.length * SESSION_EVENT_TYPES.length * CONTEXT_VARIANTS.length,
     );
-  });
+    // ~13k transitions: well under a second alone, but slower while turbo runs every suite.
+  }, 30_000);
 
   it('remembers where to resume after a disconnect', () => {
     const ctx = CONTEXT_VARIANTS[0]!;

@@ -15,8 +15,10 @@ export function OnboardingPage() {
   const [params] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
+  // Also reached right after saving (setUser re-renders first): continue to `next`.
+  const next = safeNextPath(params.get('next'));
   if (!user) return null;
-  if (user.onboardingCompleted) return <Navigate to="/app" replace />;
+  if (user.onboardingCompleted) return <Navigate to={next} replace />;
 
   return (
     <div className="container py-5">
@@ -38,7 +40,7 @@ export function OnboardingPage() {
                 setError(null);
                 try {
                   setUser(await api.updateProfile(body));
-                  navigate(safeNextPath(params.get('next')), { replace: true });
+                  navigate(next, { replace: true });
                 } catch (err) {
                   setError(errorMessage(t, err));
                 }

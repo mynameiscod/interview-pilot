@@ -91,3 +91,32 @@ body {
   font-family: var(--bs-font-monospace);
   white-space: nowrap;
 }
+
+// Secondary buttons: brand teal text/fill is below WCAG AA (3.3:1), so text and
+// fills use the darker accent shade; the border keeps the brand teal.
+.btn-outline-secondary {
+  --bs-btn-color: var(--cb-secondary-strong);
+  --bs-btn-border-color: var(--cb-secondary);
+  --bs-btn-hover-color: #{cb-token('background')};
+  --bs-btn-hover-bg: var(--cb-secondary-strong);
+  --bs-btn-hover-border-color: var(--cb-secondary-strong);
+  --bs-btn-active-color: #{cb-token('background')};
+  --bs-btn-active-bg: var(--cb-secondary-strong);
+  --bs-btn-active-border-color: var(--cb-secondary-strong);
+  --bs-btn-disabled-color: var(--cb-secondary-strong);
+}
+
+.btn-secondary {
+  --bs-btn-bg: var(--cb-secondary-strong);
+  --bs-btn-border-color: var(--cb-secondary-strong);
+  --bs-btn-hover-bg: #{cb-token('primary')};
+  --bs-btn-hover-border-color: #{cb-token('primary')};
+  --bs-btn-active-bg: #{cb-token('primary')};
+  --bs-btn-active-border-color: #{cb-token('primary')};
+  --bs-btn-disabled-bg: var(--cb-secondary-strong);
+  --bs-btn-disabled-border-color: var(--cb-secondary-strong);
+}
+
+.link-secondary {
+  color: var(--cb-secondary-strong) !important;
+}

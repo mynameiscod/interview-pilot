@@ -62,7 +62,12 @@ export function RoundsAndCoverage({ content }: { content: Content }) {
     <div className="row g-4">
       <div className="col-lg-5">
         <Card id="rounds-title" title={t('report.rounds.title')}>
-          <div className="table-responsive">
+          <div
+            className="table-responsive"
+            tabIndex={0}
+            role="group"
+            aria-labelledby="rounds-title"
+          >
             <table className="table table-sm mb-0">
               <thead>
                 <tr>
@@ -93,7 +98,12 @@ export function RoundsAndCoverage({ content }: { content: Content }) {
           {content.coverage.length === 0 ? (
             <p className="cb-text-secondary mb-0">{t('report.coverage.empty')}</p>
           ) : (
-            <div className="table-responsive">
+            <div
+              className="table-responsive"
+              tabIndex={0}
+              role="group"
+              aria-labelledby="coverage-title"
+            >
               <table className="table table-sm mb-0">
                 <thead>
                   <tr>

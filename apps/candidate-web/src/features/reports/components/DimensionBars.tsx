@@ -86,7 +86,12 @@ function DimensionRow({ dimension }: { dimension: ReportDimension }) {
 function DimensionTable({ dimensions }: { dimensions: ReportDimension[] }) {
   const { t } = useTranslation();
   return (
-    <div className="table-responsive">
+    <div
+      className="table-responsive"
+      tabIndex={0}
+      role="region"
+      aria-label={t('report.dimensions.tableCaption')}
+    >
       <table className="table align-middle mb-0">
         <caption className="visually-hidden">{t('report.dimensions.tableCaption')}</caption>
         <thead>

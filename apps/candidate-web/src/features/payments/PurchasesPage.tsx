@@ -41,7 +41,12 @@ export function PurchasesPage() {
       )}
       {items.length > 0 && (
         <section className="p-4 border cb-border rounded-3 bg-white">
-          <div className="table-responsive">
+          <div
+            className="table-responsive"
+            tabIndex={0}
+            role="region"
+            aria-label={t('purchases.caption')}
+          >
             <table className="table align-middle mb-0">
               <caption className="visually-hidden">{t('purchases.caption')}</caption>
               <thead>

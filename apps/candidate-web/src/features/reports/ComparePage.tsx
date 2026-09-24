@@ -43,7 +43,7 @@ function CompareTable({ result }: { result: CompareResult }) {
   const first = attempts[0]?.overall ?? null;
   const last = attempts.at(-1)?.overall ?? null;
   return (
-    <div className="table-responsive">
+    <div className="table-responsive" tabIndex={0} role="region" aria-label={t('compare.caption')}>
       <table className="table align-middle">
         <caption className="visually-hidden">{t('compare.caption')}</caption>
         <thead>

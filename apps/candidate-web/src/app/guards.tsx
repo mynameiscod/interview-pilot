@@ -1,4 +1,5 @@
-import { Navigate, Outlet, useLocation } from 'react-router';
+import { safeNextPath } from '@cbi/web-core';
+import { Navigate, Outlet, useLocation, useSearchParams } from 'react-router';
 import { useCandidateAuth } from './session';
 import { RouteLoading } from './RouteStates';
 
@@ -23,10 +24,20 @@ export function RequireOnboarded() {
   return <Outlet />;
 }
 
-/** Sign-in pages are pointless when already signed in. */
+/**
+ * Sign-in pages are pointless when already signed in: continue to `?next=`
+ * (through onboarding when it is not finished). Signing in lands here too, so
+ * this is what returns a candidate to, for example, a campaign invite.
+ */
 export function RedirectIfSignedIn() {
-  const { status } = useCandidateAuth();
+  const { status, user } = useCandidateAuth();
+  const [params] = useSearchParams();
   if (status === 'loading') return <RouteLoading />;
-  if (status === 'signedIn') return <Navigate to="/app" replace />;
+  if (status === 'signedIn') {
+    const next = safeNextPath(params.get('next'));
+    const to =
+      user && !user.onboardingCompleted ? `/onboarding?next=${encodeURIComponent(next)}` : next;
+    return <Navigate to={to} replace />;
+  }
   return <Outlet />;
 }
