@@ -51,7 +51,7 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
     env:
-      MONGODB_URI: mongodb://localhost:27017/cbi_interview_ci?directConnection=true
+      MONGODB_URI: mongodb://localhost:27017/cbi_interview_ci_test?directConnection=true
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
