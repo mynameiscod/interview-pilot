@@ -31,7 +31,7 @@ Speech goes through the same AI router as the LLM features. It has fallback chai
 
 1. **Setup:** the candidate chooses Voice. VOICE is in `AVAILABLE_INTERVIEW_MODES`, and the template must list it.
 2. **Device check** (browser): support for MediaRecorder and the chosen audio format, microphone permission and input level, a speaker test tone, a network round trip, and speech service status. The results are posted to `POST /interviews/:id/device-check`. Microphone and recorder are required, and a FAIL on either blocks the start. The check is valid for 24 hours.
-3. **Consent:** `POST /interviews/:id/voice-consent` accepts the voice processing notice. The notice is versioned (`VOICE_CONSENT_VERSION`), and acceptance is audited.
+3. **Consent:** the candidate accepts the voice processing notice through the generic consent endpoints (`GET`/`POST /interviews/:id/consents`, Phase 8). The texts are versioned and every decision is recorded and audited. See [media-and-consent.md](media-and-consent.md).
 4. **Start:** the session stays `READY` while the check and consent are recorded, so the candidate can still switch to text. `POST /start` then walks the state machine through `DEVICE_CHECK → CONSENT_REQUIRED → READY_TO_START → ACTIVE` in one transaction. It refuses with a specific message if anything is missing.
 
 ## During the interview

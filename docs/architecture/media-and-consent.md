@@ -65,6 +65,7 @@ worker every 15 min → closes recordings nobody finalized; deletes expired ones
 - Candidates can watch and delete their own recording.
 - Admins with `media.read` can watch it. Every link issued to an admin is audited as `media.playback`.
 - Seeking isn't supported (the stream doesn't support range requests yet), and a `PARTIAL` recording may stop playing at the first gap.
+- A reload during recording starts a new MediaRecorder, whose first segment carries a new header partway through the recording. Playback may stop there until server-side remuxing is added (a Phase 12 candidate). Switching to text ends the recording for good.
 
 **Retention and deletion.**
 

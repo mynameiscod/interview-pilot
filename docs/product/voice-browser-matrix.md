@@ -28,8 +28,23 @@ Record each result as pass, fail or not applicable, with the browser version and
 | 13  | Network drop while reviewing a transcript: after reconnecting, the answer is submitted exactly once                                                                                                       |        |      |         |              |            |                |
 | 14  | Keyboard only through the whole flow. A screen reader (NVDA with Chrome, VoiceOver with Safari) announces recording, the transcript and mode changes. Reduced motion stops the pulse and blink animations |        |      |         |              |            |                |
 
+## Video and recording (Phase 8)
+
+| #   | Check                                                                                                                                                                                                                                       | Chrome | Edge | Firefox | Safari macOS | Safari iOS | Chrome Android |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- | ------- | ------------ | ---------- | -------------- |
+| 15  | Camera: first prompt then allow, and the preview shows Passed. Deny or block gives "Camera access is blocked"; allow again and Test again passes. No camera: "We could not find a camera". Camera in use by Zoom/Teams: the in-use guidance |        |      |         |              |            |                |
+| 16  | Consent step: declining optional recording starts without a Recording badge; declining a required item blocks Start                                                                                                                         |        |      |         |              |            |                |
+| 17  | Recording format: WebM (vp9/vp8) on Chrome, Edge and Firefox, MP4 on Safari. The finished recording plays through Watch, and a Safari recording also plays in Chrome                                                                        |        |      |         |              |            |                |
+| 18  | iOS: the self-view plays inline (not full screen), and answer recording works while the camera is open                                                                                                                                      |        |      |         |              |            |                |
+| 19  | Reload after about 25 s of recording: saved segments upload first (DevTools → IndexedDB `cbi-recordings`), numbering continues, and there are no double uploads                                                                             |        |      |         |              |            |                |
+| 20  | Offline for 60 s mid-interview: answering still works, and "n parts waiting" rises then drains when back online. Ending while offline then reconnecting within 30 min still finalizes                                                       |        |      |         |              |            |                |
+| 21  | Unplug the camera mid-interview: a neutral note, and CAMERA_LOST is recorded. Tab switches and window blur appear as neutral counts in the report                                                                                           |        |      |         |              |            |                |
+| 22  | Delete a recording from the report page; admin Watch is logged; the recording disappears after admin purge                                                                                                                                  |        |      |         |              |            |                |
+
 **Known behaviour:**
 
 - Safari records MP4 (AAC), and the API accepts it.
 - iOS may block autoplay until the candidate taps. The room then shows **Play question**.
 - The room picks the recording format again when recording starts. It matches the device check on the same browser.
+- After a reload, the new recorder writes a new file header partway through the recording. Playback may stop at that point: the segments are kept, but joining them properly needs server-side remuxing (not built yet).
+- Switching from video to text ends the recording for good. Switching back shows the self-view again but does not record.
