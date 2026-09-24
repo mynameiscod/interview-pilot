@@ -34,6 +34,9 @@ export const ErrorCode = z.enum([
   'UNSUPPORTED_MEDIA_TYPE',
   /** The action is not allowed in the resource's current state. */
   'INVALID_STATE',
+  // Live interviews and credits (Phase 4)
+  /** Starting an interview needs an available credit. */
+  'INSUFFICIENT_CREDITS',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

@@ -1,0 +1,30 @@
+{
+  "name": "@cbi/interview-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure, deterministic interview state machine, question planner, clock and usage rules (no I/O)",
+  "exports": {
+    ".": {
+      "@cbi/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cbi/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "vitest": "5.0.1"
+  }
+}
