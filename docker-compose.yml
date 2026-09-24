@@ -107,6 +107,13 @@ services:
       MONGODB_URI: mongodb://mongo:27017/cbi_interview?directConnection=true
       REDIS_URL: redis://redis:6379
       WORKER_HEALTH_PORT: '4100'
+      # Report-ready emails go to the Mailpit inbox in development.
+      EMAIL_PROVIDER: smtp
+      EMAIL_FROM: CareerPilot Interview <no-reply@localhost>
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_REQUIRE_TLS: 'false'
+      PUBLIC_CANDIDATE_URL: http://localhost:8080
       # Same development-only AI settings and storage as the API.
       AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
       AI_MOCK_MODE: 'true'

@@ -19,7 +19,8 @@ This is a standalone product. It shares no database or code with other CodeBegun
 | **2 — AI provider layer**       | Done: feature-based routing with fallback chains, retries, circuit breaker and concurrency limits; OpenAI, Anthropic, Gemini and dev-only mock adapters; encrypted provider keys with rotation; per-call usage metering with price snapshots; versioned prompt registry; admin AI providers, usage & cost, and prompts screens. See [docs/ai/provider-layer.md](docs/ai/provider-layer.md)                                                                                                                                                                |
 | **3 — Inputs & roles**          | Done: resume and JD upload (type sniffing, zip-bomb and page limits), JD paste and SSRF-guarded URL fetching, AI structuring with raw-text fallback, role analysis with canonical or tailored blueprints, versioned role/blueprint/template library, companies with verified patterns, candidate wizard, analysis and setup screens, admin library screens. See [docs/architecture/inputs-and-role-analysis.md](docs/architecture/inputs-and-role-analysis.md) and [docs/security/uploads-and-url-fetching.md](docs/security/uploads-and-url-fetching.md) |
 | **4 — Interview engine (text)** | Done: pure session state machine (exhaustively tested), question planner with follow-ups, probes and adaptive difficulty, question ledger, Socket.IO room with reconnect and resume, worker sweep for pauses and expiry, credit ledger with the free credit and reserve/consume/refund, text interview room. See [docs/architecture/live-interview.md](docs/architecture/live-interview.md)                                                                                                                                                               |
-| 5 — Evaluation & reports        | Next                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **5 — Evaluation & reports**    | Done: staged evaluation pipeline (evidence extraction, per-dimension scoring, deterministic aggregation and confidence with an evidence guard, recommendations, report, PDF, email) with fallbacks and re-runs, report, history and compare screens, feedback, AI evaluation fixture suite and regression runner. See [docs/architecture/evaluation-and-reports.md](docs/architecture/evaluation-and-reports.md) and [docs/ai/evaluation-regression.md](docs/ai/evaluation-regression.md)                                                                 |
+| 6 — Payments                    | Next                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 The full design and phase plan: [docs/architecture/00-mvp-design-proposal.md](docs/architecture/00-mvp-design-proposal.md).
 
@@ -40,6 +41,7 @@ packages/
   auth-core/           Access tokens, OTP/refresh-token crypto, email/phone normalization
   ai-core/             AI router (fallback, retries, circuit breaker), cost calculator, secret box, prompt rendering
   interview-engine/    Pure interview state machine, question planner, clock and usage rules (no I/O)
+  scoring-core/        Pure scoring: weights, evidence guard, aggregation, confidence, readiness bands
   ai-runtime/          Wires the AI router for a process (adapters, secrets, MongoDB config/metering, Redis cache busting)
   documents/           Untrusted document handling: type sniffing, zip-bomb checks, bounded PDF/DOCX/text extraction
   provider-adapters/   Email (SES, SMTP), SMS (MSG91), LLM (OpenAI, Anthropic, Gemini, mock), object storage (Bunny, local) and the SSRF-guarded fetcher
@@ -51,7 +53,7 @@ infrastructure/
 docs/                  Architecture, API (OpenAPI), deployment, product, security
 ```
 
-Packages for later phases (such as `scoring-core`) are created in the phase that implements them, not as empty stubs.
+Packages for later phases are created in the phase that implements them, not as empty stubs.
 
 ## Quick start
 

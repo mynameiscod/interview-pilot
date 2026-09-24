@@ -67,6 +67,7 @@ Endpoints check **permissions**, never role names. The matrix lives in [`package
 | `prompts.manage`     | ✔     |            | ✔       |         |         |
 | `library.read`       | ✔     | ✔          | ✔       |         |         |
 | `library.manage`     | ✔     | ✔          | ✔       |         |         |
+| `interviews.manage`  | ✔     | ✔          |         |         |         |
 
 The AI permissions (Phase 2) are described in [the AI provider layer](../ai/provider-layer.md#admin-console-and-permissions). The library permissions (Phase 3: roles, blueprints, companies, templates) are described in [inputs and role analysis](../architecture/inputs-and-role-analysis.md#admin-permissions). Only super admins can see or change provider keys and routing.
 

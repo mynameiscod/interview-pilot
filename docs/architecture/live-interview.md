@@ -19,7 +19,7 @@ READY ──PREPARE──▶ READY_TO_START ──START──▶ ACTIVE ◀─�
   (text: no device check or consent)   (reserve credit,  │  ROUND_ENDED (more rounds) ─────────▲
                                         start clock)     │  ROUND_ENDED (last round), END_REQUESTED, TIME_UP
                                                          ▼
-      RECONNECTING ◀──DISCONNECTED── ACTIVE          COMPLETING ──FINALIZE──▶ PROCESSING (Phase 5 evaluates)
+      RECONNECTING ◀──DISCONNECTED── ACTIVE          COMPLETING ──FINALIZE──▶ PROCESSING (evaluation) ──▶ REPORT_READY
         │ RECONNECTED → back                               (consume the credit if meaningful, otherwise refund)
         │ GRACE_EXPIRED (10 min)
         ▼
@@ -31,7 +31,7 @@ Any in-progress state ──FAIL──▶ FAILED (the credit is refunded)
 ```
 
 - The full table (all 16 states × 21 events) is in `packages/interview-engine/src/session-machine.ts`. The tests check it against an independently written specification for every state, event and context combination (about 64,000 cases), prove every state is reachable and can still finish, and run thousands of random walks checking that a credit is reserved at most once, settled at most once and only after being reserved, and that the clock runs exactly while the interview is live.
-- Effects are data (`RESERVE_CREDIT`, `PAUSE_CLOCK`, `START_NEXT_ROUND`, …). `applySessionEvent` carries out the database ones in the same transaction as the state change. `ENQUEUE_EVALUATION` is returned to the caller; evaluation arrives in Phase 5, so sessions wait in `PROCESSING` until then.
+- Effects are data (`RESERVE_CREDIT`, `PAUSE_CLOCK`, `START_NEXT_ROUND`, …). `applySessionEvent` carries out the database ones in the same transaction as the state change. `ENQUEUE_EVALUATION` is returned to the caller, which starts the [evaluation pipeline](evaluation-and-reports.md).
 - **One live interview per candidate**: in-progress states set `live: true`, and a partial unique index on `{userId}` allows one such session.
 - `stateHistory` keeps the last 50 transitions; every candidate action is also in `auditLogs`.
 
@@ -48,7 +48,7 @@ For the active round the planner (`nextStep`) returns either a question target o
 3. **Otherwise pick a competency** that this round assesses (by `roundTypes`, falling back to categories), least-covered first, then heaviest. After the first technical question, resume and JD **probe areas** from the blueprint are used once each.
 4. **Difficulty**: fixed per round, or `ADAPTIVE`: one step up after a strong answer and one step down after a weak one or a non-answer.
 
-The target carries the objective, expected evidence, source (`ROLE`, `JD`, `RESUME`, `COMPANY`, `FOLLOW_UP`) and follow-up depth. These are stored with the question in `interviewTurns`, which is the question ledger that evaluation (Phase 5) reads.
+The target carries the objective, expected evidence, source (`ROLE`, `JD`, `RESUME`, `COMPANY`, `FOLLOW_UP`) and follow-up depth. These are stored with the question in `interviewTurns`, which is the question ledger that [evaluation](evaluation-and-reports.md) reads.
 
 ## A turn
 
@@ -64,7 +64,7 @@ API (Redis lock cbi:lock:turn:<session>, shared by every replica):
 ```
 
 - **Bounded context.** The question prompt receives the round, objective, competency, difficulty and expected evidence, the analysis highlights and gaps, the last 15 questions (to avoid repeats) and, for a follow-up, only the question and answer it builds on. It never receives the whole transcript. Everything the candidate wrote is passed through `untrusted()` data blocks.
-- **AI outages do not stop the interview.** If question generation fails, a templated question for the target is used (`fallbackQuestion`). If the assessment fails, the answer counts as adequate with no follow-up, and the turn is flagged `fallback: true` so Phase 5 re-evaluates it. An empty answer counts as `NO_ANSWER` without an AI call.
+- **AI outages do not stop the interview.** If question generation fails, a templated question for the target is used (`fallbackQuestion`). If the assessment fails, the answer counts as adequate with no follow-up, and the turn is flagged `fallback: true`; evaluation extracts evidence from the answer itself. An empty answer counts as `NO_ANSWER` without an AI call.
 - **Nothing scored is sent live.** Snapshots and events contain questions, answers, rounds and time only.
 
 ## Realtime protocol (`/rt`)

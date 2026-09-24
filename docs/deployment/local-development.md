@@ -50,6 +50,10 @@ With `AI_MOCK_MODE=true` (the `.env.example` default), every AI feature is serve
 
 Every account gets one free credit. Create an interview in the candidate app, wait for the analysis, choose the setup and press **Start**. The room connects to the API over Socket.IO on the same port (`http://localhost:4000/socket.io`). With the mock provider the questions start with `[mock]`. To test reconnecting, close the tab and reopen the interview from the dashboard within 10 minutes; the clock does not run while you are away. The worker must be running for pauses and expiry to happen.
 
+### Reports locally
+
+When an interview finishes, the worker evaluates it and the report appears at `/app/reports/<id>` within seconds (with the mock provider, texts start with `[mock]`). The "report ready" email arrives in Mailpit. `pnpm --filter @cbi/worker ai:eval --mode=structure` checks the evaluation prompts and scoring end to end; see [AI evaluation regression](../ai/evaluation-regression.md) for running it against real models.
+
 ### Uploads and background jobs locally
 
 Resumes and JD files are stored under `.data/storage` in the repository (`STORAGE_PROVIDER=local`, git-ignored). The API and the worker must point at the same folder, so start both with `pnpm dev`. Parsing, JD URL fetching and role analysis run in the **worker**: if the worker is not running, inputs stay "processing" and analysis fails after 3 minutes with `INPUT_TIMEOUT`. In Option B both containers share the `storage-data` volume.
