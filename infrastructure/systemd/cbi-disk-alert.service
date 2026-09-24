@@ -1,0 +1,7 @@
+# Disk-usage check (infrastructure/scripts/disk-alert.sh -> /usr/local/sbin/cbi-disk-alert).
+[Unit]
+Description=CareerPilot Interview - disk usage alert
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cbi-disk-alert

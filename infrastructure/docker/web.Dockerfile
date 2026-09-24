@@ -15,7 +15,11 @@ ARG APP
 # Public build-time config only. Never pass secrets as VITE_* args.
 ARG VITE_API_URL
 ARG VITE_APP_ENV=production
-ENV VITE_API_URL=${VITE_API_URL} VITE_APP_ENV=${VITE_APP_ENV}
+# Optional (empty = feature off): Google sign-in client id; admin's link to the candidate site.
+ARG VITE_GOOGLE_CLIENT_ID=
+ARG VITE_CANDIDATE_URL=
+ENV VITE_API_URL=${VITE_API_URL} VITE_APP_ENV=${VITE_APP_ENV} \
+    VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} VITE_CANDIDATE_URL=${VITE_CANDIDATE_URL}
 RUN pnpm turbo run build --filter=@cbi/${APP}
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime

@@ -1,0 +1,376 @@
+# CareerPilot Interview — staging / production stack (one environment per VPS).
+#
+# Do not run this by hand for deploys: infrastructure/scripts/deploy.sh drives it
+# (blue/green API swap, SPA release switch, graceful worker restart). See
+# docs/deployment/production.md and docs/deployment/runbook-deploy-rollback.md.
+#
+# Interpolation variables (written by deploy.sh to ${CBI_HOME}/state/compose.env):
+#   CBI_HOME          host directory with env files, secrets, nginx state, web releases
+#   CBI_ENV           staging | production (selects the NGINX site file and env file)
+#   IMAGE_REGISTRY    e.g. ghcr.io/codebegun/interview-pilot
+#   IMAGE_TAG         default tag; API_BLUE_TAG / API_GREEN_TAG / WORKER_TAG override it
+#   WORKER_REPLICAS   number of worker containers (default 2)
+#
+# Runtime secrets never live in this file or in images:
+#   ${CBI_HOME}/.env.${CBI_ENV}   API + worker (template: infrastructure/env/production.env.example)
+#   ${CBI_HOME}/.env.datastores   MongoDB + Redis passwords (template: infrastructure/env/datastores.env.example)
+#   ${CBI_HOME}/secrets/mongo-keyfile  replica-set keyfile (openssl rand -base64 756)
+#
+# Networks:
+#   edge      nginx <-> api, plus outbound internet for api/worker/certbot (AI, Razorpay, Bunny, email).
+#   internal  internal: true — api/worker <-> mongo/redis. No egress, no host ports.
+#
+# Sizing (Hostinger KVM 8: 8 vCPU / 32 GB, design §14): steady state is one API colour
+# + 2 workers + mongo + redis + nginx ≈ 24 GB of limits; during a deploy both colours run briefly.
+
+name: cbi-${CBI_ENV:-production}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '20m'
+    max-file: '5'
+    tag: '{{.Name}}'
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-api: &api
+  <<: *hardening
+  env_file:
+    - path: ${CBI_HOME:-/srv/cbi}/.env.${CBI_ENV:-production}
+      required: true
+  environment:
+    PORT_API: '4000'
+    # One proxy hop: the edge NGINX (correct client IPs for rate limits and audit logs).
+    TRUST_PROXY_HOPS: '1'
+    # Old colour drains in-flight turns for up to 60 s after SIGTERM (design §14).
+    SHUTDOWN_GRACE_MS: '60000'
+  user: 'node'
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  networks:
+    - edge
+    - internal
+  expose:
+    - '4000'
+  # Longer than SHUTDOWN_GRACE_MS so Node exits on its own before Docker sends SIGKILL.
+  stop_grace_period: 75s
+  stop_signal: SIGTERM
+  restart: unless-stopped
+  depends_on:
+    mongo-init:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:4000/readyz']
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 60s
+  ulimits:
+    nofile:
+      soft: 65536
+      hard: 65536
+  deploy:
+    resources:
+      limits:
+        cpus: '3'
+        memory: 4g
+      reservations:
+        memory: 1g
+  logging: *logging
+
+services:
+  # ---------------------------------------------------------------- edge ----
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.29-alpine
+    <<: *hardening
+    # Skip the image entrypoint (it rewrites files under /etc/nginx, which is read-only here).
+    # Reload every 6 h so renewed certificates are picked up without a restart.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        (while :; do sleep 21600; nginx -s reload; done) &
+        exec nginx -g 'daemon off;'
+    ports:
+      - '80:8080'
+      - '443:8443'
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/snippets:/etc/nginx/snippets:ro
+      - ./infrastructure/nginx/sites/${CBI_ENV:-production}.conf:/etc/nginx/sites/site.conf:ro
+      # upstream-api.conf (blue/green switch), htpasswd, staging-allowlist.conf — managed on the host.
+      - ${CBI_HOME:-/srv/cbi}/nginx:/etc/nginx/cbi:ro
+      - ${CBI_HOME:-/srv/cbi}/www:/srv/www:ro
+      - ${CBI_HOME:-/srv/cbi}/letsencrypt:/etc/letsencrypt:ro
+      - ${CBI_HOME:-/srv/cbi}/certbot-www:/var/www/certbot:ro
+    read_only: true
+    tmpfs:
+      # pid file, client body / proxy temp files (uploads up to 12 MB are buffered here).
+      - /tmp:size=512m,mode=1777
+    networks:
+      - edge
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/nginx-health']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1g
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:v4.1.1
+    # certbot must run as root to manage /etc/letsencrypt; it has no capabilities beyond
+    # CHOWN/FOWNER/DAC_OVERRIDE and only talks to Let's Encrypt over the edge network.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --quiet --webroot -w /var/www/certbot || echo "certbot renew failed" >&2
+          # nginx-unprivileged runs as uid/gid 101: give its group read access to the keys.
+          if [ -d /etc/letsencrypt/archive ]; then
+            chgrp -R 101 /etc/letsencrypt/live /etc/letsencrypt/archive
+            chmod -R g+rX,o-rwx /etc/letsencrypt/live /etc/letsencrypt/archive
+          fi
+          sleep 12h & wait $${!}
+        done
+    volumes:
+      - ${CBI_HOME:-/srv/cbi}/letsencrypt:/etc/letsencrypt
+      - ${CBI_HOME:-/srv/cbi}/certbot-www:/var/www/certbot
+    networks:
+      - edge
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256m
+    logging: *logging
+
+  # ------------------------------------------------------------ API ×2 ------
+  # Only one colour receives traffic (NGINX upstream-api.conf). deploy.sh starts the
+  # idle colour with the new tag, waits for /readyz, swaps the upstream, then stops
+  # the old colour with SIGTERM (it drains Socket.IO rooms and in-flight turns).
+  api-blue:
+    <<: *api
+    image: ${IMAGE_REGISTRY:-ghcr.io/codebegun/interview-pilot}/api:${API_BLUE_TAG:-${IMAGE_TAG:?set IMAGE_TAG}}
+    hostname: api-blue
+
+  api-green:
+    <<: *api
+    image: ${IMAGE_REGISTRY:-ghcr.io/codebegun/interview-pilot}/api:${API_GREEN_TAG:-${IMAGE_TAG:?set IMAGE_TAG}}
+    hostname: api-green
+
+  # ------------------------------------------------------------ workers -----
+  worker:
+    image: ${IMAGE_REGISTRY:-ghcr.io/codebegun/interview-pilot}/worker:${WORKER_TAG:-${IMAGE_TAG:?set IMAGE_TAG}}
+    <<: *hardening
+    env_file:
+      - path: ${CBI_HOME:-/srv/cbi}/.env.${CBI_ENV:-production}
+        required: true
+    environment:
+      WORKER_HEALTH_PORT: '4100'
+      # Maximum allowed by env.ts: lets an evaluation stage finish before exit.
+      SHUTDOWN_GRACE_MS: '120000'
+    user: 'node'
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    networks:
+      - edge
+      - internal
+    stop_grace_period: 135s
+    stop_signal: SIGTERM
+    restart: unless-stopped
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:4100/readyz']
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+      resources:
+        limits:
+          cpus: '2'
+          memory: 3g
+        reservations:
+          memory: 512m
+    logging: *logging
+
+  # ------------------------------------------------------------ MongoDB -----
+  # Single-node replica set (transactions, design D3) with authentication and a
+  # keyfile. No host port: reach it with `docker compose exec mongo mongosh`.
+  mongo:
+    image: mongo:8.0
+    env_file:
+      - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
+        required: true
+    # The entrypoint starts as root only to install the keyfile with the ownership mongod
+    # requires (bind-mounted secrets keep host ownership), then drops to the mongodb user.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        install -m 400 -o mongodb -g mongodb /run/secrets/mongo_keyfile /tmp/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all \
+          --keyFile /tmp/mongo-keyfile --wiredTigerCacheSizeGB "$${MONGO_WT_CACHE_GB:-6}"
+    secrets:
+      - mongo_keyfile
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+    networks:
+      - internal
+    stop_grace_period: 60s
+    restart: unless-stopped
+    healthcheck:
+      # ping needs no authentication.
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 10g
+        reservations:
+          memory: 4g
+    logging: *logging
+
+  # Idempotent one-shot: initiates the replica set and creates/updates the app and
+  # backup users (infrastructure/mongo/init-replica-set.js). Safe to run on every deploy.
+  mongo-init:
+    image: mongo:8.0
+    env_file:
+      - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
+        required: true
+    command:
+      - bash
+      - -c
+      - >-
+        mongosh --quiet --host mongo --port 27017
+        --username "$$MONGO_INITDB_ROOT_USERNAME" --password "$$MONGO_INITDB_ROOT_PASSWORD"
+        --authenticationDatabase admin --file /init/init-replica-set.js
+    volumes:
+      - ./infrastructure/mongo/init-replica-set.js:/init/init-replica-set.js:ro
+    user: '999:999'
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /data/db:size=8m,mode=1777
+    networks:
+      - internal
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: 'no'
+    logging: *logging
+
+  # ------------------------------------------------------------ Redis -------
+  # BullMQ queues + Socket.IO adapter + locks. AOF persistence and noeviction:
+  # BullMQ must never have keys evicted (infrastructure/redis/redis.conf).
+  redis:
+    image: redis:8-alpine
+    env_file:
+      - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
+        required: true
+    command:
+      - sh
+      - -c
+      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD"
+    user: 'redis'
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    volumes:
+      - ./infrastructure/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    networks:
+      - internal
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 3g
+    logging: *logging
+
+networks:
+  edge:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  mongo-data:
+  mongo-config:
+  redis-data:
+
+secrets:
+  mongo_keyfile:
+    file: ${CBI_HOME:-/srv/cbi}/secrets/mongo-keyfile

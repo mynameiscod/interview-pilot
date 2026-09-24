@@ -1,0 +1,12 @@
+# Nightly at 20:30 UTC (02:00 IST), with up to 15 min jitter. Weekly copies are
+# made by the Sunday run (backup.sh --kind auto).
+[Unit]
+Description=CareerPilot Interview - nightly MongoDB backup
+
+[Timer]
+OnCalendar=*-*-* 20:30:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

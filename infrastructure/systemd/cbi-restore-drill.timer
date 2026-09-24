@@ -1,0 +1,11 @@
+# First Tuesday-ish of every month: the 3rd at 05:00 UTC.
+[Unit]
+Description=CareerPilot Interview - monthly restore drill
+
+[Timer]
+OnCalendar=*-*-03 05:00:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

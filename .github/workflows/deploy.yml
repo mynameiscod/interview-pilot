@@ -1,0 +1,362 @@
+name: Deploy
+
+# Release pipeline (design §14): build + push images to GHCR -> deploy staging over SSH
+# (blue/green, infrastructure/scripts/deploy.sh) -> public health checks -> manual
+# approval (GitHub environment "production" with required reviewers) -> production.
+#
+#   git tag v1.4.0 && git push origin v1.4.0        # full release
+#   Actions -> Deploy -> Run workflow                # redeploy / deploy a sha / rollback
+#
+# Repository/environment configuration (docs/deployment/production.md#github-actions):
+#   Environments "staging" and "production" (production: required reviewers), each with
+#   secrets SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS, and optionally
+#   GHCR_PULL_TOKEN (read:packages; default: the workflow token). Staging also needs
+#   STAGING_BASIC_AUTH (user:password) for the site health checks.
+#   Repository variables (optional): VITE_GOOGLE_CLIENT_ID_STAGING, VITE_GOOGLE_CLIENT_ID.
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy (build + staging + production) or rollback (one environment)
+        type: choice
+        options: [deploy, rollback]
+        default: deploy
+      tag:
+        description: 'Image tag. deploy: defaults to sha-<short sha>. rollback: optional target (default: previous tag)'
+        type: string
+        required: false
+      environment:
+        description: Environment for a rollback
+        type: choice
+        options: [staging, production]
+        default: staging
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}-${{ inputs.action || 'deploy' }}
+  cancel-in-progress: false
+
+env:
+  STAGING_CANDIDATE_URL: https://interview-staging.codebegun.com
+  STAGING_ADMIN_URL: https://admin.interview-staging.codebegun.com
+  STAGING_API_URL: https://api.interview-staging.codebegun.com
+  PRODUCTION_CANDIDATE_URL: https://interview.codebegun.com
+  PRODUCTION_ADMIN_URL: https://admin.interview.codebegun.com
+  PRODUCTION_API_URL: https://api.interview.codebegun.com
+  REMOTE_APP_DIR: /srv/cbi/app
+
+jobs:
+  # ------------------------------------------------------------------ gate ----
+  # The CI workflow (ci.yml: lint, typecheck, unit, integration + boot smoke, Docker
+  # builds) must have succeeded for this exact commit. Workflows cannot `needs:` jobs
+  # of another workflow, so this job asks the API for CI's result on the same sha.
+  ci-gate:
+    name: CI passed for this commit
+    if: inputs.action != 'rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for a successful CI run on ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          for i in $(seq 1 50); do
+            runs="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=20" \
+              --jq '[.workflow_runs[] | {status, conclusion}]')"
+            if echo "$runs" | jq -e 'any(.[]; .conclusion == "success")' >/dev/null; then
+              echo "CI succeeded for $SHA"; exit 0
+            fi
+            if echo "$runs" | jq -e 'length > 0 and all(.[]; .status == "completed")' >/dev/null; then
+              echo "::error::CI did not succeed for $SHA: $runs"; exit 1
+            fi
+            echo "waiting for CI on $SHA ($i/50): $runs"; sleep 30
+          done
+          echo "::error::no successful CI run found for $SHA (CI must run on this commit: push it to the default branch first)"; exit 1
+
+  meta:
+    name: Release metadata
+    if: inputs.action != 'rollback'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      registry: ${{ steps.meta.outputs.registry }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          if [ "$REF_TYPE" = tag ]; then tag="$REF_NAME"
+          elif [ -n "$INPUT_TAG" ]; then tag="$INPUT_TAG"
+          else tag="sha-$short_sha"; fi
+          if ! [[ "$tag" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$ ]]; then
+            echo "::error::invalid tag: $tag"; exit 1
+          fi
+          {
+            echo "tag=$tag"
+            echo "short_sha=$short_sha"
+            echo "registry=ghcr.io/${GITHUB_REPOSITORY,,}"
+          } >> "$GITHUB_OUTPUT"
+
+  # ----------------------------------------------------------------- build ----
+  # Same Dockerfiles and build args as ci.yml's docker job. Web images are built per
+  # environment because VITE_* values are baked into the bundle.
+  build:
+    name: Build ${{ matrix.name }}${{ matrix.suffix }}
+    needs: [ci-gate, meta]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: api, suffix: '', dockerfile: node-service.Dockerfile, env: none }
+          - { name: worker, suffix: '', dockerfile: node-service.Dockerfile, env: none }
+          - { name: candidate-web, suffix: '', dockerfile: web.Dockerfile, env: production }
+          - { name: admin-web, suffix: '', dockerfile: web.Dockerfile, env: production }
+          - { name: candidate-web, suffix: '-staging', dockerfile: web.Dockerfile, env: staging }
+          - { name: admin-web, suffix: '-staging', dockerfile: web.Dockerfile, env: staging }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build arguments
+        id: args
+        env:
+          NAME: ${{ matrix.name }}
+          TARGET_ENV: ${{ matrix.env }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          GOOGLE_STAGING: ${{ vars.VITE_GOOGLE_CLIENT_ID_STAGING }}
+          GOOGLE_PRODUCTION: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+        run: |
+          {
+            echo 'value<<EOF'
+            case "$NAME" in
+              api | worker)
+                echo "SERVICE=$NAME"
+                echo "APP_VERSION=$TAG"
+                ;;
+              *)
+                if [ "$TARGET_ENV" = staging ]; then
+                  api="$STAGING_API_URL"; candidate="$STAGING_CANDIDATE_URL"; google="$GOOGLE_STAGING"
+                else
+                  api="$PRODUCTION_API_URL"; candidate="$PRODUCTION_CANDIDATE_URL"; google="$GOOGLE_PRODUCTION"
+                fi
+                echo "APP=$NAME"
+                echo "VITE_API_URL=$api"
+                echo "VITE_APP_ENV=$TARGET_ENV"
+                echo "VITE_CANDIDATE_URL=$candidate"
+                echo "VITE_GOOGLE_CLIENT_ID=$google"
+                ;;
+            esac
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/${{ matrix.dockerfile }}
+          build-args: ${{ steps.args.outputs.value }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ needs.meta.outputs.registry }}/${{ matrix.name }}:${{ needs.meta.outputs.tag }}${{ matrix.suffix }}
+            ${{ needs.meta.outputs.registry }}/${{ matrix.name }}:sha-${{ needs.meta.outputs.short_sha }}${{ matrix.suffix }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.name }}${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}${{ matrix.suffix }}
+
+  # --------------------------------------------------------------- staging ----
+  deploy-staging:
+    name: Deploy staging
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: https://interview-staging.codebegun.com
+    concurrency:
+      group: deploy-env-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Upload compose file and infrastructure/
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes -o BatchMode=yes" \
+            docker-compose.production.yml infrastructure "$SSH_USER@$SSH_HOST:$REMOTE_APP_DIR/"
+      - name: Registry login on the server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN || github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$PULL_TOKEN" | ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "docker login ghcr.io -u '$ACTOR' --password-stdin"
+      - name: Blue/green deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "chmod 755 $REMOTE_APP_DIR/infrastructure/scripts/*.sh && bash $REMOTE_APP_DIR/infrastructure/scripts/deploy.sh '$TAG' --env staging --registry '$REGISTRY'"
+      - name: Public health checks
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          BASIC_AUTH: ${{ secrets.STAGING_BASIC_AUTH }}
+        run: |
+          check_version() {
+            for _ in $(seq 1 30); do
+              v="$(curl -fsS -m 10 "$1/healthz" | jq -r .version || true)"
+              [ "$v" = "$TAG" ] && { echo "$1/healthz reports $v"; return 0; }
+              echo "waiting for $1 to report $TAG (got '${v:-nothing}')"; sleep 5
+            done
+            return 1
+          }
+          check_site() {
+            body="$(curl -fsS -m 10 ${BASIC_AUTH:+-u "$BASIC_AUTH"} "$1/")"
+            echo "$body" | grep -q '/assets/' && echo "$1 serves the SPA"
+          }
+          check_version "$STAGING_API_URL"
+          check_site "$STAGING_CANDIDATE_URL"
+          check_site "$STAGING_ADMIN_URL"
+          curl -fsS -m 10 -o /dev/null -w '%{http_code}\n' "$STAGING_API_URL/readyz" && exit 1 || echo "readyz not public (expected)"
+
+  # ------------------------------------------------------------ production ----
+  # The "production" environment must have required reviewers: this job waits for
+  # manual approval after staging is healthy.
+  deploy-production:
+    name: Deploy production
+    needs: [meta, deploy-staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://interview.codebegun.com
+    concurrency:
+      group: deploy-env-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Upload compose file and infrastructure/
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes -o BatchMode=yes" \
+            docker-compose.production.yml infrastructure "$SSH_USER@$SSH_HOST:$REMOTE_APP_DIR/"
+      - name: Registry login on the server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN || github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$PULL_TOKEN" | ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "docker login ghcr.io -u '$ACTOR' --password-stdin"
+      - name: Blue/green deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          REGISTRY: ${{ needs.meta.outputs.registry }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "chmod 755 $REMOTE_APP_DIR/infrastructure/scripts/*.sh && bash $REMOTE_APP_DIR/infrastructure/scripts/deploy.sh '$TAG' --env production --registry '$REGISTRY'"
+      - name: Public health checks
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          for _ in $(seq 1 30); do
+            v="$(curl -fsS -m 10 "$PRODUCTION_API_URL/healthz" | jq -r .version || true)"
+            [ "$v" = "$TAG" ] && break
+            echo "waiting for the API to report $TAG (got '${v:-nothing}')"; sleep 5
+          done
+          [ "$v" = "$TAG" ] || { echo "::error::API does not report $TAG"; exit 1; }
+          for url in "$PRODUCTION_CANDIDATE_URL" "$PRODUCTION_ADMIN_URL"; do
+            curl -fsS -m 10 "$url/" | grep -q '/assets/' && echo "$url serves the SPA"
+          done
+          curl -fsS -m 10 -D - -o /dev/null "$PRODUCTION_CANDIDATE_URL/" | grep -i '^strict-transport-security'
+
+  # -------------------------------------------------------------- rollback ----
+  # Manual: Actions -> Deploy -> Run workflow -> action=rollback. Production still
+  # requires the environment's approval.
+  rollback:
+    name: Roll back ${{ inputs.environment }}
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-env-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Validate input
+        env:
+          TARGET: ${{ inputs.tag }}
+        run: |
+          if [ -n "$TARGET" ] && ! [[ "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,100}$ ]]; then
+            echo "::error::invalid tag: $TARGET"; exit 1
+          fi
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Roll back (blue/green to the previous or given tag)
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          TARGET: ${{ inputs.tag }}
+          TARGET_ENV: ${{ inputs.environment }}
+        run: |
+          to=""; [ -n "$TARGET" ] && to="--to '$TARGET'"
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "bash $REMOTE_APP_DIR/infrastructure/scripts/rollback.sh --env $TARGET_ENV --yes $to && bash $REMOTE_APP_DIR/infrastructure/scripts/status.sh"

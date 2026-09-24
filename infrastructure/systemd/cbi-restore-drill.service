@@ -1,0 +1,18 @@
+# Monthly automated restore test (infrastructure/scripts/restore-drill.sh).
+# Needs BACKUP_AGE_IDENTITY_FILE in /srv/cbi/.env.backup, so enable it on the host
+# that may hold the age identity (recommended: staging VPS or an ops machine):
+#   sudo systemctl enable --now cbi-restore-drill.timer
+[Unit]
+Description=CareerPilot Interview - restore drill (scratch container)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Environment=CBI_HOME=/srv/cbi
+ExecStart=/bin/bash /srv/cbi/app/infrastructure/scripts/restore-drill.sh --config /srv/cbi/.env.backup
+Nice=10
+TimeoutStartSec=3h
+PrivateTmp=true
+NoNewPrivileges=true
