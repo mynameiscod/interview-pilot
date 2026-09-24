@@ -1,6 +1,9 @@
 export * from './ai-runtime.js';
 export * from './models/ai.js';
 export * from './models/audit-log.js';
+export * from './models/inputs.js';
+export * from './models/interview-session.js';
+export * from './models/library.js';
 export * from './models/auth-identity.js';
 export * from './models/otp-challenge.js';
 export * from './models/refresh-token.js';
@@ -9,3 +12,6 @@ export * from './models/user.js';
 export * from './indexes.js';
 export * from './mongo.js';
 export * from './redis.js';
+export * from './seed/library.js';
+export { DEFAULT_TEMPLATE_KEY, SEED_ROLES, SEED_TEMPLATES } from './seed/library-content.js';
+export { SEED_PROMPTS } from './seed/prompts-content.js';

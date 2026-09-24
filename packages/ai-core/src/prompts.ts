@@ -51,7 +51,7 @@ export function extractVariables(messages: readonly { content: string }[]): stri
  * smuggle text outside it.
  */
 export function dataBlock(name: string, text: string): string {
-  const safe = text.replace(/<(\/?)data/gi, '<$1​data');
+  const safe = text.replace(/<(\/?)data/gi, '<$1\u200Bdata');
   return `<data name="${name}">\n${safe}\n</data>`;
 }
 

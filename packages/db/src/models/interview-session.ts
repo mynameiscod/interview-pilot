@@ -1,0 +1,89 @@
+import {
+  AnalysisFailureCode,
+  InterviewLanguagePreference,
+  InterviewMode,
+  InterviewState,
+  type RoleAnalysis,
+} from '@cbi/shared-types';
+import type {
+  AnalysisFailureCode as AnalysisFailureCodeT,
+  InterviewLanguagePreference as InterviewLanguagePreferenceT,
+  InterviewMode as InterviewModeT,
+  InterviewState as InterviewStateT,
+} from '@cbi/shared-types';
+import mongoose, { Schema, type Model, type Types } from 'mongoose';
+
+export interface InterviewSessionRecord {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  jobTargetId: Types.ObjectId;
+  resumeId: Types.ObjectId | null;
+  /** Exact versions this session uses (§59); set at creation/analysis and never changed. */
+  templateId: Types.ObjectId;
+  blueprintId: Types.ObjectId | null;
+  promptVersions: Record<string, number>;
+  mode: InterviewModeT;
+  language: InterviewLanguagePreferenceT;
+  state: InterviewStateT;
+  /** Optimistic-concurrency counter: every transition is conditional on it. */
+  stateVersion: number;
+  stateHistory: { from: InterviewStateT; to: InterviewStateT; at: Date; reason: string | null }[];
+  analysis: RoleAnalysis | null;
+  analysisAttempts: number;
+  failure: { code: AnalysisFailureCodeT; at: Date } | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const sessionSchema = new Schema<InterviewSessionRecord>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    jobTargetId: { type: Schema.Types.ObjectId, ref: 'JobTarget', required: true },
+    resumeId: { type: Schema.Types.ObjectId, ref: 'Resume', default: null },
+    templateId: { type: Schema.Types.ObjectId, ref: 'InterviewTemplate', required: true },
+    blueprintId: { type: Schema.Types.ObjectId, ref: 'RoleBlueprint', default: null },
+    promptVersions: { type: Schema.Types.Mixed, default: {} },
+    mode: { type: String, enum: InterviewMode.options, required: true, default: 'TEXT' },
+    language: {
+      type: String,
+      enum: InterviewLanguagePreference.options,
+      required: true,
+      default: 'auto',
+    },
+    state: { type: String, enum: InterviewState.options, required: true, default: 'DRAFT' },
+    stateVersion: { type: Number, required: true, default: 0 },
+    stateHistory: {
+      type: [
+        new Schema(
+          {
+            from: { type: String, enum: InterviewState.options, required: true },
+            to: { type: String, enum: InterviewState.options, required: true },
+            at: { type: Date, required: true },
+            reason: { type: String, default: null },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    analysis: { type: Schema.Types.Mixed, default: null },
+    analysisAttempts: { type: Number, default: 0 },
+    failure: {
+      type: new Schema(
+        {
+          code: { type: String, enum: AnalysisFailureCode.options, required: true },
+          at: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+  },
+  { timestamps: true, collection: 'interviewSessions', minimize: false },
+);
+sessionSchema.index({ userId: 1, createdAt: -1 });
+sessionSchema.index({ state: 1, updatedAt: 1 });
+
+export const InterviewSessionModel: Model<InterviewSessionRecord> =
+  (mongoose.models.InterviewSession as Model<InterviewSessionRecord> | undefined) ??
+  mongoose.model<InterviewSessionRecord>('InterviewSession', sessionSchema);

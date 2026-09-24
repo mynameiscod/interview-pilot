@@ -25,6 +25,9 @@ export const Permission = z.enum([
   'ai_usage.read',
   'prompts.read',
   'prompts.manage',
+  // Interview library: roles, blueprints, companies, templates (Phase 3)
+  'library.read',
+  'library.manage',
 ]);
 export type Permission = z.infer<typeof Permission>;
 
@@ -37,8 +40,10 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'ai.read',
     'ai_usage.read',
     'prompts.read',
+    'library.read',
+    'library.manage',
   ],
-  CONTENT_ADMIN: ['prompts.read', 'prompts.manage'],
+  CONTENT_ADMIN: ['prompts.read', 'prompts.manage', 'library.read', 'library.manage'],
   SUPPORT_ADMIN: ['candidates.read'],
   FINANCE_ADMIN: ['audit.read', 'ai_usage.read'],
 };

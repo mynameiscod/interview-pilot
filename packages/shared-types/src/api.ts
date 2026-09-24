@@ -29,6 +29,11 @@ export const ErrorCode = z.enum([
   // AI provider layer (Phase 2)
   /** Every model in the feature's route failed, was unhealthy or is unconfigured. */
   'AI_UNAVAILABLE',
+  // Inputs and interviews (Phase 3)
+  /** The uploaded file is not a PDF, DOCX or plain-text document. */
+  'UNSUPPORTED_MEDIA_TYPE',
+  /** The action is not allowed in the resource's current state. */
+  'INVALID_STATE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

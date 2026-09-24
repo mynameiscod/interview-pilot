@@ -7,6 +7,14 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
+import { JobTargetModel, ResumeModel } from './models/inputs.js';
+import { InterviewSessionModel } from './models/interview-session.js';
+import {
+  CompanyModel,
+  InterviewTemplateModel,
+  RoleBlueprintModel,
+  RoleModel,
+} from './models/library.js';
 import { AuthIdentityModel } from './models/auth-identity.js';
 import { OtpChallengeModel } from './models/otp-challenge.js';
 import { RefreshTokenModel } from './models/refresh-token.js';
@@ -26,6 +34,13 @@ const MODELS = [
   AiUsageModel,
   ProviderHealthModel,
   PromptTemplateModel,
+  ResumeModel,
+  JobTargetModel,
+  CompanyModel,
+  RoleModel,
+  RoleBlueprintModel,
+  InterviewTemplateModel,
+  InterviewSessionModel,
 ];
 
 /**

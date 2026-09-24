@@ -6,6 +6,10 @@
 export const QueueName = {
   /** Platform housekeeping: worker heartbeats, provider health, cleanup schedulers. */
   SYSTEM: 'system',
+  /** Untrusted file parsing and JD URL fetching (resource-limited, Phase 3). */
+  DOCUMENTS: 'documents',
+  /** Role analysis and blueprint generation (AI calls, Phase 3). */
+  ANALYSIS: 'analysis',
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
