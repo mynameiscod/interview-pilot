@@ -82,3 +82,21 @@ A coding round gets a problem at the round's difficulty (or any problem if none 
 | `JUDGE0_AUTH_TOKEN` | API, worker | Judge0's `X-Auth-Token`, when enabled                                   |
 
 **Deploying Judge0 (interim).** Run it on a **separate** VPS, never on the interview host. Put a proxy in front of it that checks the HMAC headers, and don't expose Judge0 directly to the internet. Turn on its own authentication, and keep its resource limits at least as strict as the problem limits.
+
+## Manual browser checks
+
+Run these on Chrome, Edge, Firefox and Safari (desktop), and on one phone:
+
+1. Monaco loads from the app's own origin (no CDN requests), its worker starts, and syntax colouring works for Python, JavaScript, Java and C++.
+2. Ctrl/Cmd+Enter runs the code, and Ctrl/Cmd+Shift+Enter opens the submit confirmation, from inside the editor.
+3. The save status updates while typing, and leaving the editor or switching tabs saves. Going offline shows "Not saved — retrying", and it recovers.
+4. Judge down (use `MOCK_JUDGE_DOWN` with the mock judge): Run shows the notice, and Submit shows the "reviewed from the code" message.
+5. In voice and video interviews, the problem is read aloud and no microphone or answer box appears for the coding question.
+6. Under 768 px the layout stacks and the laptop banner can be dismissed. Screen readers announce results and the confirmation dialog.
+7. When time runs out, unsaved code is saved on the way out, and the report shows "Not submitted before time ran out" with the judged result.
+
+Known behaviour:
+
+- Monaco is a lazy 745 KB (gzip) chunk; Vite warns about its size.
+- Switching languages replaces the code with the new language's starter code, after a confirmation.
+- The report's transcript shows the candidate's own code for coding answers.
