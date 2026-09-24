@@ -6,12 +6,15 @@ import {
   createMsg91OtpProvider,
   createSesEmailProvider,
   createSmtpEmailProvider,
+  createStorage,
   type EmailProvider,
   type OtpSmsProvider,
+  type StorageProvider,
 } from '@cbi/provider-adapters';
 import type { AdapterRegistry, UsageSink } from '@cbi/ai-core';
 import type { JWTVerifyGetKey } from 'jose';
 import { createAuditService } from './lib/audit.js';
+import { createBullJobQueues, type JobQueues } from './lib/jobs.js';
 import { createRateLimiters } from './middleware/rate-limit.js';
 import { createAdminUserService } from './modules/admin/admin-users.service.js';
 import { createAiAdminService } from './modules/ai/ai-admin.service.js';
@@ -22,6 +25,9 @@ import { createGoogleVerifier } from './modules/auth/google-verifier.js';
 import { createOtpService } from './modules/auth/otp.service.js';
 import { createSessionService } from './modules/auth/session.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
+import { createInputsService } from './modules/inputs/inputs.service.js';
+import { createInterviewService } from './modules/interviews/interviews.service.js';
+import { createLibraryAdminService } from './modules/library/library-admin.service.js';
 
 export interface ContainerOptions {
   env: ApiEnv;
@@ -29,6 +35,8 @@ export interface ContainerOptions {
   redis: Redis;
   /** Redis for rate-limit counters; null uses in-memory counters (unit tests only). */
   rateLimitRedis: Redis | null;
+  /** BullMQ connection (maxRetriesPerRequest: null); unused when `overrides.jobs` is set. */
+  queueRedis?: Redis;
   /** Test overrides. Production wiring always comes from `env`. */
   overrides?: {
     email?: EmailProvider;
@@ -36,6 +44,8 @@ export interface ContainerOptions {
     googleKeySet?: JWTVerifyGetKey;
     aiAdapters?: AdapterRegistry;
     aiUsage?: UsageSink;
+    storage?: StorageProvider;
+    jobs?: JobQueues;
   };
 }
 
@@ -73,6 +83,11 @@ function buildSmsProvider(env: ApiEnv, email: EmailProvider): OtpSmsProvider | n
     case 'disabled':
       return null;
   }
+}
+
+function jobQueues(queueRedis: Redis | undefined): JobQueues {
+  if (!queueRedis) throw new Error('buildContainer needs queueRedis (or overrides.jobs)');
+  return createBullJobQueues(queueRedis);
 }
 
 export function buildContainer(opts: ContainerOptions) {
@@ -130,6 +145,11 @@ export function buildContainer(opts: ContainerOptions) {
     usage: opts.overrides?.aiUsage,
   });
   const aiAdmin = createAiAdminService({ ai, audit, logger });
+  const storage = opts.overrides?.storage ?? createStorage(env);
+  const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
+  const inputs = createInputsService({ storage, jobs, audit, logger });
+  const interviews = createInterviewService({ jobs, audit, logger });
+  const libraryAdmin = createLibraryAdminService({ audit });
   const cookies: CookieSettings = {
     secure: env.APP_ENV !== 'development' && env.APP_ENV !== 'test',
     domain: env.COOKIE_DOMAIN,
@@ -148,8 +168,18 @@ export function buildContainer(opts: ContainerOptions) {
     adminUsers,
     ai,
     aiAdmin,
+    storage,
+    jobs,
+    inputs,
+    interviews,
+    libraryAdmin,
     cookies,
-    providers: { email: email.name, sms: sms?.name ?? null, aiMock: ai.mockEnabled },
+    providers: {
+      email: email.name,
+      sms: sms?.name ?? null,
+      aiMock: ai.mockEnabled,
+      storage: storage.name,
+    },
     limiters: createRateLimiters(opts.rateLimitRedis),
   };
 }

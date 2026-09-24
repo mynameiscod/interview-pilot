@@ -7,6 +7,7 @@ import {
   createRedis,
   disconnectMongo,
   ensureIndexes,
+  ensureLibraryCatalog,
   pingMongo,
   pingRedis,
 } from '@cbi/db';
@@ -27,6 +28,7 @@ process.on('unhandledRejection', (reason) => {
 
 async function main(): Promise<void> {
   const redis = createRedis(env.REDIS_URL, logger);
+  const queueRedis = createRedis(env.REDIS_URL, logger, 'queue');
   await Promise.all([
     connectMongo({
       uri: env.MONGODB_URI,
@@ -34,12 +36,15 @@ async function main(): Promise<void> {
       logger,
     }),
     redis.connect(),
+    queueRedis.connect(),
   ]);
   await ensureIndexes();
 
-  const container = buildContainer({ env, logger, redis, rateLimitRedis: redis });
+  const container = buildContainer({ env, logger, redis, rateLimitRedis: redis, queueRedis });
   logger.info(container.providers, 'providers configured');
   await bootstrapAi({ env, ai: container.ai, audit: container.audit, logger });
+  const seeded = await ensureLibraryCatalog();
+  logger.info(seeded, 'interview library checked');
   const stopAiListener = await container.ai.listenForChanges();
   const app = createApp({
     container,
@@ -65,7 +70,8 @@ async function main(): Promise<void> {
     server.close(async () => {
       try {
         await stopAiListener();
-        await Promise.allSettled([disconnectMongo(), redis.quit()]);
+        await container.jobs.close();
+        await Promise.allSettled([disconnectMongo(), redis.quit(), queueRedis.quit()]);
         logger.info('shutdown complete');
       } finally {
         process.exit(0);

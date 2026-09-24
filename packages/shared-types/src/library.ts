@@ -343,3 +343,9 @@ export const CreateTemplateVersionBody = z.object({
   reason: text(300).min(3),
 });
 export type CreateTemplateVersionBody = z.infer<typeof CreateTemplateVersionBody>;
+
+export const BlueprintListQuery = z.object({
+  origin: BlueprintOrigin.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export type BlueprintListQuery = z.infer<typeof BlueprintListQuery>;

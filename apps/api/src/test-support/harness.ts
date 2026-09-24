@@ -5,6 +5,7 @@
 import { apiEnvSchema, createLogger, loadEnv, type ApiEnv } from '@cbi/config';
 import { createRedis, type Redis } from '@cbi/db';
 import {
+  createMemoryStorage,
   createRecordingEmailProvider,
   createRecordingSmsProvider,
 } from '@cbi/provider-adapters/testing';
@@ -12,6 +13,7 @@ import type { AdapterRegistry } from '@cbi/ai-core';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { createApp } from '../app.js';
 import { buildContainer } from '../container.js';
+import type { JobQueues } from '../lib/jobs.js';
 
 export const TEST_GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';
 export const TEST_ORIGIN = 'http://localhost:5173';
@@ -39,6 +41,28 @@ export function testEnv(overrides: Record<string, string> = {}): ApiEnv {
     AI_MOCK_MODE: 'true',
     ...overrides,
   });
+}
+
+export type RecordedJob =
+  | { kind: 'resume'; id: string }
+  | { kind: 'jobTarget'; id: string }
+  | { kind: 'analyze'; id: string; attempt: number };
+
+/** Records enqueued work instead of sending it to Redis; `fail` simulates a queue outage. */
+export function createRecordingJobQueues() {
+  const jobs: RecordedJob[] = [];
+  const state = { fail: false };
+  const record = async (job: RecordedJob) => {
+    if (state.fail) throw new Error('queue unavailable');
+    jobs.push(job);
+  };
+  const queues: JobQueues = {
+    extractResume: (id) => record({ kind: 'resume', id }),
+    extractJobTarget: (id) => record({ kind: 'jobTarget', id }),
+    analyzeInterview: (id, attempt) => record({ kind: 'analyze', id, attempt }),
+    close: async () => undefined,
+  };
+  return { queues, jobs, state };
 }
 
 /** A stand-in for Google's signing keys: tokens signed here verify like real ones. */
@@ -80,6 +104,8 @@ export async function buildTestApp(
   const email = createRecordingEmailProvider();
   const sms = createRecordingSmsProvider();
   const google = await createFakeGoogleIssuer();
+  const storage = createMemoryStorage();
+  const jobs = createRecordingJobQueues();
   const container = buildContainer({
     env,
     logger,
@@ -90,6 +116,8 @@ export async function buildTestApp(
       sms: env.SMS_PROVIDER === 'disabled' ? null : sms.provider,
       googleKeySet: google.keySet,
       aiAdapters: opts.aiAdapters,
+      storage: storage.storage,
+      jobs: jobs.queues,
     },
   });
   const app = createApp({
@@ -98,5 +126,5 @@ export async function buildTestApp(
     probes: { mongo: async () => undefined, redis: async () => undefined },
     isDraining: () => false,
   });
-  return { app, container, env, email, sms, google };
+  return { app, container, env, email, sms, google, storage, jobs };
 }

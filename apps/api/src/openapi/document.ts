@@ -1,5 +1,27 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  BlueprintListQuery,
+  BlueprintSummary,
+  CompanySummary,
+  CreateBlueprintVersionBody,
+  CreateInterviewBody,
+  CreateJobTargetBody,
+  CreateTemplateVersionBody,
+  Extraction,
+  InterviewListQuery,
+  InterviewSummary,
+  JobTargetSummary,
+  LibraryReasonBody,
+  LibrarySearchItem,
+  LibrarySearchQuery,
+  PromoteBlueprintBody,
+  ResumeSummary,
+  RoleSummary,
+  TemplateSummary,
+  UpdateInterviewSetupBody,
+  UploadJobTargetFields,
+  UpsertCompanyBody,
+  UpsertRoleBody,
   ActivatePromptBody,
   AddAiModelPriceBody,
   AdminMeResponse,
@@ -50,6 +72,8 @@ interface RouteSpec {
   tag: string;
   auth?: 'bearer' | 'refreshCookie';
   body?: z.ZodType;
+  /** multipart/form-data body (file uploads). */
+  multipart?: z.ZodObject;
   query?: z.ZodObject;
   /** Success response data schema (wrapped in `{ data }`), or null for 204. */
   response: z.ZodType | null;
@@ -100,6 +124,9 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
             : undefined,
       request: {
         ...(spec.body ? { body: { content: { 'application/json': { schema: spec.body } } } } : {}),
+        ...(spec.multipart
+          ? { body: { content: { 'multipart/form-data': { schema: spec.multipart } } } }
+          : {}),
         ...(spec.query ? { query: spec.query } : {}),
       },
       responses: {
@@ -388,6 +415,219 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: ActivatePromptBody,
     response: PromptTemplateSummary,
     errors: [400, 401, 403, 404, 409],
+  });
+
+  // ---- Candidate inputs and interviews (Phase 3) ----------------------------------
+  const file = z.string().meta({
+    format: 'binary',
+    description: 'PDF, DOCX or plain text; the type is detected from the bytes (UPLOAD_MAX_MB)',
+  });
+  const candidate = (method: Method, path: string, spec: Omit<RouteSpec, 'auth'>) =>
+    route(method, path, { auth: 'bearer', errors: [400, 401, 404, 429], ...spec });
+  candidate('post', '/resumes', {
+    tag: 'Resumes',
+    summary: 'Upload a resume (201 new, 200 when the same file was already uploaded)',
+    multipart: z.object({ file }),
+    response: ResumeSummary,
+    status: 201,
+    errors: [400, 401, 409, 413, 415, 429, 503],
+  });
+  candidate('get', '/resumes', {
+    tag: 'Resumes',
+    summary: 'My resumes, newest first',
+    response: z.array(ResumeSummary),
+  });
+  candidate('get', '/resumes/{id}', {
+    tag: 'Resumes',
+    summary: 'One of my resumes',
+    response: ResumeSummary,
+  });
+  candidate('get', '/resumes/{id}/status', {
+    tag: 'Resumes',
+    summary: 'Extraction status',
+    response: Extraction,
+  });
+  candidate('delete', '/resumes/{id}', {
+    tag: 'Resumes',
+    summary: 'Delete a resume and its file',
+    response: null,
+  });
+  candidate('post', '/jobs', {
+    tag: 'Job targets',
+    summary:
+      'Add a job target: pasted JD, JD URL (fetched by the SSRF-guarded worker) or role only',
+    body: CreateJobTargetBody,
+    response: JobTargetSummary,
+    status: 201,
+    errors: [400, 401, 429, 503],
+  });
+  candidate('post', '/jobs/upload', {
+    tag: 'Job targets',
+    summary: 'Add a job target from an uploaded JD file',
+    multipart: UploadJobTargetFields.extend({ file }),
+    response: JobTargetSummary,
+    status: 201,
+    errors: [400, 401, 413, 415, 429, 503],
+  });
+  candidate('get', '/jobs', {
+    tag: 'Job targets',
+    summary: 'My recent job targets',
+    response: z.array(JobTargetSummary),
+  });
+  candidate('get', '/jobs/{id}', {
+    tag: 'Job targets',
+    summary: 'One of my job targets',
+    response: JobTargetSummary,
+  });
+  candidate('get', '/jobs/{id}/status', {
+    tag: 'Job targets',
+    summary: 'Extraction status',
+    response: Extraction,
+  });
+  route('get', '/companies', {
+    tag: 'Library',
+    summary: 'Search active companies (names only)',
+    query: LibrarySearchQuery,
+    response: z.array(LibrarySearchItem),
+    errors: [400, 429],
+  });
+  route('get', '/roles', {
+    tag: 'Library',
+    summary: 'Search active roles by title or alias',
+    query: LibrarySearchQuery,
+    response: z.array(LibrarySearchItem),
+    errors: [400, 429],
+  });
+  candidate('post', '/interviews', {
+    tag: 'Interviews',
+    summary: 'Create a DRAFT interview from a job target, optional resume and template',
+    body: CreateInterviewBody,
+    response: InterviewSummary,
+    status: 201,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('get', '/interviews', {
+    tag: 'Interviews',
+    summary: 'My interviews',
+    query: InterviewListQuery,
+    response: z.array(InterviewSummary),
+  });
+  candidate('get', '/interviews/{id}', {
+    tag: 'Interviews',
+    summary: 'One of my interviews (poll while in ROLE_ANALYSIS)',
+    response: InterviewSummary,
+  });
+  candidate('post', '/interviews/{id}/analyze', {
+    tag: 'Interviews',
+    summary: 'Start or retry role analysis: DRAFT, FAILED or READY to ROLE_ANALYSIS',
+    response: InterviewSummary,
+    status: 202,
+    errors: [401, 404, 409, 429, 503],
+  });
+  candidate('patch', '/interviews/{id}/setup', {
+    tag: 'Interviews',
+    summary: 'Choose mode and language (READY only)',
+    body: UpdateInterviewSetupBody,
+    response: InterviewSummary,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/cancel', {
+    tag: 'Interviews',
+    summary: 'Cancel an interview before it starts',
+    response: InterviewSummary,
+    errors: [401, 404, 409],
+  });
+
+  // ---- Admin interview library (Phase 3) -------------------------------------------
+  const lib = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
+    route(method, path, {
+      tag: 'Admin library',
+      auth: 'bearer',
+      errors: [400, 401, 403, 404],
+      ...spec,
+    });
+  const conflict = [400, 401, 403, 404, 409];
+  lib('get', '/admin/roles', {
+    summary: 'Canonical roles (library.read)',
+    response: z.array(RoleSummary),
+  });
+  lib('post', '/admin/roles', {
+    summary: 'Create a role (library.manage)',
+    body: UpsertRoleBody,
+    response: RoleSummary,
+    status: 201,
+    errors: conflict,
+  });
+  lib('put', '/admin/roles/{id}', {
+    summary: 'Update a role (library.manage)',
+    body: UpsertRoleBody,
+    response: RoleSummary,
+    errors: conflict,
+  });
+  lib('get', '/admin/roles/{id}/blueprints', {
+    summary: 'Blueprint versions of a role, newest first (library.read)',
+    response: z.array(BlueprintSummary),
+  });
+  lib('post', '/admin/roles/{id}/blueprints', {
+    summary: 'Add the next blueprint version as a DRAFT (library.manage)',
+    body: CreateBlueprintVersionBody,
+    response: BlueprintSummary,
+    status: 201,
+  });
+  lib('get', '/admin/blueprints', {
+    summary: 'Recent blueprints, e.g. AI-generated ones to review (library.read)',
+    query: BlueprintListQuery,
+    response: z.array(BlueprintSummary),
+  });
+  lib('get', '/admin/blueprints/{id}', {
+    summary: 'One blueprint version (library.read)',
+    response: BlueprintSummary,
+  });
+  lib('post', '/admin/blueprints/{id}/activate', {
+    summary: 'Activate a role blueprint version and retire the previous one (library.manage)',
+    body: LibraryReasonBody,
+    response: BlueprintSummary,
+    errors: conflict,
+  });
+  lib('post', '/admin/blueprints/{id}/promote', {
+    summary: 'Copy an AI-generated blueprint into a role as a DRAFT (library.manage)',
+    body: PromoteBlueprintBody,
+    response: BlueprintSummary,
+    status: 201,
+    errors: conflict,
+  });
+  lib('get', '/admin/companies', {
+    summary: 'Companies with verified interview patterns (library.read)',
+    response: z.array(CompanySummary),
+  });
+  lib('post', '/admin/companies', {
+    summary: 'Create a company; patterns are verified by the saving admin (library.manage)',
+    body: UpsertCompanyBody,
+    response: CompanySummary,
+    status: 201,
+    errors: conflict,
+  });
+  lib('put', '/admin/companies/{id}', {
+    summary: 'Update a company (library.manage)',
+    body: UpsertCompanyBody,
+    response: CompanySummary,
+    errors: conflict,
+  });
+  lib('get', '/admin/templates', {
+    summary: 'Interview template versions (library.read)',
+    response: z.array(TemplateSummary),
+  });
+  lib('post', '/admin/templates', {
+    summary: 'Add the next template version as a DRAFT (library.manage)',
+    body: CreateTemplateVersionBody,
+    response: TemplateSummary,
+    status: 201,
+  });
+  lib('post', '/admin/templates/{id}/activate', {
+    summary: 'Activate a template version and retire the previous one (library.manage)',
+    body: LibraryReasonBody,
+    response: TemplateSummary,
+    errors: conflict,
   });
 
   const generator = new OpenApiGeneratorV31(registry.definitions);
