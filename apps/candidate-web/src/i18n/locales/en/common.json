@@ -120,9 +120,16 @@
   "dashboard": {
     "greeting": "Welcome, {{name}}",
     "subtitle": "Your interview practice space.",
-    "nextTitle": "Interview practice is coming next",
-    "nextBody": "Resume and job description upload, role analysis and your first AI interview are being built. We will let you know when they are ready.",
-    "profileLink": "Review your profile"
+    "profileLink": "Review your profile",
+    "startTitle": "Practise for your next interview",
+    "startBody": "Add your resume and the job description, or just pick a role. We will plan a realistic interview for it.",
+    "startCta": "Start an interview",
+    "recentTitle": "Recent interviews",
+    "recentEmpty": "No interviews yet. Start one to see it here.",
+    "recentError": "We could not load your interviews. Please refresh the page.",
+    "continue": "Continue",
+    "view": "View",
+    "openNamed": "Open {{title}}"
   },
   "profile": {
     "title": "Profile",
@@ -165,5 +172,324 @@
   },
   "common": {
     "loading": "Loading…"
+  },
+  "interview": {
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes",
+    "backToDashboard": "Back to dashboard",
+    "stateNotice": "Current status: {{state}}. There is nothing to do here right now.",
+    "states": {
+      "DRAFT": "Not analysed yet",
+      "ROLE_ANALYSIS": "Analysing",
+      "READY": "Ready to set up",
+      "DEVICE_CHECK": "Device check",
+      "CONSENT_REQUIRED": "Consent needed",
+      "READY_TO_START": "Ready to start",
+      "ACTIVE": "In progress",
+      "ROUND_TRANSITION": "In progress",
+      "RECONNECTING": "Reconnecting",
+      "PAUSED": "Paused",
+      "COMPLETING": "Finishing",
+      "PROCESSING": "Preparing report",
+      "REPORT_READY": "Report ready",
+      "EXPIRED": "Expired",
+      "CANCELLED": "Cancelled",
+      "FAILED": "Needs attention"
+    }
+  },
+  "inputs": {
+    "dropHint": "Drag and drop a file here, or",
+    "chooseFile": "Choose a file",
+    "fileHint": "PDF, DOCX or TXT, up to {{mb}} MB.",
+    "uploading": "Uploading…",
+    "fileWrongType": "This file type is not supported. Upload a PDF, DOCX or TXT file.",
+    "fileTooLarge": "This file is too large. Upload a file up to {{mb}} MB.",
+    "fileEmpty": "This file is empty. Choose another file.",
+    "conflict": "You have reached the limit. Delete an old resume or cancel an unfinished interview, then try again.",
+    "invalidState": "This can no longer be used. Check your inputs and try again.",
+    "serviceUnavailable": "The service is busy right now. Please try again in a few minutes.",
+    "warningLabel": "Note",
+    "status": {
+      "reading": {
+        "resume": "Reading your resume…",
+        "jd": "Reading the job description…"
+      },
+      "ready": {
+        "resume": "Your resume is ready.",
+        "jd": "The job description is ready."
+      },
+      "failed": {
+        "resume": "We could not read this resume.",
+        "jd": "We could not read this job description."
+      }
+    },
+    "errors": {
+      "UNSUPPORTED_TYPE": "This file type is not supported. Upload a PDF, DOCX or TXT file.",
+      "TOO_LARGE": "This file is too large. Upload a file up to {{mb}} MB.",
+      "CORRUPT": "This file seems to be damaged. Save or export it again (for example as PDF) and upload the new copy.",
+      "ENCRYPTED": "This file is password-protected. Remove the password and upload it again.",
+      "NO_TEXT": "We could not find any text in this file. It looks scanned — upload a text-based PDF or DOCX instead.",
+      "TOO_MANY_PAGES": "This document has too many pages. Upload a shorter version (up to 30 pages).",
+      "URL_BLOCKED": "We cannot open links to this address.",
+      "FETCH_FAILED": "We could not open this page. It may need a sign-in, or the site may be unavailable.",
+      "NOT_READABLE": "We could not find a job description on this page.",
+      "INTERNAL": "Something went wrong while reading this. Please try again."
+    },
+    "warnings": {
+      "TEXT_TRUNCATED": "This was very long, so only the first part will be used.",
+      "OCR_NEEDED": "Parts of this look scanned, so some text may be missing. For the best result, upload a text-based PDF or DOCX.",
+      "STRUCTURE_UNAVAILABLE": "We read the text but could not organise it in detail. Your interview will still use it."
+    }
+  },
+  "wizard": {
+    "title": "New interview",
+    "subtitle": "Tell us what you are preparing for. It takes about two minutes.",
+    "progressLabel": "Progress",
+    "stepOf": "Step {{step}} of {{total}}:",
+    "stepDone": "completed",
+    "steps": {
+      "start": "Start",
+      "resume": "Resume",
+      "jd": "Job description",
+      "target": "Company & role"
+    },
+    "stepTitles": {
+      "start": "Before you begin",
+      "resume": "Add your resume",
+      "jd": "Add the job description",
+      "target": "Company and role"
+    },
+    "back": "Back",
+    "continue": "Continue",
+    "cancel": "Cancel",
+    "startOver": "Start over",
+    "requiredMark": "(required)",
+    "useTyped": "Use “{{name}}”",
+    "fromLibrary": "Selected from our list.",
+    "start": {
+      "intro": "We will read your inputs, work out what the role needs and plan a realistic interview for it. You will see the plan before anything starts.",
+      "needTitle": "What you will need",
+      "resumeTitle": "Your resume (optional).",
+      "resumeBody": "It lets the interviewer ask about your own projects and experience.",
+      "jdTitle": "The job description (optional, recommended).",
+      "jdBody": "Paste it, upload it or share a link. It makes the interview match the job.",
+      "targetTitle": "The company and role.",
+      "targetBody": "If you do not have a job description, choosing the role is enough.",
+      "nextTitle": "What happens next",
+      "nextBody": "We analyse the role (usually under a minute), show you the skills and rounds we plan to cover, and you choose how to take the interview.",
+      "privacy": "Your files are private to your account. Contact details on your resume, such as your name, email or phone number, are not used in scoring.",
+      "begin": "Let's begin"
+    },
+    "resume": {
+      "intro": "Choose a resume you uploaded before or upload a new one. You can also continue without one.",
+      "existing": "Your resumes",
+      "uploadedOn": "Uploaded {{date}}",
+      "rowStatus": {
+        "ready": "Ready",
+        "reading": "Being read",
+        "failed": "Could not be read"
+      },
+      "delete": "Delete",
+      "deleteNamed": "Delete {{name}}",
+      "confirmDelete": "Yes, delete it",
+      "deleted": "The resume has been deleted.",
+      "uploadTitle": "Upload a new resume",
+      "fileLabel": "Resume file",
+      "uploaded": "Resume uploaded. We are reading it now.",
+      "duplicate": "You uploaded this file before, so we selected it.",
+      "selected": "Selected: {{name}}",
+      "statusLabel": "Resume status",
+      "failedNext": "Upload a different file, or continue without a resume.",
+      "chooseOrSkip": "Choose or upload a resume, or continue without one.",
+      "failedChooseAnother": "This resume could not be read. Upload a different file or continue without a resume.",
+      "listError": "We could not load your saved resumes. You can still upload one.",
+      "skip": "Continue without a resume"
+    },
+    "jd": {
+      "intro": "Share the job you are applying for. This is optional, but it makes the interview much closer to the real one.",
+      "tabsLabel": "How to add the job description",
+      "tabs": {
+        "PASTE": "Paste",
+        "UPLOAD": "Upload",
+        "URL": "Link"
+      },
+      "pasteLabel": "Job description text",
+      "pasteLimits": "Between {{min}} and {{max}} characters.",
+      "charCount_one": "{{formatted}} / {{max}} character",
+      "charCount_other": "{{formatted}} / {{max}} characters",
+      "pasteTooShort": "Paste at least {{min}} characters of the job description, or skip this step.",
+      "fileLabel": "Job description file",
+      "fileName": "File: {{name}}",
+      "uploadFirst": "Upload a file first, or skip this step.",
+      "failedNext": "Try a different file, paste the text instead, or skip this step.",
+      "failedChooseAnother": "We could not read this job description. Try another way of adding it, or skip this step.",
+      "urlLabel": "Link to the job posting",
+      "urlHint": "Public job pages work best. Pages that need a sign-in cannot be read.",
+      "urlInvalid": "Enter a full web address starting with https://",
+      "readLink": "Read this page",
+      "reading": "Reading…",
+      "pageUnreadableTitle": "We could not read this page",
+      "pasteInstead": "You can copy the job description from the page and paste it here instead.",
+      "pasteInsteadButton": "Paste the text instead",
+      "skip": "Skip — I don't have one"
+    },
+    "target": {
+      "introWithJd": "Tell us the company and role if you know them. We will also read them from the job description.",
+      "introNoJd": "Without a job description, we need to know the role you are preparing for.",
+      "companyLabel": "Company (optional)",
+      "companyHint": "Start typing to search. If the company is not listed, use the name you typed.",
+      "roleLabel": "Role",
+      "roleHintJd": "Optional: we will detect it from the job description if you leave it empty.",
+      "roleHintNoJd": "Start typing to search, for example “Backend Developer”.",
+      "roleRequired": "Choose or type the role you are preparing for.",
+      "replaces": "This replaces your previous interview plan, which will be cancelled.",
+      "submit": "Analyse my interview",
+      "submitting": "Setting things up…",
+      "summary": {
+        "title": "Your inputs",
+        "resume": "Resume",
+        "resumeNone": "No resume",
+        "resumeSelected": "Selected resume",
+        "jd": "Job description",
+        "jdNone": "None — role only",
+        "jdPasted_one": "Pasted text ({{count}} character)",
+        "jdPasted_other": "Pasted text ({{count}} characters)"
+      }
+    }
+  },
+  "analysis": {
+    "title": "Your interview plan",
+    "loadErrorTitle": "We could not open this interview",
+    "detectedRole": "Detected role",
+    "seniorityLabel": "Level",
+    "seniority": {
+      "INTERN": "Intern",
+      "JUNIOR": "Junior",
+      "MID": "Mid-level",
+      "SENIOR": "Senior",
+      "LEAD": "Lead"
+    },
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
+    },
+    "origin": {
+      "CANONICAL": "Standard role plan",
+      "AI_GENERATED": "Tailored to your job description"
+    },
+    "company": "Company: {{name}}",
+    "matchedRole": "Matches our role: {{title}}",
+    "basedOn": "Based on: {{inputs}}",
+    "inputs": {
+      "jd": "job description",
+      "resume": "resume",
+      "companyPatterns": "company notes",
+      "roleOnly": "the role you chose"
+    },
+    "skills": {
+      "title": "Skills we will focus on",
+      "hint": "Higher importance means more questions on that skill.",
+      "weight": "Importance {{weight}}/100",
+      "sources": "Found in",
+      "inResume": "Shown in your resume",
+      "notInResume": "Not shown in your resume"
+    },
+    "sources": {
+      "JD": "Job description",
+      "RESUME": "Resume",
+      "ROLE": "Role",
+      "COMPANY": "Company notes"
+    },
+    "rounds": {
+      "title": "Planned rounds",
+      "total": "Total: about {{duration}}",
+      "focus": "Focus: {{topics}}"
+    },
+    "roundTypes": {
+      "INTRO": "Introduction",
+      "TECHNICAL": "Technical",
+      "PROBLEM_SOLVING": "Problem solving",
+      "BEHAVIORAL": "Behavioural",
+      "CODING": "Coding",
+      "WRAP_UP": "Wrap-up"
+    },
+    "resume": {
+      "title": "Your resume against this role",
+      "highlights": "Strengths to build on",
+      "gaps": "Areas the interviewer may probe",
+      "none": "Nothing specific found.",
+      "notProvided": "You did not add a resume, so questions will not refer to your own experience."
+    },
+    "progress": {
+      "title": "Analysing your interview",
+      "reading": "Reading your inputs",
+      "identifying": "Identifying the role",
+      "planning": "Building your interview plan",
+      "state": {
+        "done": "done",
+        "current": "in progress",
+        "todo": "waiting"
+      },
+      "note": "This can take up to a minute. You can leave this page and come back from your dashboard."
+    },
+    "failed": {
+      "title": "We could not finish the analysis",
+      "INPUT_FAILED": "We could not read your resume or job description. Edit your inputs and try again.",
+      "INPUT_TIMEOUT": "Your files took too long to process. Please try again.",
+      "AI_UNAVAILABLE": "Our analysis service is busy right now. Please try again in a few minutes.",
+      "INTERNAL": "Something went wrong on our side. Please try again."
+    },
+    "draft": {
+      "title": "The analysis has not started yet",
+      "body": "Start the analysis to see your interview plan.",
+      "start": "Start the analysis"
+    },
+    "retry": "Try again",
+    "looksRight": "Looks right — continue",
+    "editInputs": "Edit inputs"
+  },
+  "setup": {
+    "title": "Set up your interview",
+    "modeTitle": "Interview mode",
+    "modes": {
+      "TEXT": {
+        "name": "Text",
+        "body": "Read each question and type your answers."
+      },
+      "VOICE": {
+        "name": "Voice",
+        "body": "Hear each question and answer by speaking."
+      },
+      "VIDEO": {
+        "name": "Video",
+        "body": "A face-to-face style interview with your camera on."
+      }
+    },
+    "comingSoon": "Coming soon",
+    "languageTitle": "Interview language",
+    "languageHint": "Auto-detect follows the language you use during the interview.",
+    "summaryTitle": "Summary",
+    "durationTitle": "Duration",
+    "costTitle": "Cost",
+    "credits_zero": "Free — no credits used",
+    "credits_one": "Uses {{count}} credit",
+    "credits_other": "Uses {{count}} credits",
+    "creditsNote": "Credits are only used when you start the interview.",
+    "save": "Save and continue",
+    "saving": "Saving…",
+    "backToAnalysis": "Back to the plan",
+    "ready": {
+      "title": "Your interview is ready",
+      "body": "Starting interviews arrives soon. We will let you know as soon as you can begin.",
+      "change": "Change settings"
+    },
+    "cancel": {
+      "title": "Cancel this interview",
+      "body": "Cancelling removes this interview plan from your list of active interviews. Your resume stays saved.",
+      "action": "Cancel interview",
+      "confirm": "Yes, cancel it",
+      "keep": "Keep it"
+    }
   }
 }

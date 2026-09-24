@@ -53,6 +53,25 @@ export const routes: RouteObject[] = [
                   Component: (await import('../features/profile/ProfilePage')).ProfilePage,
                 }),
               },
+              {
+                path: 'new',
+                lazy: async () => ({
+                  Component: (await import('../features/interviews/wizard/NewInterviewPage'))
+                    .NewInterviewPage,
+                }),
+              },
+              {
+                path: 'interviews/:id/analysis',
+                lazy: async () => ({
+                  Component: (await import('../features/interviews/AnalysisPage')).AnalysisPage,
+                }),
+              },
+              {
+                path: 'interviews/:id/setup',
+                lazy: async () => ({
+                  Component: (await import('../features/interviews/SetupPage')).SetupPage,
+                }),
+              },
             ],
           },
         ],
