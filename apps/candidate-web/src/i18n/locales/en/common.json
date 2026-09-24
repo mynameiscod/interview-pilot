@@ -18,7 +18,8 @@
     "signIn": "Sign in",
     "dashboard": "Dashboard",
     "profile": "Profile",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "history": "History"
   },
   "landing": {
     "hero": {
@@ -132,7 +133,9 @@
     "openNamed": "Open {{title}}",
     "resume": "Resume",
     "resumeNamed": "Resume {{title}}",
-    "start": "Start"
+    "start": "Start",
+    "viewReport": "View report",
+    "viewReportNamed": "View report for {{title}}"
   },
   "profile": {
     "title": "Profile",
@@ -591,7 +594,7 @@
   "complete": {
     "processing": {
       "title": "Thank you for completing your interview",
-      "body": "Your readiness report is being prepared. Reports arrive in the next update."
+      "body": "Your readiness report is being prepared. This usually takes a few minutes; you can leave this page and come back from your dashboard."
     },
     "expired": {
       "title": "This interview has expired",
@@ -609,6 +612,218 @@
       "refundedGeneric": "Your credit was returned.",
       "RESERVED": "We are finalising your credit.",
       "NONE": "No credit was used."
+    },
+    "reportReady": "Your readiness report is ready.",
+    "stalled": "This is taking longer than usual — our team has been notified; your answers are saved.",
+    "viewReport": "View your report",
+    "rateInterview": "Rate your interview",
+    "progress": {
+      "title": "Progress so far",
+      "reviewing": "Reviewing your answers",
+      "scoring": "Scoring each skill",
+      "planning": "Writing your plan",
+      "preparing": "Preparing your report",
+      "ready": "Your report is ready.",
+      "state": {
+        "done": "done",
+        "current": "in progress",
+        "stuck": "delayed",
+        "todo": "waiting"
+      }
     }
+  },
+  "report": {
+    "eyebrow": "Readiness report",
+    "aiGenerated": "AI-generated.",
+    "header": {
+      "date": "Date",
+      "mode": "Mode",
+      "duration": "Duration",
+      "language": "Language"
+    },
+    "summaryTitle": "Summary",
+    "loadError": "We could not open this report",
+    "notReady": {
+      "title": "Your report is not ready yet",
+      "body": "We are still preparing this report. Check its progress, or come back in a few minutes.",
+      "progress": "Check progress"
+    },
+    "overallTitle": "Overall readiness",
+    "band": {
+      "READY": "Interview-ready",
+      "READY_WITH_GAPS": "Interview-ready with gaps",
+      "DEVELOPING": "Developing",
+      "NOT_YET": "Not yet ready",
+      "INSUFFICIENT_EVIDENCE": "Not enough evidence yet"
+    },
+    "gaugeLabel": "Overall readiness {{score}} out of 100: {{band}}",
+    "gaugeLabelNone": "Overall readiness not scored: {{band}}",
+    "scoreOutOf": "{{score}}/100",
+    "notAssessed": "Not assessed",
+    "percent": "{{value}}%",
+    "assessedWeight": "Scored on {{assessed}}% of the skills for this role; the rest did not have enough evidence.",
+    "insufficient": {
+      "title": "We could not give an overall score",
+      "body": "There were not enough answers or enough evidence in them to judge your readiness fairly. This often happens when an interview ends early or answers are very short. Try a full interview and answer each question with a concrete example."
+    },
+    "confidence": {
+      "title": "Evidence confidence",
+      "chip": "Evidence confidence: {{level}}",
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low",
+      "whatAffects": "What affects confidence",
+      "explain": "Confidence shows how much evidence the report is based on, not how well you did.",
+      "factors": {
+        "independentQuestions": "Separate questions answered",
+        "practicalEvidence": "Practical examples given",
+        "consistency": "Consistency across answers",
+        "completeness": "Skills covered"
+      }
+    },
+    "dimensions": {
+      "title": "Skills",
+      "hint": "Sorted from strongest to weakest. Open a skill to see the evidence and the questions behind its score.",
+      "showTable": "Show as table",
+      "none": "No skills were assessed.",
+      "noEvidence": "No evidence was recorded for this skill.",
+      "evidenceTitle": "Evidence",
+      "quote": "Your words",
+      "question": "From the question: {{question}}",
+      "weight": "Weight {{weight}}%",
+      "fallback": "This skill was scored from the strength of the evidence only, without a detailed review.",
+      "noRationale": "There was not enough evidence to explain a score for this skill.",
+      "tableCaption": "Skill scores",
+      "skill": "Skill",
+      "weightColumn": "Weight",
+      "scoreColumn": "Score",
+      "evidenceColumn": "Evidence items"
+    },
+    "strength": {
+      "strong": "Strong evidence",
+      "some": "Some evidence",
+      "mixed": "Mixed",
+      "weak": "Weak",
+      "contrary": "Contrary"
+    },
+    "delta": {
+      "up": "{{value}} (improved)",
+      "down": "{{value}} (declined)",
+      "same": "{{value}} (no change)"
+    },
+    "strengths": {
+      "title": "Strengths",
+      "empty": "No clear strengths were found in this interview."
+    },
+    "gaps": {
+      "title": "Gaps to work on",
+      "empty": "No clear gaps were found in this interview."
+    },
+    "yes": "Yes",
+    "no": "No",
+    "rounds": {
+      "title": "Rounds",
+      "round": "Round",
+      "questions": "Questions",
+      "answered": "Answered",
+      "duration": "Duration"
+    },
+    "coverage": {
+      "title": "Resume and job description coverage",
+      "empty": "No skills to show.",
+      "skill": "Skill",
+      "from": "From",
+      "inResume": "In your resume",
+      "assessed": "Assessed"
+    },
+    "plan": {
+      "title": "Your improvement plan",
+      "tabsLabel": "Plan period",
+      "tabs": {
+        "next24h": "Next 24 hours",
+        "next3Days": "Next 3 days",
+        "next7Days": "Next 7 days"
+      },
+      "empty": "Nothing planned for this period.",
+      "why": "Why"
+    },
+    "pdf": {
+      "download": "Download PDF",
+      "downloading": "Downloading…",
+      "preparing": "Preparing PDF…",
+      "notReady": "The PDF is still being prepared. Please try again in a minute.",
+      "failed": "We could not download the PDF. Please try again."
+    },
+    "next": {
+      "title": "What next",
+      "practiseAgain": "Practise again"
+    },
+    "previous": {
+      "title": "Progress since your previous attempt",
+      "overall": "Previous overall: {{score}}/100",
+      "overallNone": "Previous overall: not scored",
+      "overallChange": "Overall change: {{change}}",
+      "compare": "Compare attempts"
+    },
+    "transcript_one": "Transcript ({{count}} question)",
+    "transcript_other": "Transcript ({{count}} questions)",
+    "feedback": {
+      "title": "Rate this report",
+      "intro": "Your ratings help us improve interviews and reports.",
+      "usefulness": "How useful was this report?",
+      "accuracy": "How accurate did it feel?",
+      "interviewQuality": "How good was the interview itself?",
+      "scaleHint": "1 = poor, 5 = excellent",
+      "retake": "Would you take another interview?",
+      "yes": "Yes",
+      "no": "No",
+      "freeText": "Anything else you would like to tell us? (optional)",
+      "charCount_one": "{{formatted}} / {{max}} character",
+      "charCount_other": "{{formatted}} / {{max}} characters",
+      "missing": "Please choose a rating for all three questions.",
+      "thanks": "Thanks — you can update your rating any time.",
+      "submit": "Send feedback",
+      "update": "Update feedback",
+      "sending": "Sending…"
+    }
+  },
+  "history": {
+    "title": "Interview history",
+    "subtitle": "Your readiness reports, newest first. Pick 2 to 4 attempts at the same role to compare them.",
+    "error": "We could not load your reports. Please refresh the page.",
+    "emptyTitle": "No reports yet",
+    "emptyBody": "Finish an interview to get your first readiness report.",
+    "caption": "Your readiness reports",
+    "select": "Select",
+    "selectNamed": "Select {{title}}, {{date}} to compare",
+    "openNamed": "Open report for {{title}}, {{date}}",
+    "role": "Role",
+    "company": "Company",
+    "date": "Date",
+    "overall": "Overall",
+    "confidence": "Confidence",
+    "duration": "Duration",
+    "language": "Language",
+    "compare": "Compare",
+    "compareNeedTwo": "Select at least 2 attempts to compare.",
+    "compareTooMany": "You can compare up to {{max}} attempts at a time.",
+    "compareSameRole": "Only attempts at the same role can be compared.",
+    "compareReady_one": "{{count}} attempt selected.",
+    "compareReady_other": "{{count}} attempts selected."
+  },
+  "compare": {
+    "title": "Compare attempts",
+    "subtitle": "Oldest attempt first. The last column shows the change from your first attempt to your latest.",
+    "caption": "Scores for each attempt",
+    "skill": "Skill",
+    "attempt": "Attempt {{n}}",
+    "change": "Change",
+    "overall": "Overall",
+    "confidence": "Evidence confidence",
+    "noDelta": "Not enough data",
+    "invalidTitle": "These attempts cannot be compared",
+    "invalidBody": "Choose 2 to 4 attempts at the same role from your history.",
+    "loadError": "We could not load this comparison",
+    "backToHistory": "Back to history"
   }
 }

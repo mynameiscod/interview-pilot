@@ -29,6 +29,12 @@ function linkLabels(t: TFunction, interview: InterviewSummary) {
       name: t('dashboard.resumeNamed', { title: interview.title }),
     };
   }
+  if (interview.state === 'REPORT_READY') {
+    return {
+      label: t('dashboard.viewReport'),
+      name: t('dashboard.viewReportNamed', { title: interview.title }),
+    };
+  }
   const name = t('dashboard.openNamed', { title: interview.title });
   if (interview.state === 'READY') return { label: t('dashboard.continue'), name };
   if (interview.state === 'READY_TO_START') return { label: t('dashboard.start'), name };

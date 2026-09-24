@@ -109,6 +109,24 @@ export const routes: RouteObject[] = [
                   Component: (await import('../features/interviews/CompletePage')).CompletePage,
                 }),
               },
+              {
+                path: 'reports/:id',
+                lazy: async () => ({
+                  Component: (await import('../features/reports/ReportPage')).ReportPage,
+                }),
+              },
+              {
+                path: 'history',
+                lazy: async () => ({
+                  Component: (await import('../features/reports/HistoryPage')).HistoryPage,
+                }),
+              },
+              {
+                path: 'compare',
+                lazy: async () => ({
+                  Component: (await import('../features/reports/ComparePage')).ComparePage,
+                }),
+              },
             ],
           },
         ],

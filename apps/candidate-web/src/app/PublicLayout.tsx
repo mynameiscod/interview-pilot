@@ -22,6 +22,9 @@ function AccountNav() {
       <NavLink to="/app" end className="btn btn-link btn-sm">
         {t('nav.dashboard')}
       </NavLink>
+      <NavLink to="/app/history" className="btn btn-link btn-sm">
+        {t('nav.history')}
+      </NavLink>
       <NavLink to="/app/profile" className="btn btn-link btn-sm">
         {t('nav.profile')}
       </NavLink>

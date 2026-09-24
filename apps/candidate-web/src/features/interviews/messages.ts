@@ -75,6 +75,7 @@ export function interviewPath(
   if (interview.state === 'READY') return `${base}/setup`;
   if (interview.state === 'READY_TO_START') return `${base}/start`;
   if (isLive(interview.state)) return `${base}/room`;
+  if (interview.state === 'REPORT_READY') return `/app/reports/${interview.id}`;
   if (isEnded(interview)) return `${base}/complete`;
   return `${base}/analysis`;
 }

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { fail, fakeApi, makeSession, ok } from '@cbi/web-core/testing';
 import { makeInterview } from '../../test/interview-fixtures';
+import { makeProgress } from '../../test/report-fixtures';
 import { renderRoute } from '../../test/render';
 
 const signedIn = { 'POST /auth/refresh': () => ok(makeSession()) };
@@ -93,19 +94,102 @@ describe('complete screen', () => {
     const api = fakeApi({
       ...signedIn,
       'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'CONSUMED' })),
+      'GET /interviews/int1/progress': () => ok(makeProgress()),
     });
     await renderRoute('/app/interviews/int1/complete', { api });
 
     expect(
       await screen.findByRole('heading', { name: 'Thank you for completing your interview' }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Your readiness report is being prepared. Reports arrive in the next update.',
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Your readiness report is being prepared\./)).toBeInTheDocument();
     expect(screen.getByText('1 credit used')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/app');
+  });
+
+  it('shows the evaluation stages as a checklist while the report is prepared', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'CONSUMED' })),
+      'GET /interviews/int1/progress': () => ok(makeProgress()),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+
+    const list = await screen.findByRole('list');
+    const step = async (name: string) => (await within(list).findByText(name)).closest('li');
+    expect(await step('Reviewing your answers')).toHaveTextContent('(done)');
+    expect(await step('Scoring each skill')).toHaveTextContent('(in progress)');
+    expect(await step('Writing your plan')).toHaveTextContent('(waiting)');
+    expect(await step('Preparing your report')).toHaveTextContent('(waiting)');
+    expect(screen.queryByRole('link', { name: 'View your report' })).not.toBeInTheDocument();
+  });
+
+  it('keeps polling and links to the report once it is ready', async () => {
+    let calls = 0;
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'CONSUMED' })),
+      'GET /interviews/int1/progress': () => {
+        calls += 1;
+        return ok(
+          calls === 1
+            ? makeProgress()
+            : makeProgress({
+                stage: 'RENDER_PDF',
+                completedStages: [
+                  'FINALIZE_TRANSCRIPT',
+                  'EXTRACT_EVIDENCE',
+                  'SCORE_DIMENSIONS',
+                  'AGGREGATE',
+                  'RECOMMENDATIONS',
+                  'BUILD_REPORT',
+                ],
+                reportReady: true,
+              }),
+        );
+      },
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+
+    expect(await screen.findByRole('list')).toHaveTextContent('Scoring each skill');
+    const view = await screen.findByRole('link', { name: 'View your report' }, { timeout: 5000 });
+    expect(view).toHaveAttribute('href', '/app/reports/int1');
+    expect(screen.getByRole('link', { name: 'Rate your interview' })).toHaveAttribute(
+      'href',
+      `/app/reports/int1#${'feedback'}`,
+    );
+    expect(screen.getByText('Your readiness report is ready.')).toBeInTheDocument();
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('reassures the candidate when evaluation is stuck', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'CONSUMED' })),
+      'GET /interviews/int1/progress': () => ok(makeProgress({ status: 'FAILED' })),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This is taking longer than usual — our team has been notified; your answers are saved.',
+    );
+    expect(
+      within(screen.getByRole('list')).getByText('Scoring each skill').closest('li'),
+    ).toHaveTextContent('(delayed)');
+    expect(screen.queryByRole('button', { name: /try again|retry/i })).not.toBeInTheDocument();
+  });
+
+  it('links straight to the report when it is ready', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () =>
+        ok(makeInterview({ state: 'REPORT_READY', credit: 'CONSUMED' })),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+    expect(await screen.findByRole('link', { name: 'View your report' })).toHaveAttribute(
+      'href',
+      '/app/reports/int1',
+    );
+    expect(api.calls.some((c) => c.key === 'GET /interviews/int1/progress')).toBe(false);
   });
 
   it('says the credit was returned after an early end', async () => {
@@ -165,6 +249,12 @@ describe('dashboard credits and resume links', () => {
             state: 'PROCESSING',
             credit: 'CONSUMED',
           }),
+          makeInterview({
+            id: 'int4',
+            title: 'Frontend Developer',
+            state: 'REPORT_READY',
+            credit: 'CONSUMED',
+          }),
         ]),
     });
     await renderRoute('/app', { api });
@@ -186,5 +276,8 @@ describe('dashboard credits and resume links', () => {
       'href',
       '/app/interviews/int3/complete',
     );
+    const report = within(recent).getByRole('link', { name: 'View report for Frontend Developer' });
+    expect(report).toHaveAttribute('href', '/app/reports/int4');
+    expect(report).toHaveTextContent('View report');
   });
 });

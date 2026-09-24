@@ -392,6 +392,8 @@ describe('interview timer', () => {
     await openRoom({ snapshot: { remainingMs: 302_000 } });
     const timer = await screen.findByRole('timer');
     expect(timer).toHaveTextContent('05:02');
+    // The countdown starts once the room is connected; advancing earlier would tick nothing.
+    await waitFor(() => expect(screen.queryByText('(paused)')).not.toBeInTheDocument());
 
     act(() => vi.advanceTimersByTime(3_000));
     expect(timer).toHaveTextContent('04:59');
