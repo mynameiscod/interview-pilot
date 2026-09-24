@@ -95,8 +95,71 @@ export interface LlmAdapter {
   generate(input: LlmCallInput): Promise<LlmCallResult>;
 }
 
+// ---- Speech ------------------------------------------------------------------
+
+export interface SttRequest {
+  audio: Uint8Array;
+  /** Container type, e.g. `audio/webm` (codec parameters stripped). */
+  mimeType: string;
+  /** BCP-47-ish hint (`en`, `hi`, `te`), or null to let the model detect it. */
+  language: string | null;
+  /** Length measured by the client; used for metering when the provider reports none. */
+  durationSec: number | null;
+}
+
+export interface SttCallInput {
+  model: ModelTarget;
+  request: SttRequest;
+  credentials: ProviderCredentials;
+  signal: AbortSignal;
+}
+
+export interface SttCallResult {
+  text: string;
+  /** Language the model detected, when reported. */
+  language: string | null;
+  /** 0–1 when the provider reports it. */
+  confidence: number | null;
+  /** Audio length as billed by the provider, when reported. */
+  durationSec: number | null;
+  servedModel: string | null;
+}
+
+/** Speech-to-text for a complete recording. Same rules as LLM adapters: no retries, no logging of content. */
+export interface SttAdapter {
+  readonly providerKey: AiProviderKey;
+  transcribe(input: SttCallInput): Promise<SttCallResult>;
+}
+
+export interface TtsRequest {
+  text: string;
+  language: string | null;
+}
+
+export interface TtsCallInput {
+  model: ModelTarget;
+  request: TtsRequest;
+  credentials: ProviderCredentials;
+  signal: AbortSignal;
+}
+
+export interface TtsCallResult {
+  audio: Uint8Array;
+  /** e.g. `audio/mpeg`, `audio/wav`. */
+  mimeType: string;
+  servedModel: string | null;
+}
+
+/** Text-to-speech for one short utterance (an interview question). */
+export interface TtsAdapter {
+  readonly providerKey: AiProviderKey;
+  synthesize(input: TtsCallInput): Promise<TtsCallResult>;
+}
+
 export interface AdapterRegistry {
   llm(providerKey: AiProviderKey): LlmAdapter | undefined;
+  stt?(providerKey: AiProviderKey): SttAdapter | undefined;
+  tts?(providerKey: AiProviderKey): TtsAdapter | undefined;
 }
 
 // ---- Runtime configuration (loaded from MongoDB, cached in-process) ----------

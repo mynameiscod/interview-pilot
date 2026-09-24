@@ -44,3 +44,13 @@ export type {
   GatewayWebhookEvent,
   PaymentGateway,
 } from './payments/types.js';
+export { createDeepgramSttAdapter } from './speech/deepgram.js';
+export { createElevenLabsTtsAdapter, ELEVENLABS_DEFAULT_VOICE } from './speech/elevenlabs.js';
+export {
+  createMockSttAdapter,
+  createMockTtsAdapter,
+  MOCK_SPEECH_FAIL,
+  MOCK_SPEECH_PREFIX,
+  mockSpeech,
+} from './speech/mock.js';
+export { createOpenAiSttAdapter, createOpenAiTtsAdapter } from './speech/openai.js';

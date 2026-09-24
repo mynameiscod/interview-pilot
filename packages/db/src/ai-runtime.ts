@@ -68,6 +68,7 @@ export async function loadAiRuntimeConfig(): Promise<AiRuntimeConfig> {
             timeoutMs: m.params.timeoutMs,
             retries: m.params.retries,
             concurrency: m.params.concurrency,
+            voice: m.params.voice ?? null,
           },
           pricing: m.pricing.map((p) => ({
             unit: p.unit as PricingUnit,
@@ -158,7 +159,17 @@ const PROVIDERS: { key: AiProviderKey; displayName: string }[] = [
   { key: 'anthropic', displayName: 'Anthropic' },
   { key: 'openai', displayName: 'OpenAI' },
   { key: 'gemini', displayName: 'Google Gemini' },
+  { key: 'deepgram', displayName: 'Deepgram' },
+  { key: 'elevenlabs', displayName: 'ElevenLabs' },
 ];
+
+const speechParams = (timeoutMs: number): AiModelParams => ({
+  temperature: null,
+  maxOutputTokens: 16,
+  timeoutMs,
+  retries: 1,
+  concurrency: 50,
+});
 
 /**
  * Seeded models. Prices are Anthropic's first-party list prices at the time
@@ -222,7 +233,54 @@ const MODELS: CatalogModel[] = [
   },
 ];
 
+/**
+ * Speech models (Phase 7). Prices are list prices at the time of writing
+ * (editable in Admin): STT per audio minute, TTS per million characters.
+ */
+const SPEECH_MODELS: CatalogModel[] = [
+  {
+    provider: 'deepgram',
+    modelId: 'nova-3',
+    displayName: 'Deepgram Nova-3',
+    capabilities: ['STT'],
+    params: speechParams(30_000),
+    prices: { PER_AUDIO_MINUTE: 4_300 },
+  },
+  {
+    provider: 'openai',
+    modelId: 'gpt-4o-mini-transcribe',
+    displayName: 'OpenAI GPT-4o mini Transcribe',
+    capabilities: ['STT'],
+    params: speechParams(45_000),
+    prices: { PER_AUDIO_MINUTE: 3_000 },
+  },
+  {
+    provider: 'elevenlabs',
+    modelId: 'eleven_flash_v2_5',
+    displayName: 'ElevenLabs Flash v2.5',
+    capabilities: ['TTS'],
+    params: speechParams(20_000),
+    prices: { PER_1M_CHARACTERS: 50_000_000 },
+  },
+  {
+    provider: 'openai',
+    modelId: 'gpt-4o-mini-tts',
+    displayName: 'OpenAI GPT-4o mini TTS',
+    capabilities: ['TTS'],
+    params: speechParams(20_000),
+    prices: { PER_1M_CHARACTERS: 15_000_000 },
+  },
+];
+
+/** Speech chains: Deepgram then OpenAI for STT; ElevenLabs then OpenAI for TTS. */
+const SPEECH_CHAINS: Record<'stt.live' | 'tts.live', string[]> = {
+  'stt.live': ['nova-3', 'gpt-4o-mini-transcribe'],
+  'tts.live': ['eleven_flash_v2_5', 'gpt-4o-mini-tts'],
+};
+
 export const MOCK_CATALOG_MODEL_ID = 'mock-llm';
+export const MOCK_STT_MODEL_ID = 'mock-stt';
+export const MOCK_TTS_MODEL_ID = 'mock-tts';
 
 /** LLM features routed by default: Opus 5 first, Sonnet 5 as fallback (and the mock last in dev). */
 const DEFAULT_CHAIN = ['claude-opus-5', 'claude-sonnet-5'];
@@ -250,6 +308,7 @@ export async function ensureAiCatalog(opts: {
   ];
   const models: CatalogModel[] = [
     ...MODELS,
+    ...SPEECH_MODELS,
     ...(opts.mockMode
       ? [
           {
@@ -264,6 +323,22 @@ export async function ensureAiCatalog(opts: {
               retries: 0,
               concurrency: 100,
             },
+            prices: {},
+          },
+          {
+            provider: 'mock' as const,
+            modelId: MOCK_STT_MODEL_ID,
+            displayName: 'Mock STT (deterministic)',
+            capabilities: ['STT'] as AiCapability[],
+            params: speechParams(5000),
+            prices: {},
+          },
+          {
+            provider: 'mock' as const,
+            modelId: MOCK_TTS_MODEL_ID,
+            displayName: 'Mock TTS (tone)',
+            capabilities: ['TTS'] as AiCapability[],
+            params: speechParams(5000),
             prices: {},
           },
         ]
@@ -327,6 +402,31 @@ export async function ensureAiCatalog(opts: {
           chain: chainIds.map((modelId, i) => ({
             modelId,
             priority: i === chainIds.length - 1 && opts.mockMode ? 99 : i,
+          })),
+        },
+      },
+      { upsert: true },
+    );
+    result.routesCreated += res.upsertedCount;
+  }
+
+  for (const [feature, chain] of Object.entries(SPEECH_CHAINS) as [
+    keyof typeof SPEECH_CHAINS,
+    string[],
+  ][]) {
+    const mock = feature === 'stt.live' ? MOCK_STT_MODEL_ID : MOCK_TTS_MODEL_ID;
+    const ids = [...chain, ...(opts.mockMode ? [mock] : [])]
+      .map((id) => modelIds.get(id))
+      .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+    const res = await AiRouteModel.updateOne(
+      { feature },
+      {
+        $setOnInsert: {
+          feature,
+          active: true,
+          chain: ids.map((modelId, i) => ({
+            modelId,
+            priority: i === ids.length - 1 && opts.mockMode ? 99 : i,
           })),
         },
       },

@@ -271,8 +271,8 @@ export type LibrarySearchQuery = z.infer<typeof LibrarySearchQuery>;
 export const InterviewMode = z.enum(['TEXT', 'VOICE', 'VIDEO']);
 export type InterviewMode = z.infer<typeof InterviewMode>;
 
-/** Modes the platform can run today; VOICE arrives in Phase 7, VIDEO in Phase 8. */
-export const AVAILABLE_INTERVIEW_MODES: readonly InterviewMode[] = ['TEXT'];
+/** Modes the platform can run today; VIDEO arrives in Phase 8. */
+export const AVAILABLE_INTERVIEW_MODES: readonly InterviewMode[] = ['TEXT', 'VOICE'];
 
 export const TemplateRound = z.object({
   type: RoundType,

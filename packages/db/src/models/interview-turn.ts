@@ -41,6 +41,14 @@ export interface InterviewTurnRecord {
     answeredAt: Date;
     /** Time from the question being shown to the answer arriving. */
     durationMs: number;
+    /** Typed, or spoken and transcribed (the text is then the server's transcript). */
+    source: 'TEXT' | 'VOICE';
+    voice: {
+      durationSec: number;
+      language: string | null;
+      confidence: number | null;
+      model: string;
+    } | null;
   } | null;
   turnEval: {
     sufficiency: TurnSufficiencyT;
@@ -94,6 +102,8 @@ const turnSchema = new Schema<InterviewTurnRecord>(
           clientMsgId: { type: String, required: true },
           answeredAt: { type: Date, required: true },
           durationMs: { type: Number, required: true },
+          source: { type: String, enum: ['TEXT', 'VOICE'], default: 'TEXT' },
+          voice: { type: Schema.Types.Mixed, default: null },
         },
         { _id: false },
       ),

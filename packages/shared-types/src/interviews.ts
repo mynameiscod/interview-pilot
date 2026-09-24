@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EvidenceSource, InterviewMode, RoleFamily, RoundType, Seniority } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
+import { VoiceReadiness } from './voice.js';
 
 /**
  * Interview sessions. Phase 3 covers the pre-interview states (draft, role
@@ -110,6 +111,8 @@ export const InterviewSummary = z.object({
   endedAt: z.iso.datetime().nullable(),
   /** What happened to the interview's credit: held while in progress, then used or returned. */
   credit: InterviewCreditStatus,
+  /** Voice interviews: device check and consent (null for text). */
+  voice: VoiceReadiness.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

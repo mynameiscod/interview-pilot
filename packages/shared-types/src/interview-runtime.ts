@@ -61,6 +61,8 @@ export const LiveTurn = z.object({
   roundIdx: z.number().int(),
   question: z.string(),
   answer: z.string().nullable(),
+  /** How the answer was given (null while unanswered). */
+  answerSource: z.enum(['TEXT', 'VOICE']).nullable(),
 });
 export type LiveTurn = z.infer<typeof LiveTurn>;
 
@@ -80,6 +82,8 @@ export const InterviewSnapshot = z.object({
   sessionId: z.string(),
   state: InterviewState,
   mode: InterviewMode,
+  /** The interview was set up for voice, so it can switch between voice and text. */
+  voiceEnabled: z.boolean(),
   language: InterviewLanguagePreference,
   title: z.string(),
   rounds: z.array(LiveRound),
@@ -112,6 +116,10 @@ export const RtEvent = {
   ROUND_TRANSITION: 'round:transition',
   COMPLETED: 'interview:completed',
   ERROR: 'interview:error',
+  /** The interview switched between voice and text. */
+  MODE_CHANGED: 'interview:mode',
+  /** Speech recognition or synthesis is unavailable; the room offers text. */
+  DEGRADED: 'interview:degraded',
   DRAINING: 'server:draining',
 } as const;
 
@@ -130,6 +138,11 @@ export const AnswerTextPayload = z.object({
   text: z.string().max(ANSWER_LIMITS.maxChars),
   /** Idempotency key chosen by the client; a resend with the same id is a no-op. */
   clientMsgId,
+  /**
+   * A spoken answer: the id returned by the transcription endpoint. The
+   * server then uses its own transcript and ignores `text`.
+   */
+  voiceTranscriptId: z.uuid().optional(),
 });
 export type AnswerTextPayload = z.infer<typeof AnswerTextPayload>;
 

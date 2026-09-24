@@ -6,6 +6,7 @@ import {
   type RoleAnalysis,
 } from '@cbi/shared-types';
 import type {
+  DeviceCheckBody,
   ProcessingStage,
   ProcessingStatus,
   RecommendationsAi,
@@ -88,9 +89,47 @@ export interface InterviewSessionRecord {
   disconnectedAt: Date | null;
   pausedAt: Date | null;
   processing: SessionProcessingRecord | null;
+
+  // ---- Voice (Phase 7) ----
+  /** Set once the interview is configured for voice; null for text-only interviews. */
+  voice: SessionVoiceRecord | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface SessionVoiceRecord {
+  deviceCheck: (DeviceCheckBody & { at: Date; passed: boolean }) | null;
+  consent: { version: string; at: Date } | null;
+  /** Switches between voice and text during the interview. */
+  modeHistory: { mode: 'TEXT' | 'VOICE'; at: Date; reason: string }[];
+}
+
+const voiceSchema = new Schema<SessionVoiceRecord>(
+  {
+    deviceCheck: { type: Schema.Types.Mixed, default: null },
+    consent: {
+      type: new Schema(
+        { version: { type: String, required: true }, at: { type: Date, required: true } },
+        { _id: false },
+      ),
+      default: null,
+    },
+    modeHistory: {
+      type: [
+        new Schema(
+          {
+            mode: { type: String, enum: ['TEXT', 'VOICE'], required: true },
+            at: { type: Date, required: true },
+            reason: { type: String, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+  },
+  { _id: false },
+);
 
 const sessionSchema = new Schema<InterviewSessionRecord>(
   {
@@ -171,6 +210,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
     disconnectedAt: { type: Date, default: null },
     pausedAt: { type: Date, default: null },
     processing: { type: Schema.Types.Mixed, default: null },
+    voice: { type: voiceSchema, default: null },
   },
   { timestamps: true, collection: 'interviewSessions', minimize: false },
 );

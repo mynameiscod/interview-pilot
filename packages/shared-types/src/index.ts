@@ -15,3 +15,4 @@ export * from './payments.js';
 export * from './permissions.js';
 export * from './queues.js';
 export * from './users.js';
+export * from './voice.js';

@@ -8,15 +8,23 @@ import {
   parseMasterKey,
   type AdapterRegistry,
   type LlmAdapter,
+  type SttAdapter,
+  type TtsAdapter,
   type UsageSink,
 } from '@cbi/ai-core';
 import type { Logger } from '@cbi/config';
 import { createMongoUsageSink, loadActivePrompt, loadAiRuntimeConfig, type Redis } from '@cbi/db';
 import {
   createAnthropicLlmAdapter,
+  createDeepgramSttAdapter,
+  createElevenLabsTtsAdapter,
   createGeminiLlmAdapter,
   createMockLlmAdapter,
+  createMockSttAdapter,
+  createMockTtsAdapter,
   createOpenAiLlmAdapter,
+  createOpenAiSttAdapter,
+  createOpenAiTtsAdapter,
 } from '@cbi/provider-adapters';
 import type { AiProviderKey, AppEnv } from '@cbi/shared-types';
 
@@ -44,8 +52,24 @@ export function buildAdapterRegistry(env: AiRuntimeSettings): AdapterRegistry {
     ['openai', createOpenAiLlmAdapter()],
     ['gemini', createGeminiLlmAdapter()],
   ]);
-  if (mockAllowed(env)) adapters.set('mock', createMockLlmAdapter());
-  return { llm: (key) => adapters.get(key) };
+  const stt = new Map<AiProviderKey, SttAdapter>([
+    ['deepgram', createDeepgramSttAdapter()],
+    ['openai', createOpenAiSttAdapter()],
+  ]);
+  const tts = new Map<AiProviderKey, TtsAdapter>([
+    ['elevenlabs', createElevenLabsTtsAdapter()],
+    ['openai', createOpenAiTtsAdapter()],
+  ]);
+  if (mockAllowed(env)) {
+    adapters.set('mock', createMockLlmAdapter());
+    stt.set('mock', createMockSttAdapter());
+    tts.set('mock', createMockTtsAdapter());
+  }
+  return {
+    llm: (key) => adapters.get(key),
+    stt: (key) => stt.get(key),
+    tts: (key) => tts.get(key),
+  };
 }
 
 export function buildSecretBox(env: AiRuntimeSettings) {

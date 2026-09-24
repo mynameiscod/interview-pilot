@@ -21,7 +21,14 @@ export type AiCapability = z.infer<typeof AiCapability>;
  * Adapter keys. `mock` is deterministic, clearly labelled and only
  * available when APP_ENV is development/test and AI_MOCK_MODE=true.
  */
-export const AiProviderKey = z.enum(['openai', 'anthropic', 'gemini', 'mock']);
+export const AiProviderKey = z.enum([
+  'openai',
+  'anthropic',
+  'gemini',
+  'deepgram',
+  'elevenlabs',
+  'mock',
+]);
 export type AiProviderKey = z.infer<typeof AiProviderKey>;
 
 /**
@@ -118,6 +125,8 @@ const modelParamFields = {
   retries: z.number().int().min(0).max(5),
   /** Maximum in-flight calls to this model across all API/worker replicas. */
   concurrency: z.number().int().min(1).max(500),
+  /** TTS models: the provider's voice id (null = the adapter's default voice). */
+  voice: z.string().trim().min(1).max(100).nullable(),
 };
 
 export const AiModelParams = z.object({
@@ -126,6 +135,7 @@ export const AiModelParams = z.object({
   timeoutMs: modelParamFields.timeoutMs.default(60_000),
   retries: modelParamFields.retries.default(1),
   concurrency: modelParamFields.concurrency.default(20),
+  voice: modelParamFields.voice.optional(),
 });
 export type AiModelParams = z.infer<typeof AiModelParams>;
 

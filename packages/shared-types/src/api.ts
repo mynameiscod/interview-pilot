@@ -40,6 +40,9 @@ export const ErrorCode = z.enum([
   // Payments (Phase 6)
   /** The payment could not be verified (bad signature, amount or order mismatch). */
   'PAYMENT_VERIFICATION_FAILED',
+  // Voice (Phase 7)
+  /** Every speech model for the feature failed; the room offers text instead. */
+  'SPEECH_UNAVAILABLE',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

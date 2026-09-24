@@ -1,8 +1,10 @@
 import {
   AI_FEATURE_CAPABILITY,
   type AiCallOutcome,
+  type AiCapability,
   type AiFeature,
   type BreakerState,
+  type SpeechServiceStatus,
 } from '@cbi/shared-types';
 import {
   closedBreaker,
@@ -34,6 +36,12 @@ import {
   type LlmRequest,
   type RuntimeModel,
   type RuntimeProvider,
+  type SttAdapter,
+  type SttCallResult,
+  type SttRequest,
+  type TtsAdapter,
+  type TtsCallResult,
+  type TtsRequest,
   type UsageSink,
   type UsageUnits,
 } from './types.js';
@@ -74,6 +82,16 @@ export interface AiRunResult<T> {
   feature: AiFeature;
   model: { id: string; providerKey: string; modelId: string };
   servedModel: string | null;
+  attempts: AttemptSummary[];
+  usage: UsageUnits;
+  costMicros: number;
+}
+
+/** A speech call's result plus how it was served. */
+export interface AiSpeechResult<R> {
+  result: R;
+  feature: AiFeature;
+  model: { id: string; providerKey: string; modelId: string };
   attempts: AttemptSummary[];
   usage: UsageUnits;
   costMicros: number;
@@ -214,11 +232,26 @@ export function createAiRouter(deps: AiRouterDeps) {
     return Math.round(random() * cap);
   }
 
+  type AnyAdapter = LlmAdapter | SttAdapter | TtsAdapter;
+
   interface Candidate {
     model: RuntimeModel;
     provider: RuntimeProvider;
-    adapter: LlmAdapter;
+    adapter: AnyAdapter;
     apiKey: string;
+  }
+
+  function adapterFor(capability: AiCapability, key: RuntimeProvider['key']) {
+    switch (capability) {
+      case 'LLM':
+        return deps.adapters.llm(key);
+      case 'STT':
+        return deps.adapters.stt?.(key);
+      case 'TTS':
+        return deps.adapters.tts?.(key);
+      default:
+        return undefined;
+    }
   }
 
   /** Resolves a chain entry to something callable, or the reason it is not. */
@@ -235,7 +268,7 @@ export function createAiRouter(deps: AiRouterDeps) {
     }
     const provider = config.providers.get(model.providerId);
     if (!provider || !provider.enabled) return { skip: 'provider_disabled', model };
-    const adapter = deps.adapters.llm(provider.key);
+    const adapter = adapterFor(AI_FEATURE_CAPABILITY[feature], provider.key);
     if (!adapter) return { skip: 'adapter_unavailable', model };
     if (!provider.credential && provider.key !== 'mock') return { skip: 'no_credentials', model };
     return { candidate: { model, provider, adapter } };
@@ -314,7 +347,7 @@ export function createAiRouter(deps: AiRouterDeps) {
       const started = performance.now();
       let result: LlmCallResult;
       try {
-        result = await c.adapter.generate({
+        result = await (c.adapter as LlmAdapter).generate({
           model: { providerKey: c.provider.key, modelId: c.model.modelId, params: c.model.params },
           request: { ...request, messages, maxOutputTokens },
           credentials: { apiKey: c.apiKey, baseUrl: c.provider.baseUrl ?? undefined },
@@ -454,13 +487,13 @@ export function createAiRouter(deps: AiRouterDeps) {
     }
   }
 
-  async function withCandidate<T>(
+  async function withCandidate<R>(
     feature: AiFeature,
     base: Omit<Candidate, 'apiKey'>,
-    request: LlmRequest<T>,
     ctx: AiCallContext,
     attempts: AttemptSummary[],
-  ): Promise<AiRunResult<T> | null> {
+    exec: (c: Candidate) => Promise<R | null>,
+  ): Promise<R | null> {
     const skip = (detail: SkipReason) => {
       attempts.push({
         modelRef: base.model.id,
@@ -490,7 +523,7 @@ export function createAiRouter(deps: AiRouterDeps) {
     });
     if (token === null) return skip('saturated');
     try {
-      return await callModel(feature, { ...base, apiKey }, request, ctx, attempts);
+      return await exec({ ...base, apiKey });
     } finally {
       if (token !== 'none') {
         await safely(
@@ -501,6 +534,255 @@ export function createAiRouter(deps: AiRouterDeps) {
       }
     }
   }
+
+  /**
+   * One speech call with the same retry, breaker and metering rules as LLM
+   * calls (there is no output schema, so no repair step).
+   */
+  async function callSpeech<R>(
+    feature: AiFeature,
+    c: Candidate,
+    ctx: AiCallContext,
+    attempts: AttemptSummary[],
+    invoke: (
+      c: Candidate,
+      signal: AbortSignal,
+    ) => Promise<{ result: R; usage: UsageUnits; servedModel: string | null }>,
+  ): Promise<AiSpeechResult<R> | null> {
+    const maxAttempts = 1 + c.model.params.retries;
+    let failures = 0;
+    for (let callNumber = 1; ; callNumber++) {
+      const timeout = AbortSignal.timeout(c.model.params.timeoutMs);
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+      const started = performance.now();
+      try {
+        const out = await invoke(c, signal);
+        const costMicros = await record(feature, c, ctx, 'SUCCESS', {
+          attempt: callNumber,
+          latencyMs: Math.round(performance.now() - started),
+          units: out.usage,
+          servedModel: out.servedModel,
+          errorCode: null,
+        });
+        await recordBreaker(c.model.id, 'success');
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: 'SUCCESS',
+          detail: null,
+        });
+        return {
+          result: out.result,
+          feature,
+          model: { id: c.model.id, providerKey: c.provider.key, modelId: c.model.modelId },
+          attempts,
+          usage: out.usage,
+          costMicros,
+        };
+      } catch (err) {
+        const latencyMs = Math.round(performance.now() - started);
+        if (ctx.signal?.aborted) {
+          await record(feature, c, ctx, 'ABORTED', {
+            attempt: callNumber,
+            latencyMs,
+            units: ZERO_USAGE,
+            servedModel: null,
+            errorCode: 'aborted',
+          });
+          throw new AiAbortedError(feature);
+        }
+        const error =
+          err instanceof AiProviderError
+            ? err
+            : timeout.aborted
+              ? new AiProviderError(c.provider.key, 'TIMEOUT', 'timeout', 'timed out', {
+                  cause: err,
+                })
+              : new AiProviderError(
+                  c.provider.key,
+                  'PROVIDER_ERROR',
+                  'unexpected',
+                  'adapter error',
+                  {
+                    cause: err,
+                  },
+                );
+        await record(feature, c, ctx, error.outcome, {
+          attempt: callNumber,
+          latencyMs,
+          units: ZERO_USAGE,
+          servedModel: null,
+          errorCode: error.code,
+        });
+        if (countsAgainstBreaker(error.outcome)) await recordBreaker(c.model.id, 'failure');
+        log.warn(
+          {
+            feature,
+            model: c.model.modelId,
+            outcome: error.outcome,
+            code: error.code,
+            attempt: callNumber,
+          },
+          'ai call failed',
+        );
+        failures += 1;
+        if (error.retryable && failures < maxAttempts) {
+          await sleep(backoff(failures), ctx.signal).catch(() => undefined);
+          if (ctx.signal?.aborted) throw new AiAbortedError(feature);
+          continue;
+        }
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: error.outcome,
+          detail: error.code,
+        });
+        return null;
+      }
+    }
+  }
+
+  /** Walks the feature's chain in priority order until `exec` succeeds on a model. */
+  async function throughChain<R>(
+    feature: AiFeature,
+    ctx: AiCallContext,
+    exec: (c: Candidate, attempts: AttemptSummary[]) => Promise<R | null>,
+    describe: (r: R) => string,
+  ): Promise<R> {
+    const config = await deps.config.get();
+    const route = config.routes.get(feature);
+    const attempts: AttemptSummary[] = [];
+    if (!route || !route.active || route.chain.length === 0) {
+      throw new AiUnavailableError(
+        feature,
+        attempts,
+        `No active AI route is configured for ${feature}`,
+      );
+    }
+    const chain = [...route.chain].sort((a, b) => a.priority - b.priority);
+    for (const entry of chain) {
+      if (ctx.signal?.aborted) throw new AiAbortedError(feature);
+      const resolved = resolve(config, feature, entry.modelId);
+      if ('skip' in resolved) {
+        attempts.push({
+          modelRef: entry.modelId,
+          model: resolved.model?.modelId ?? entry.modelId,
+          outcome: 'SKIPPED',
+          detail: resolved.skip,
+        });
+        continue;
+      }
+      const state = await breakerState(resolved.candidate.model.id);
+      if (state === 'OPEN') {
+        attempts.push({
+          modelRef: entry.modelId,
+          model: resolved.candidate.model.modelId,
+          outcome: 'SKIPPED',
+          detail: 'circuit_open',
+        });
+        continue;
+      }
+      if (state === 'HALF_OPEN') {
+        // Exactly one caller probes a recovering model; others move on.
+        const probe = await safely(
+          'breaker.probe',
+          () =>
+            deps.coordination.tryLock(
+              `probe:${resolved.candidate.model.id}`,
+              resolved.candidate.model.params.timeoutMs + 1000,
+            ),
+          true,
+        );
+        if (!probe) {
+          attempts.push({
+            modelRef: entry.modelId,
+            model: resolved.candidate.model.modelId,
+            outcome: 'SKIPPED',
+            detail: 'circuit_open',
+          });
+          continue;
+        }
+      }
+      const result = await withCandidate(feature, resolved.candidate, ctx, attempts, (c) =>
+        exec(c, attempts),
+      );
+      if (result) {
+        if (attempts.length > 1) {
+          log.info({ feature, served: describe(result), attempts }, 'ai call served by fallback');
+        }
+        return result;
+      }
+    }
+    log.error({ feature, attempts }, 'ai route exhausted');
+    throw new AiUnavailableError(feature, attempts);
+  }
+
+  /** Calls one specific model, bypassing the route and the open-circuit skip (admin tests). */
+  async function onModel<R>(
+    modelRef: string,
+    feature: AiFeature,
+    ctx: AiCallContext,
+    exec: (c: Candidate, attempts: AttemptSummary[]) => Promise<R | null>,
+  ): Promise<R> {
+    const config = await deps.config.get();
+    const attempts: AttemptSummary[] = [];
+    const resolved = resolve(config, feature, modelRef);
+    if ('skip' in resolved) {
+      attempts.push({
+        modelRef,
+        model: resolved.model?.modelId ?? modelRef,
+        outcome: 'SKIPPED',
+        detail: resolved.skip,
+      });
+      throw new AiUnavailableError(feature, attempts);
+    }
+    const result = await withCandidate(feature, resolved.candidate, ctx, attempts, (c) =>
+      exec(c, attempts),
+    );
+    if (!result) throw new AiUnavailableError(feature, attempts);
+    return result;
+  }
+
+  const sttExec =
+    (request: SttRequest, ctx: AiCallContext) => (c: Candidate, attempts: AttemptSummary[]) =>
+      callSpeech<SttCallResult>('stt.live', c, ctx, attempts, async (cand, signal) => {
+        const result = await (cand.adapter as SttAdapter).transcribe({
+          model: {
+            providerKey: cand.provider.key,
+            modelId: cand.model.modelId,
+            params: cand.model.params,
+          },
+          request,
+          credentials: { apiKey: cand.apiKey, baseUrl: cand.provider.baseUrl ?? undefined },
+          signal,
+        });
+        const audioSec = result.durationSec ?? request.durationSec ?? 0;
+        return {
+          result,
+          usage: { ...ZERO_USAGE, requests: 1, audioSec },
+          servedModel: result.servedModel,
+        };
+      });
+
+  const ttsExec =
+    (request: TtsRequest, ctx: AiCallContext) => (c: Candidate, attempts: AttemptSummary[]) =>
+      callSpeech<TtsCallResult>('tts.live', c, ctx, attempts, async (cand, signal) => {
+        const result = await (cand.adapter as TtsAdapter).synthesize({
+          model: {
+            providerKey: cand.provider.key,
+            modelId: cand.model.modelId,
+            params: cand.model.params,
+          },
+          request,
+          credentials: { apiKey: cand.apiKey, baseUrl: cand.provider.baseUrl ?? undefined },
+          signal,
+        });
+        return {
+          result,
+          usage: { ...ZERO_USAGE, requests: 1, characters: request.text.length },
+          servedModel: result.servedModel,
+        };
+      });
 
   return {
     /**
@@ -513,73 +795,12 @@ export function createAiRouter(deps: AiRouterDeps) {
       request: LlmRequest<T>,
       ctx: AiCallContext = {},
     ): Promise<AiRunResult<T>> {
-      const config = await deps.config.get();
-      const route = config.routes.get(feature);
-      const attempts: AttemptSummary[] = [];
-      if (!route || !route.active || route.chain.length === 0) {
-        throw new AiUnavailableError(
-          feature,
-          attempts,
-          `No active AI route is configured for ${feature}`,
-        );
-      }
-      const chain = [...route.chain].sort((a, b) => a.priority - b.priority);
-      for (const entry of chain) {
-        if (ctx.signal?.aborted) throw new AiAbortedError(feature);
-        const resolved = resolve(config, feature, entry.modelId);
-        if ('skip' in resolved) {
-          attempts.push({
-            modelRef: entry.modelId,
-            model: resolved.model?.modelId ?? entry.modelId,
-            outcome: 'SKIPPED',
-            detail: resolved.skip,
-          });
-          continue;
-        }
-        const state = await breakerState(resolved.candidate.model.id);
-        if (state === 'OPEN') {
-          attempts.push({
-            modelRef: entry.modelId,
-            model: resolved.candidate.model.modelId,
-            outcome: 'SKIPPED',
-            detail: 'circuit_open',
-          });
-          continue;
-        }
-        if (state === 'HALF_OPEN') {
-          // Exactly one caller probes a recovering model; others move on.
-          const probe = await safely(
-            'breaker.probe',
-            () =>
-              deps.coordination.tryLock(
-                `probe:${resolved.candidate.model.id}`,
-                resolved.candidate.model.params.timeoutMs + 1000,
-              ),
-            true,
-          );
-          if (!probe) {
-            attempts.push({
-              modelRef: entry.modelId,
-              model: resolved.candidate.model.modelId,
-              outcome: 'SKIPPED',
-              detail: 'circuit_open',
-            });
-            continue;
-          }
-        }
-        const result = await withCandidate(feature, resolved.candidate, request, ctx, attempts);
-        if (result) {
-          if (attempts.length > 1) {
-            log.info(
-              { feature, served: result.model.modelId, attempts },
-              'ai call served by fallback',
-            );
-          }
-          return result;
-        }
-      }
-      log.error({ feature, attempts }, 'ai route exhausted');
-      throw new AiUnavailableError(feature, attempts);
+      return throughChain(
+        feature,
+        ctx,
+        (c, attempts) => callModel(feature, c, request, ctx, attempts),
+        (r) => r.model.modelId,
+      );
     },
 
     /**
@@ -592,21 +813,59 @@ export function createAiRouter(deps: AiRouterDeps) {
       request: LlmRequest<T>,
       ctx: AiCallContext = {},
     ): Promise<AiRunResult<T>> {
+      return onModel(modelRef, feature, ctx, (c, attempts) =>
+        callModel(feature, c, request, ctx, attempts),
+      );
+    },
+
+    /**
+     * Speech-to-text through the `stt.live` chain (fallback, retries,
+     * breaker, metering by audio seconds). `modelRef` calls one model
+     * directly (admin connectivity tests).
+     */
+    async transcribe(
+      request: SttRequest,
+      ctx: AiCallContext = {},
+      opts: { modelRef?: string } = {},
+    ): Promise<AiSpeechResult<SttCallResult>> {
+      const exec = sttExec(request, ctx);
+      return opts.modelRef
+        ? onModel(opts.modelRef, 'stt.live', ctx, exec)
+        : throughChain('stt.live', ctx, exec, (r) => r.model.modelId);
+    },
+
+    /** Text-to-speech through the `tts.live` chain (metered by characters). */
+    async synthesize(
+      request: TtsRequest,
+      ctx: AiCallContext = {},
+      opts: { modelRef?: string } = {},
+    ): Promise<AiSpeechResult<TtsCallResult>> {
+      const exec = ttsExec(request, ctx);
+      return opts.modelRef
+        ? onModel(opts.modelRef, 'tts.live', ctx, exec)
+        : throughChain('tts.live', ctx, exec, (r) => r.model.modelId);
+    },
+
+    /**
+     * Whether a feature can be served right now, without calling anyone:
+     * AVAILABLE when its first-choice model is usable, DEGRADED when only
+     * fallbacks are, UNAVAILABLE when none is (no route, keys, or all
+     * circuits open).
+     */
+    async routeStatus(feature: AiFeature): Promise<SpeechServiceStatus> {
       const config = await deps.config.get();
-      const attempts: AttemptSummary[] = [];
-      const resolved = resolve(config, feature, modelRef);
-      if ('skip' in resolved) {
-        attempts.push({
-          modelRef,
-          model: resolved.model?.modelId ?? modelRef,
-          outcome: 'SKIPPED',
-          detail: resolved.skip,
-        });
-        throw new AiUnavailableError(feature, attempts);
+      const route = config.routes.get(feature);
+      if (!route || !route.active || route.chain.length === 0) return 'UNAVAILABLE';
+      const chain = [...route.chain].sort((a, b) => a.priority - b.priority);
+      let index = 0;
+      for (const entry of chain) {
+        const resolved = resolve(config, feature, entry.modelId);
+        if (!('skip' in resolved) && (await breakerState(resolved.candidate.model.id)) !== 'OPEN') {
+          return index === 0 ? 'AVAILABLE' : 'DEGRADED';
+        }
+        index++;
       }
-      const result = await withCandidate(feature, resolved.candidate, request, ctx, attempts);
-      if (!result) throw new AiUnavailableError(feature, attempts);
-      return result;
+      return 'UNAVAILABLE';
     },
 
     async breakerStates(modelRefs: string[]): Promise<Record<string, BreakerState>> {

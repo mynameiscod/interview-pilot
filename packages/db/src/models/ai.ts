@@ -69,6 +69,8 @@ export interface AiModelRecord {
     timeoutMs: number;
     retries: number;
     concurrency: number;
+    /** TTS voice id (null/absent: the adapter default). */
+    voice?: string | null;
   };
   pricing: AiPriceRecord[];
   createdAt: Date;
@@ -223,6 +225,7 @@ const aiModelSchema = new Schema<AiModelRecord>(
       timeoutMs: { type: Number, required: true },
       retries: { type: Number, required: true },
       concurrency: { type: Number, required: true },
+      voice: { type: String, default: null },
     },
     /** Effective-dated and append-only; usage rows copy the entries in force. */
     pricing: { type: [priceSchema], default: [] },
