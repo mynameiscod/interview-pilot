@@ -5,6 +5,7 @@ export * from './auth.js';
 export * from './credits.js';
 export * from './documents.js';
 export * from './environment.js';
+export * from './evaluation.js';
 export * from './health.js';
 export * from './i18n.js';
 export * from './interviews.js';

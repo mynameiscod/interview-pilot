@@ -1,3 +1,5 @@
+import type { ProcessingStage } from './evaluation.js';
+
 /**
  * BullMQ queue names. Queues are separated by workload so each can have its
  * own concurrency and retry policy (see docs/architecture §2). Queues are
@@ -10,6 +12,8 @@ export const QueueName = {
   DOCUMENTS: 'documents',
   /** Role analysis and blueprint generation (AI calls, Phase 3). */
   ANALYSIS: 'analysis',
+  /** The evaluation pipeline: evidence, scoring, report, PDF, notification (Phase 5). */
+  EVALUATION: 'evaluation',
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -28,6 +32,23 @@ export const AnalysisJob = {
   INTERVIEW_ANALYZE: 'interview.analyze',
 } as const;
 export type AnalysisJob = (typeof AnalysisJob)[keyof typeof AnalysisJob];
+
+/** Jobs on the EVALUATION queue: one job per pipeline stage, chained stage by stage. */
+export const EvaluationJob = {
+  STAGE: 'evaluation.stage',
+} as const;
+export type EvaluationJob = (typeof EvaluationJob)[keyof typeof EvaluationJob];
+
+export interface EvaluationStageJobData {
+  sessionId: string;
+  stage: ProcessingStage;
+  /** Pipeline run: bumped when an admin re-runs processing, so ids never collide. */
+  run: number;
+}
+
+/** Deterministic id per session, stage and run: enqueueing a stage twice is a no-op. */
+export const evaluationJobId = (sessionId: string, stage: ProcessingStage, run: number) =>
+  `evaluation-${sessionId}-${stage}-${run}`;
 
 export interface ResumeExtractJobData {
   resumeId: string;
