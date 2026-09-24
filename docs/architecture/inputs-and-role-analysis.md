@@ -83,7 +83,7 @@ Both belong to super, operations and content admins. Every change is audited in 
 
 ## Prompts
 
-Four prompts are seeded as version 1 (`packages/db/src/seed/prompts-content.ts`): `resume.structure`, `jd.structure`, `role.analyze` and `blueprint.generate`. All candidate text is passed with `untrusted()`, so it lands in delimited `<data>` blocks with the data-only instruction. Every prompt forbids invented facts, contact details and inferences about protected characteristics. Edit them in **Admin → Prompts**: a new version, then activate.
+Four analysis prompts are seeded as version 1 (`packages/db/src/seed/prompts-content.ts`): `resume.structure`, `jd.structure`, `role.analyze` and `blueprint.generate`. All candidate text is passed with `untrusted()`, so it lands in delimited `<data>` blocks with the data-only instruction. Every prompt forbids invented facts, contact details and inferences about protected characteristics. Edit them in **Admin → Prompts**: a new version, then activate. The live interview's prompts (`interview.question`, `interview.assessTurn`) are described in [the live interview](live-interview.md).
 
 ## Limits and quotas
 
