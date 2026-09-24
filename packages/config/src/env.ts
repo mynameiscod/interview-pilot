@@ -95,6 +95,8 @@ const storageShape = {
   BUNNY_STORAGE_REGION_HOST: z.string().default('storage.bunnycdn.com'),
   BUNNY_STORAGE_ACCESS_KEY: optionalString,
   UPLOAD_MAX_MB: z.coerce.number().int().min(1).max(25).default(8),
+  /** Days a video recording is kept before automatic deletion (Phase 8). */
+  MEDIA_RETENTION_DAYS_DEFAULT: z.coerce.number().int().min(1).max(3650).default(90),
 };
 
 /** Outgoing email. The API needs it for sign-in codes; the worker for report notifications. */
@@ -328,6 +330,12 @@ export const workerEnvSchema = baseEnvSchema
       .int()
       .min(60_000)
       .default(60 * 60_000),
+    /** How often abandoned recordings are closed and expired ones deleted. */
+    WORKER_MEDIA_SWEEP_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .default(15 * 60_000),
     /** Parallel evaluation stages (AI calls and PDF rendering). */
     WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */

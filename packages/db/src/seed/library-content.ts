@@ -491,7 +491,8 @@ export interface SeedTemplate {
 const commonPolicies = {
   codingRequired: false,
   creditCost: 1,
-  proctoringPolicy: { recording: 'OFF', tabSwitchTracking: false },
+  // Recording applies to video interviews only, and the candidate chooses (Phase 8).
+  proctoringPolicy: { recording: 'OPTIONAL', tabSwitchTracking: false },
   scoringPolicy: {
     dimensionWeights: {
       TECHNICAL: 35,

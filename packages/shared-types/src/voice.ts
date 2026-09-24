@@ -31,8 +31,10 @@ export const VOICE_AUDIO_TYPES = [
 export const VoiceAudioType = z.enum(VOICE_AUDIO_TYPES);
 export type VoiceAudioType = z.infer<typeof VoiceAudioType>;
 
-/** Version of the voice processing notice the candidate accepts. */
-export const VOICE_CONSENT_VERSION = 'voice-2026-09';
+/** Interview modes answered by speaking (the voice pipeline); VIDEO adds the camera. */
+export const SPOKEN_MODES = ['VOICE', 'VIDEO'] as const;
+export const isSpokenMode = (mode: string): mode is (typeof SPOKEN_MODES)[number] =>
+  (SPOKEN_MODES as readonly string[]).includes(mode);
 
 // ---- Device check ---------------------------------------------------------------------
 
@@ -52,6 +54,10 @@ export const DeviceCheckBody = z.object({
   /** The server's speech services, as reported by /voice/health. */
   speechService: DeviceCheckStatus,
   mimeType: z.string().trim().max(100).nullable(),
+  /** Video interviews: camera permission and a live picture. Required for VIDEO. */
+  camera: DeviceCheckStatus.nullable().default(null),
+  /** Video interviews: the MediaRecorder video format chosen. */
+  videoMimeType: z.string().trim().max(100).nullable().default(null),
   rttMs: z.number().int().min(0).max(60_000).nullable(),
   /** Browser name and version, for support (no fingerprinting detail). */
   browser: z.string().trim().max(120).nullable(),
@@ -65,21 +71,23 @@ export const DeviceCheckResult = DeviceCheckBody.extend({
 });
 export type DeviceCheckResult = z.infer<typeof DeviceCheckResult>;
 
-/** Required checks: without them a spoken interview cannot work. */
-export const deviceCheckPassed = (r: Pick<DeviceCheckBody, 'microphone' | 'recorder'>) =>
-  r.microphone !== 'FAIL' && r.recorder !== 'FAIL';
+/** Required checks: without them a spoken interview cannot work (VIDEO also needs the camera). */
+export const deviceCheckPassed = (
+  r: Pick<DeviceCheckBody, 'microphone' | 'recorder'> & { camera?: DeviceCheckStatus | null },
+  mode: 'VOICE' | 'VIDEO' = 'VOICE',
+) =>
+  r.microphone !== 'FAIL' &&
+  r.recorder !== 'FAIL' &&
+  (mode !== 'VIDEO' || (r.camera != null && r.camera !== 'FAIL'));
 
-export const VoiceConsentBody = z.object({
-  accepted: z.literal(true),
-  version: z.literal(VOICE_CONSENT_VERSION),
-});
-export type VoiceConsentBody = z.infer<typeof VoiceConsentBody>;
-
-/** What a voice interview still needs before it can start. */
+/** What a voice or video interview still needs before it can start. */
 export const VoiceReadiness = z.object({
   deviceCheck: DeviceCheckResult.nullable(),
-  consentAt: z.iso.datetime().nullable(),
-  /** A recent passing device check and consent are both in place. */
+  /** Every consent the interview asks for has a decision, and the required ones are accepted. */
+  consentsComplete: z.boolean(),
+  /** The camera will be recorded (video interviews with recording on and consented). */
+  recording: z.boolean(),
+  /** A recent passing device check and complete consents. */
   ready: z.boolean(),
 });
 export type VoiceReadiness = z.infer<typeof VoiceReadiness>;
@@ -131,14 +139,15 @@ export const ModeSwitchReason = z.enum([
 export type ModeSwitchReason = z.infer<typeof ModeSwitchReason>;
 
 export const SwitchModeBody = z.object({
-  mode: z.enum(['TEXT', 'VOICE']),
+  /** TEXT, or back to the interview's own spoken mode. */
+  mode: z.enum(['TEXT', 'VOICE', 'VIDEO']),
   reason: ModeSwitchReason,
 });
 export type SwitchModeBody = z.infer<typeof SwitchModeBody>;
 
 /** `interview:mode` */
 export const ModeChangedEvent = z.object({
-  mode: z.enum(['TEXT', 'VOICE']),
+  mode: z.enum(['TEXT', 'VOICE', 'VIDEO']),
   reason: ModeSwitchReason,
 });
 export type ModeChangedEvent = z.infer<typeof ModeChangedEvent>;

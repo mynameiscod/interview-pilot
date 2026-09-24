@@ -7,6 +7,8 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
+import { ConsentModel, ConsentTextModel } from './models/consent.js';
+import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
   CouponModel,
   CouponRedemptionModel,
@@ -70,6 +72,10 @@ const MODELS = [
   PurchaseModel,
   PaymentModel,
   WebhookEventModel,
+  ConsentTextModel,
+  ConsentModel,
+  MediaAssetModel,
+  IntegrityEventModel,
 ];
 
 /**

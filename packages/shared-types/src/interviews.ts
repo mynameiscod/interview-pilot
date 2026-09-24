@@ -113,6 +113,8 @@ export const InterviewSummary = z.object({
   credit: InterviewCreditStatus,
   /** Voice interviews: device check and consent (null for text). */
   voice: VoiceReadiness.nullable(),
+  /** Consents the interview asks for that still need a decision (any mode). */
+  consentsPending: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

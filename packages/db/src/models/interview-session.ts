@@ -1,11 +1,13 @@
 import {
   AnalysisFailureCode,
+  ConsentType,
   InterviewLanguagePreference,
   InterviewMode,
   InterviewState,
   type RoleAnalysis,
 } from '@cbi/shared-types';
 import type {
+  ConsentType as ConsentTypeT,
   DeviceCheckBody,
   ProcessingStage,
   ProcessingStatus,
@@ -91,34 +93,41 @@ export interface InterviewSessionRecord {
   processing: SessionProcessingRecord | null;
 
   // ---- Voice (Phase 7) ----
-  /** Set once the interview is configured for voice; null for text-only interviews. */
+  /** Set once the interview is configured for voice or video; null for text-only interviews. */
   voice: SessionVoiceRecord | null;
+  /** The latest decision per consent type for this interview (full history in `consents`). */
+  consents: SessionConsentRecord[];
+  /** Video recording, decided at start from the template policy and the RECORDING consent. */
+  recording: { enabled: boolean } | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
+export interface SessionConsentRecord {
+  type: ConsentTypeT;
+  consentTextId: Types.ObjectId;
+  version: number;
+  accepted: boolean;
+  at: Date;
+}
+
 export interface SessionVoiceRecord {
+  /** The spoken mode the interview was set up for (switching back from text returns to it). */
+  spokenMode: 'VOICE' | 'VIDEO' | null;
   deviceCheck: (DeviceCheckBody & { at: Date; passed: boolean }) | null;
-  consent: { version: string; at: Date } | null;
   /** Switches between voice and text during the interview. */
-  modeHistory: { mode: 'TEXT' | 'VOICE'; at: Date; reason: string }[];
+  modeHistory: { mode: 'TEXT' | 'VOICE' | 'VIDEO'; at: Date; reason: string }[];
 }
 
 const voiceSchema = new Schema<SessionVoiceRecord>(
   {
+    spokenMode: { type: String, enum: ['VOICE', 'VIDEO', null], default: null },
     deviceCheck: { type: Schema.Types.Mixed, default: null },
-    consent: {
-      type: new Schema(
-        { version: { type: String, required: true }, at: { type: Date, required: true } },
-        { _id: false },
-      ),
-      default: null,
-    },
     modeHistory: {
       type: [
         new Schema(
           {
-            mode: { type: String, enum: ['TEXT', 'VOICE'], required: true },
+            mode: { type: String, enum: ['TEXT', 'VOICE', 'VIDEO'], required: true },
             at: { type: Date, required: true },
             reason: { type: String, required: true },
           },
@@ -211,6 +220,25 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
     pausedAt: { type: Date, default: null },
     processing: { type: Schema.Types.Mixed, default: null },
     voice: { type: voiceSchema, default: null },
+    consents: {
+      type: [
+        new Schema(
+          {
+            type: { type: String, enum: ConsentType.options, required: true },
+            consentTextId: { type: Schema.Types.ObjectId, ref: 'ConsentText', required: true },
+            version: { type: Number, required: true },
+            accepted: { type: Boolean, required: true },
+            at: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    recording: {
+      type: new Schema({ enabled: { type: Boolean, required: true } }, { _id: false }),
+      default: null,
+    },
   },
   { timestamps: true, collection: 'interviewSessions', minimize: false },
 );

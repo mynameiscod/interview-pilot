@@ -84,6 +84,10 @@ export const InterviewSnapshot = z.object({
   mode: InterviewMode,
   /** The interview was set up for voice, so it can switch between voice and text. */
   voiceEnabled: z.boolean(),
+  /** The camera is being recorded (video interviews that allow it, with consent). */
+  recording: z.boolean(),
+  /** Browser integrity observations are noted (the template tracks them). */
+  integrityTracking: z.boolean(),
   language: InterviewLanguagePreference,
   title: z.string(),
   rounds: z.array(LiveRound),
@@ -120,6 +124,8 @@ export const RtEvent = {
   MODE_CHANGED: 'interview:mode',
   /** Speech recognition or synthesis is unavailable; the room offers text. */
   DEGRADED: 'interview:degraded',
+  /** Client → server: a browser integrity observation (tab hidden, paste …). */
+  INTEGRITY: 'integrity:event',
   DRAINING: 'server:draining',
 } as const;
 
