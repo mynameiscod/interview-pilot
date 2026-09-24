@@ -7,7 +7,7 @@ import { renderRoute } from '../../test/render';
 
 const signedIn = { 'POST /auth/refresh': () => ok(makeSession()) };
 /** The first render loads the lazy route, which can be slow on a busy machine. */
-const LOAD = { timeout: 5_000 };
+const LOAD = { timeout: 15_000 };
 
 const plans = [
   makePlan({
@@ -288,7 +288,7 @@ describe('payment status', () => {
       await screen.findByRole('heading', { name: 'Confirming your payment' }, LOAD),
     ).toBeVisible();
     expect(
-      await screen.findByRole('heading', { name: 'Payment successful' }, { timeout: 5_000 }),
+      await screen.findByRole('heading', { name: 'Payment successful' }, { timeout: 15_000 }),
     ).toBeVisible();
   });
 

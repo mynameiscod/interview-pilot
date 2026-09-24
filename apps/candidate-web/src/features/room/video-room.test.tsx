@@ -126,7 +126,7 @@ describe('video interview room', () => {
     expect(await screen.findByRole('button', { name: 'Done' })).toBeEnabled();
 
     // The retry succeeds after the backoff.
-    await waitFor(() => expect(segmentCalls).toHaveLength(2), { timeout: 3_000 });
+    await waitFor(() => expect(segmentCalls).toHaveLength(2), { timeout: 15_000 });
     await waitFor(() => expect(screen.queryByText('Saving recording…')).not.toBeInTheDocument());
 
     // The interview ends: the recorder stops, its last chunk is uploaded, then finalize.

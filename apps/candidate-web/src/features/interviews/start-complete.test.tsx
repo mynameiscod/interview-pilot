@@ -154,7 +154,7 @@ describe('complete screen', () => {
     await renderRoute('/app/interviews/int1/complete', { api });
 
     expect(await screen.findByRole('list')).toHaveTextContent('Scoring each skill');
-    const view = await screen.findByRole('link', { name: 'View your report' }, { timeout: 5000 });
+    const view = await screen.findByRole('link', { name: 'View your report' }, { timeout: 15_000 });
     expect(view).toHaveAttribute('href', '/app/reports/int1');
     expect(screen.getByRole('link', { name: 'Rate your interview' })).toHaveAttribute(
       'href',

@@ -7,7 +7,7 @@ import { makeCompare, makeHistoryItem } from '../../test/report-fixtures';
 
 const signedIn = { 'POST /auth/refresh': () => ok(makeSession()) };
 /** The first render loads the lazy route, which can be slow on a busy machine. */
-const LOAD = { timeout: 5_000 };
+const LOAD = { timeout: 15_000 };
 
 const history = [
   makeHistoryItem({

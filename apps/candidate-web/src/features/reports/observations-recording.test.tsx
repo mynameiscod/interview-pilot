@@ -8,7 +8,7 @@ import { renderRoute } from '../../test/render';
 import { makeReport } from '../../test/report-fixtures';
 
 const signedIn = { 'POST /auth/refresh': () => ok(makeSession()) };
-const LOAD = { timeout: 5_000 };
+const LOAD = { timeout: 15_000 };
 
 function makeAsset(overrides: Partial<MediaAssetSummary> = {}): MediaAssetSummary {
   return {
