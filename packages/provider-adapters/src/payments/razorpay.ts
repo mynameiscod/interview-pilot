@@ -4,7 +4,6 @@ import type {
   GatewayOrder,
   GatewayPayment,
   GatewayRefund,
-  GatewayWebhookEvent,
   PaymentGateway,
 } from './types.js';
 
