@@ -165,7 +165,11 @@ export function prefillFromTarget(
 /** Props every wizard step receives from the page. */
 export interface StepProps {
   state: WizardState;
-  update: (patch: Partial<WizardState>) => void;
+  /**
+   * Merges a patch. Pass a function to compute it from the latest state (for
+   * effects that must not overwrite changes made since they were scheduled).
+   */
+  update: (patch: Partial<WizardState> | ((s: WizardState) => Partial<WizardState>)) => void;
   onBack: () => void;
   onNext: () => void;
 }

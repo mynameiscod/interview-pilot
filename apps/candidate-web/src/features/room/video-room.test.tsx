@@ -249,7 +249,8 @@ describe('session observations', () => {
 
     setVisibility('hidden');
     setVisibility('visible');
-    fireEvent.paste(screen.getByLabelText('Your answer'), {
+    // The answer box appears once the question has been delivered (slower on a loaded machine).
+    fireEvent.paste(await screen.findByLabelText('Your answer'), {
       clipboardData: { getData: () => 'pasted' },
     });
     expect(sockets.last.sent('integrity:event')).toEqual([]);

@@ -100,7 +100,8 @@ export function NewInterviewPage() {
     headingRef.current?.focus();
   }, [state.step]);
 
-  const update = (patch: Partial<WizardState>) => setState((s) => ({ ...s, ...patch }));
+  const update = (patch: Partial<WizardState> | ((s: WizardState) => Partial<WizardState>)) =>
+    setState((s) => ({ ...s, ...(typeof patch === 'function' ? patch(s) : patch) }));
   const go = (step: number) => update({ step });
   const stepKey = WIZARD_STEPS[state.step] ?? 'start';
   const common = {

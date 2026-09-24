@@ -49,11 +49,16 @@ export function TargetStep({ state, update, onBack, onSubmitted }: Props) {
     if (!chosen && loaded.extraction.status !== 'READY' && loaded.extraction.status !== 'FAILED')
       return;
     const found = targetChoices(loaded);
-    update({
-      prefilledTargetId: loaded.id,
-      company: state.company ?? found.company,
-      role: state.role ?? found.role,
-    });
+    // Computed from the latest state: a company or role chosen while this effect was pending wins.
+    update((s) =>
+      s.prefilledTargetId === loaded.id
+        ? {}
+        : {
+            prefilledTargetId: loaded.id,
+            company: s.company ?? found.company,
+            role: s.role ?? found.role,
+          },
+    );
   }, [loaded, state.prefilledTargetId, state.company, state.role, update]);
   const resumeName = resumes.data?.find((r) => r.id === state.resumeId)?.originalName;
 
