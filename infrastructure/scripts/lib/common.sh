@@ -16,6 +16,8 @@ COMPOSE_FILE_PATH="${COMPOSE_FILE_PATH:-$APP_DIR/docker-compose.production.yml}"
 STATE_DIR="${STATE_DIR:-$CBI_HOME/state}"
 STATE_FILE="$STATE_DIR/deploy.state"
 COMPOSE_ENV_FILE="$STATE_DIR/compose.env"
+# Optional per-host resource sizing (KEY=value lines), merged into compose.env.
+SIZING_FILE="${SIZING_FILE:-$CBI_HOME/sizing.env}"
 HISTORY_FILE="$STATE_DIR/history.log"
 NGINX_STATE_DIR="$CBI_HOME/nginx"
 WWW_DIR="$CBI_HOME/www"
@@ -86,7 +88,16 @@ load_state() {
     . "$STATE_FILE"
   fi
   IMAGE_REGISTRY="${IMAGE_REGISTRY:-$DEFAULT_IMAGE_REGISTRY}"
-  WORKER_REPLICAS="${WORKER_REPLICAS:-2}"
+  # The host's sizing file decides the worker count when it sets one.
+  local sized
+  sized="$(sizing_value WORKER_REPLICAS)"
+  WORKER_REPLICAS="${sized:-${WORKER_REPLICAS:-2}}"
+}
+
+# Prints KEY's value from the sizing file (empty when unset). Plain KEY=value lines only.
+sizing_value() {
+  [ -f "$SIZING_FILE" ] || return 0
+  sed -n "s/^$1=\([A-Za-z0-9.]*\)\s*\$/\1/p" "$SIZING_FILE" | tail -n 1
 }
 
 write_state() {
@@ -124,6 +135,10 @@ write_compose_env() {
     echo "API_GREEN_TAG=$API_GREEN_TAG"
     echo "WORKER_TAG=$WORKER_TAG"
     echo "WORKER_REPLICAS=$WORKER_REPLICAS"
+    if [ -f "$SIZING_FILE" ]; then
+      # Resource limits only: KEY=value with simple values; WORKER_REPLICAS is set above.
+      grep -E '^[A-Z][A-Z0-9_]*_(CPUS|MEM|MEM_RESERVED|GB|MAXMEMORY)=[A-Za-z0-9.]+$' "$SIZING_FILE" || true
+    fi
   } >"$tmp"
   mv -f "$tmp" "$COMPOSE_ENV_FILE"
 }

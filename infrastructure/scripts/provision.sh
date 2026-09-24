@@ -223,6 +223,11 @@ root hard nofile 1048576
 EOF
 
 # 8. fail2ban -------------------------------------------------------------------------------------------------
+# fail2ban refuses to start when a jail matches no log file, which would also leave the
+# sshd jail down. Before the first deploy there are no container logs, so the NGINX jail
+# also watches an always-present empty file.
+touch /var/log/cbi-nginx-placeholder.log
+chmod 640 /var/log/cbi-nginx-placeholder.log
 cat >/etc/fail2ban/jail.d/cbi.local <<'EOF'
 # Managed by infrastructure/scripts/provision.sh
 [DEFAULT]
@@ -241,6 +246,7 @@ backend = systemd
 [nginx-limit-req]
 enabled = true
 logpath = /var/lib/docker/containers/*/*-json.log
+          /var/log/cbi-nginx-placeholder.log
 filter = nginx-limit-req
 maxretry = 20
 findtime = 5m
@@ -249,6 +255,7 @@ banaction = iptables-multiport[chain="DOCKER-USER", port="http,https", protocol=
 EOF
 systemctl enable fail2ban
 systemctl restart fail2ban
+systemctl is-active --quiet fail2ban || die "fail2ban did not start: journalctl -u fail2ban"
 
 # 9. Unattended security upgrades (no automatic reboot: schedule reboots in a window) --------------------
 cat >/etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
