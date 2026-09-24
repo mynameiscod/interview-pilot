@@ -16,10 +16,12 @@ import {
   processResumeExtract,
   type DocumentProcessorDeps,
 } from './processors/documents.js';
+import { sweepLiveSessions } from './processors/live-sweep.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
+export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -27,6 +29,8 @@ export interface WorkerRuntimeOptions {
   heartbeatIntervalMs: number;
   /** AI provider health rollup interval; omit to disable (it needs MongoDB). */
   providerHealthIntervalMs?: number;
+  /** Live interview timeouts (disconnect, pause, expiry); omit to disable. */
+  liveSweepIntervalMs?: number;
   /** Connection dedicated to BullMQ (maxRetriesPerRequest: null). */
   queueConnection: Redis;
   /** Connection used by processors for ordinary commands. */
@@ -75,6 +79,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.liveSweepIntervalMs) {
+    await systemQueue.upsertJobScheduler(
+      LIVE_SWEEP_JOB,
+      { every: opts.liveSweepIntervalMs },
+      { name: LIVE_SWEEP_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -91,6 +103,13 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
               },
               opts.heartbeatIntervalMs,
             );
+            return;
+          }
+          case LIVE_SWEEP_JOB: {
+            const swept = await sweepLiveSessions({ logger: opts.logger });
+            if (Object.values(swept).some((n) => n > 0)) {
+              opts.logger.info(swept, 'live sessions swept');
+            }
             return;
           }
           case PROVIDER_HEALTH_JOB: {

@@ -39,6 +39,7 @@ async function main(): Promise<void> {
     version: env.APP_VERSION,
     heartbeatIntervalMs: env.WORKER_HEARTBEAT_INTERVAL_MS,
     providerHealthIntervalMs: env.WORKER_PROVIDER_HEALTH_INTERVAL_MS,
+    liveSweepIntervalMs: env.WORKER_LIVE_SWEEP_INTERVAL_MS,
     queueConnection,
     redis,
     logger,

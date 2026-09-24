@@ -23,6 +23,7 @@
     "@cbi/config": "workspace:*",
     "@cbi/db": "workspace:*",
     "@cbi/documents": "workspace:*",
+    "@cbi/interview-engine": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
     "@cbi/shared-types": "workspace:*",
     "bullmq": "6.3.8",

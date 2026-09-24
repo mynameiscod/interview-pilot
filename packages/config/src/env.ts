@@ -256,6 +256,8 @@ export const workerEnvSchema = baseEnvSchema
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
     /** How often AI usage is rolled up into providerHealth. */
     WORKER_PROVIDER_HEALTH_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+    /** How often live interview timeouts (disconnect, pause, expiry) are checked. */
+    WORKER_LIVE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(5_000).max(120_000).default(15_000),
     /** Parallel document jobs (parsing is CPU- and memory-heavy). */
     WORKER_DOCUMENT_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
     WORKER_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(4),
