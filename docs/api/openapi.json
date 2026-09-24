@@ -19918,6 +19918,609 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "Job targets"
+        ],
+        "summary": "Set the company and role of a job target (omitted fields are cleared)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "companyId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 64
+                  },
+                  "companyName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 120
+                  },
+                  "roleId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 64
+                  },
+                  "roleTitle": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "PASTE",
+                            "UPLOAD",
+                            "URL",
+                            "ROLE_ONLY"
+                          ]
+                        },
+                        "url": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "originalName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "extraction": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "PENDING",
+                                "PROCESSING",
+                                "READY",
+                                "FAILED"
+                              ]
+                            },
+                            "errorCode": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "UNSUPPORTED_TYPE",
+                                "TOO_LARGE",
+                                "CORRUPT",
+                                "ENCRYPTED",
+                                "NO_TEXT",
+                                "TOO_MANY_PAGES",
+                                "URL_BLOCKED",
+                                "FETCH_FAILED",
+                                "NOT_READABLE",
+                                "INTERNAL",
+                                null
+                              ]
+                            },
+                            "warnings": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "TEXT_TRUNCATED",
+                                  "OCR_NEEDED",
+                                  "STRUCTURE_UNAVAILABLE"
+                                ]
+                              }
+                            },
+                            "parser": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ocrUsed": {
+                              "type": "boolean"
+                            },
+                            "charCount": {
+                              "type": "integer"
+                            },
+                            "completedAt": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "errorCode",
+                            "warnings",
+                            "parser",
+                            "ocrUsed",
+                            "charCount",
+                            "completedAt"
+                          ]
+                        },
+                        "structured": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "title": {
+                              "type": "string",
+                              "maxLength": 160
+                            },
+                            "seniority": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "INTERN",
+                                "JUNIOR",
+                                "MID",
+                                "SENIOR",
+                                "LEAD",
+                                null
+                              ]
+                            },
+                            "companyName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 120
+                            },
+                            "location": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 120
+                            },
+                            "employmentType": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 60
+                            },
+                            "domain": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 120
+                            },
+                            "experienceYears": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "min": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "maximum": 40
+                                },
+                                "max": {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "maximum": 40
+                                }
+                              },
+                              "required": [
+                                "min",
+                                "max"
+                              ]
+                            },
+                            "responsibilities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              "maxItems": 25
+                            },
+                            "skills": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "maxLength": 80
+                                  },
+                                  "importance": {
+                                    "type": "string",
+                                    "enum": [
+                                      "MUST",
+                                      "NICE"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "importance"
+                                ]
+                              },
+                              "maxItems": 40
+                            },
+                            "qualifications": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 300
+                              },
+                              "maxItems": 15
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "seniority",
+                            "companyName",
+                            "location",
+                            "employmentType",
+                            "domain",
+                            "experienceYears",
+                            "responsibilities",
+                            "skills",
+                            "qualifications"
+                          ]
+                        },
+                        "company": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ]
+                        },
+                        "companyName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "role": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title"
+                          ]
+                        },
+                        "roleTitle": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "source",
+                        "url",
+                        "originalName",
+                        "extraction",
+                        "structured",
+                        "company",
+                        "companyName",
+                        "role",
+                        "roleTitle",
+                        "createdAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/jobs/{id}/status": {

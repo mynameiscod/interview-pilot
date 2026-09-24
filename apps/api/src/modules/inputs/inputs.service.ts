@@ -19,6 +19,7 @@ import {
   type Extraction,
   type JobTargetSummary,
   type ResumeSummary,
+  type UpdateJobTargetBody,
   type UploadJobTargetFields,
 } from '@cbi/shared-types';
 import type { AuditService } from '../../lib/audit.js';
@@ -271,6 +272,25 @@ export function createInputsService({ storage, jobs, audit, logger }: Deps) {
       });
       await enqueue('jobTarget', String(id), () => jobs.extractJobTarget(String(id)));
       return jobTargetSummary(target.toObject());
+    },
+
+    async updateJobTarget(userId: string, id: string, body: UpdateJobTargetBody) {
+      const target = await JobTargetModel.findOne(
+        { _id: objectId(id, 'Job target'), userId },
+        { source: 1 },
+      ).lean();
+      if (!target) throw AppError.notFound('Job target not found');
+      const refs = await resolveTarget(body);
+      if (target.source === 'ROLE_ONLY' && !refs.roleId && !refs.roleTitle) {
+        throw AppError.validation('Choose a role or type a role title');
+      }
+      const updated = await JobTargetModel.findOneAndUpdate(
+        { _id: target._id, userId },
+        { $set: refs },
+        { returnDocument: 'after', projection: { rawText: 0 } },
+      ).lean();
+      // Interviews already analysed keep their snapshot; only new analyses see the change.
+      return jobTargetSummary(updated as JobTargetRecord);
     },
 
     async listJobTargets(userId: string) {

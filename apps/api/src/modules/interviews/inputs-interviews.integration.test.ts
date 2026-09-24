@@ -187,6 +187,41 @@ describe('job targets', () => {
     expect(t.jobs.jobs).toHaveLength(1);
   });
 
+  it('sets the company and role of an existing target, owner only', async () => {
+    const asha = await candidate();
+    const ravi = await candidate('ravi@example.com');
+    const created = await asha
+      .call('post', '/jobs')
+      .send({ source: 'URL', url: 'https://jobs.example.com/1' });
+    const id = created.body.data.id as string;
+    const role = await RoleModel.findOne({ slug: 'data-analyst' }).lean();
+
+    await ravi.call('patch', `/jobs/${id}`).send({ companyName: 'Evil' }).expect(404);
+    const res = await asha
+      .call('patch', `/jobs/${id}`)
+      .send({ companyName: ' Globex ', roleId: String(role!._id) })
+      .expect(200);
+    expect(res.body.data).toMatchObject({
+      companyName: 'Globex',
+      role: { id: String(role!._id), title: 'Data Analyst' },
+      roleTitle: 'Data Analyst',
+      source: 'URL',
+    });
+    // Omitted fields are cleared.
+    const cleared = await asha.call('patch', `/jobs/${id}`).send({}).expect(200);
+    expect(cleared.body.data).toMatchObject({ companyName: null, role: null, roleTitle: null });
+    await asha
+      .call('patch', `/jobs/${id}`)
+      .send({ roleId: '64b7f3c2a1b2c3d4e5f60718' })
+      .expect(400);
+  });
+
+  it('keeps a role on role-only targets', async () => {
+    const { call } = await candidate();
+    const created = await call('post', '/jobs').send({ source: 'ROLE_ONLY', roleTitle: 'SRE' });
+    await call('patch', `/jobs/${created.body.data.id}`).send({ companyName: 'Acme' }).expect(400);
+  });
+
   it('reports a queue outage instead of leaving the input silently stuck', async () => {
     const { call } = await candidate();
     t.jobs.state.fail = true;

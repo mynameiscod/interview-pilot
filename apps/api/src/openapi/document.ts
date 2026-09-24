@@ -19,6 +19,7 @@ import {
   RoleSummary,
   TemplateSummary,
   UpdateInterviewSetupBody,
+  UpdateJobTargetBody,
   UploadJobTargetFields,
   UpsertCompanyBody,
   UpsertRoleBody,
@@ -477,6 +478,12 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
   candidate('get', '/jobs/{id}', {
     tag: 'Job targets',
     summary: 'One of my job targets',
+    response: JobTargetSummary,
+  });
+  candidate('patch', '/jobs/{id}', {
+    tag: 'Job targets',
+    summary: 'Set the company and role of a job target (omitted fields are cleared)',
+    body: UpdateJobTargetBody,
     response: JobTargetSummary,
   });
   candidate('get', '/jobs/{id}/status', {

@@ -199,6 +199,14 @@ export const UploadJobTargetFields = z.object({
 });
 export type UploadJobTargetFields = z.infer<typeof UploadJobTargetFields>;
 
+/**
+ * Replaces a job target's company and role (omitted fields are cleared).
+ * Uploaded and linked JDs are created before the candidate reaches the
+ * company and role step, so the wizard sets them afterwards.
+ */
+export const UpdateJobTargetBody = z.object(targetFields);
+export type UpdateJobTargetBody = z.infer<typeof UpdateJobTargetBody>;
+
 export const JobTargetSummary = z.object({
   id: z.string(),
   source: JobTargetSource,

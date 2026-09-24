@@ -1,4 +1,4 @@
-import { CreateJobTargetBody, UploadJobTargetFields } from '@cbi/shared-types';
+import { CreateJobTargetBody, UpdateJobTargetBody, UploadJobTargetFields } from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
 import type { Container } from '../../container.js';
 import { clientContext } from '../../lib/request-context.js';
@@ -67,6 +67,12 @@ export function jobsRouter(c: Container): Router {
   });
   router.get('/:id', async (req, res) => {
     res.json({ data: await c.inputs.getJobTarget(requireAuth(req).userId, String(req.params.id)) });
+  });
+  router.patch('/:id', async (req, res) => {
+    const body = UpdateJobTargetBody.parse(req.body);
+    res.json({
+      data: await c.inputs.updateJobTarget(requireAuth(req).userId, String(req.params.id), body),
+    });
   });
   router.get('/:id/status', async (req, res) => {
     const target = await c.inputs.getJobTarget(requireAuth(req).userId, String(req.params.id));
