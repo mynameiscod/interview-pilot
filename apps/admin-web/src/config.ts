@@ -6,6 +6,11 @@ const PublicConfig = z.object({
   appEnv: AppEnv,
   /** Google OAuth web client id (public). Empty hides the Google button. */
   googleClientId: z.string().optional(),
+  /**
+   * Candidate site origin, used to show campaign invite links in full. Empty shows the path
+   * only (the admin prefixes the candidate site address themselves).
+   */
+  candidateUrl: z.url().optional(),
 });
 
 /** Public, build-time configuration. Never put secrets in VITE_* variables. */
@@ -13,6 +18,7 @@ export const config = PublicConfig.parse({
   apiUrl: import.meta.env.VITE_API_URL ?? 'http://localhost:4000',
   appEnv: import.meta.env.VITE_APP_ENV ?? 'development',
   googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || undefined,
+  candidateUrl: import.meta.env.VITE_CANDIDATE_URL?.replace(/\/+$/, '') || undefined,
 });
 
 export type AdminAppEnv = z.infer<typeof AppEnv>;

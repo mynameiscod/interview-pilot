@@ -266,6 +266,45 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'campaigns',
+                element: <RequirePermission permission="campaigns.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/campaigns/CampaignsPage'))
+                        .CampaignsPage,
+                    }),
+                  },
+                  {
+                    path: ':campaignId',
+                    lazy: async () => ({
+                      Component: (await import('../features/campaigns/CampaignDetailPage'))
+                        .CampaignDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'interviews',
+                element: <RequirePermission permission="interviews.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/review/InterviewsPage')).InterviewsPage,
+                    }),
+                  },
+                  {
+                    path: ':interviewId',
+                    lazy: async () => ({
+                      Component: (await import('../features/review/InterviewDetailPage'))
+                        .InterviewDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: '*',
                 lazy: async () => ({
                   Component: (await import('../pages/NotFoundPage')).NotFoundPage,

@@ -12,7 +12,7 @@ type NavItem = {
   icon: string;
   permission?: Permission;
   /** Consecutive items with the same group render under one labelled heading. */
-  group?: 'library' | 'payments' | 'privacy';
+  group?: 'library' | 'payments' | 'privacy' | 'review';
 };
 
 // Sections are added here as each phase delivers its admin module.
@@ -84,6 +84,20 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'bi-file-earmark-check',
     permission: 'consent.read',
     group: 'privacy',
+  },
+  {
+    to: '/campaigns',
+    key: 'nav.campaigns',
+    icon: 'bi-megaphone',
+    permission: 'campaigns.read',
+    group: 'review',
+  },
+  {
+    to: '/interviews',
+    key: 'nav.interviews',
+    icon: 'bi-clipboard-check',
+    permission: 'interviews.read',
+    group: 'review',
   },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];

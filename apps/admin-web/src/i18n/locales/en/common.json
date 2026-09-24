@@ -32,10 +32,13 @@
     "coupons": "Coupons",
     "recordings": "Recordings",
     "consentTexts": "Consent texts",
+    "campaigns": "Campaigns",
+    "interviews": "Interviews",
     "groups": {
       "library": "Library",
       "payments": "Payments",
-      "privacy": "Privacy & recordings"
+      "privacy": "Privacy & recordings",
+      "review": "Campaigns & review"
     }
   },
   "roles": {
@@ -1153,6 +1156,326 @@
         "body": "Enter a text of 20–8000 characters.",
         "reason": "Enter a reason of 3–300 characters."
       }
+    }
+  },
+  "campaigns": {
+    "status": {
+      "DRAFT": "Draft",
+      "ACTIVE": "Active",
+      "PAUSED": "Paused",
+      "CLOSED": "Closed"
+    },
+    "applicationStatus": {
+      "JOINED": "Joined",
+      "IN_PROGRESS": "In progress",
+      "COMPLETED": "Completed",
+      "DID_NOT_FINISH": "Did not finish"
+    },
+    "languages": {
+      "auto": "Automatic",
+      "en": "English",
+      "hi": "Hindi",
+      "te": "Telugu"
+    },
+    "joinedOf": "{{joined}} of {{max}}",
+    "joinedUnlimited": "{{joined}} (no limit)",
+    "noEnd": "no end date",
+    "list": {
+      "title": "Campaigns",
+      "subtitle": "Invite candidates to the same interview through one link: one role, one interview type and the same rules for everyone. Results come back here. Changes are recorded in the audit log.",
+      "new": "New campaign",
+      "listLabel": "Campaigns",
+      "joined": "Joined",
+      "window": "Open",
+      "empty": "No campaigns yet."
+    },
+    "fields": {
+      "name": "Campaign name",
+      "libraryCompany": "Library company",
+      "noLibraryCompany": "None",
+      "libraryCompanyHint": "Optional. Links the campaign to a company in the library.",
+      "companyName": "Company name",
+      "role": "Role",
+      "chooseRole": "Choose a role",
+      "roleHint": "Only active roles with an active blueprint. The blueprint version is pinned when the campaign is created.",
+      "template": "Interview type",
+      "chooseTemplate": "Choose an interview type",
+      "templateOption": "{{name}} ({{key}}, v{{version}})",
+      "templateHint": "Only active interview types. Its current version is pinned when the campaign is created.",
+      "modes": "Modes",
+      "languages": "Languages",
+      "startAt": "Opens",
+      "startAtHint": "Leave empty to start now. Candidates can join only once the campaign is activated.",
+      "endAt": "Closes",
+      "endAtHint": "Optional.",
+      "maxCandidates": "Candidate limit",
+      "maxCandidatesHint": "Optional. Empty means no limit.",
+      "sponsoredCredits": "Sponsored interviews",
+      "sponsoredCreditsHint": "Optional. Empty means candidates use their own credits.",
+      "recording": "Recording",
+      "tabSwitchTracking": "Note when candidates leave the interview tab",
+      "candidateSeesReport": "Candidates can see their own report",
+      "jobDescription": "Job description",
+      "jobDescriptionHint": "Optional. Shown to candidates and used to tailor their interview."
+    },
+    "create": {
+      "title": "New campaign",
+      "hint": "Campaigns start as drafts. Activate one when you are ready for candidates to join. The role, interview type and modes cannot change later.",
+      "submit": "Create draft campaign",
+      "libraryFailed": "Could not load the roles, interview types or companies. Refresh and try again."
+    },
+    "edit": {
+      "button": "Edit settings",
+      "title": "Edit campaign settings",
+      "hint": "The role, interview type, modes, languages and proctoring stay as they were when the campaign was created.",
+      "submit": "Save changes",
+      "saved": "Campaign settings saved."
+    },
+    "invite": {
+      "title": "Invite link for {{name}}",
+      "onceWarning": "Copy this link now. It will not be shown again: only a fingerprint of it is stored. If it is lost, rotate the link to get a new one.",
+      "link": "Invite link",
+      "path": "Invite path",
+      "pathOnly": "The candidate site address is not configured for this console (VITE_CANDIDATE_URL), so only the path is shown. Add it after the candidate site address.",
+      "copy": "Copy link",
+      "copied": "Copied to the clipboard.",
+      "copyFailed": "Could not copy automatically. Select the link and copy it yourself.",
+      "dismiss": "I have copied it",
+      "openCampaign": "Open campaign"
+    },
+    "detail": {
+      "back": "All campaigns",
+      "title": "Campaign",
+      "settings": "Settings",
+      "libraryCompany": "Linked to the library company",
+      "pinned": "Interview and usage",
+      "pinnedHint": "Every candidate gets the same pinned versions, even if the library changes later.",
+      "blueprint": "Role blueprint",
+      "notSponsored": "Not sponsored (candidates use their own credits)",
+      "sponsoredUsed": "{{used}} of {{total}} used",
+      "inviteLink": "Invite link",
+      "tokenHint": "Starts with {{hint}}…",
+      "actions": "Actions",
+      "closed": "This campaign is closed. Closing is final: it cannot be edited, reopened or given a new link."
+    },
+    "statusChange": {
+      "to": {
+        "ACTIVE": "Activate",
+        "PAUSED": "Pause",
+        "CLOSED": "Close campaign"
+      },
+      "resume": "Resume",
+      "explain": {
+        "ACTIVE": "Candidates with the invite link can join while the campaign is open.",
+        "PAUSED": "New candidates cannot join until you resume. Candidates who already joined can finish.",
+        "CLOSED": "Closing is final. Nobody can join again, and the campaign cannot be reopened or edited. Results stay available."
+      },
+      "acknowledgeClose": "I understand that closing is final and cannot be undone.",
+      "confirmClose": "Close permanently",
+      "done": "The campaign is now {{status}}."
+    },
+    "rotate": {
+      "button": "Rotate invite link",
+      "title": "Replace the invite link?",
+      "explain": "A new link is created and shown once. The current link stops working immediately, so share the new one with anyone who has not joined yet.",
+      "confirm": "Rotate link"
+    },
+    "results": {
+      "title": "Results",
+      "filtersLabel": "Result filters",
+      "statusFilter": "Status",
+      "allStatuses": "All statuses",
+      "minOverall": "Minimum overall",
+      "dimension": "Dimension",
+      "anyDimension": "Any dimension",
+      "dimensionMin": "Minimum score",
+      "caption_one": "{{count}} candidate",
+      "caption_other": "{{count}} candidates",
+      "candidate": "Candidate",
+      "joined": "Joined",
+      "completed": "Completed",
+      "overall": "Overall",
+      "band": "Band",
+      "confidence": "Confidence",
+      "review": "Review",
+      "open": "Review",
+      "openLabel": "Review the interview of {{who}}",
+      "empty": "No candidates match these filters."
+    },
+    "exports": {
+      "csv": "Download CSV",
+      "package": "Download package (ZIP)",
+      "downloading": "Downloading…",
+      "hint": "The CSV uses the filters above. The package holds every candidate with their reports. Each download is recorded in the audit log."
+    },
+    "errors": {
+      "name": "Enter a name of 3–120 characters.",
+      "companyId": "Choose a company from the list.",
+      "companyName": "Enter a company name of 2–120 characters.",
+      "roleId": "Choose a role.",
+      "templateKey": "Choose an interview type.",
+      "jobDescription": "The job description is too long.",
+      "modes": "Choose at least one mode.",
+      "languages": "Choose at least one language.",
+      "startAt": "Enter a valid opening date.",
+      "endAt": "The closing date must be after the opening date.",
+      "maxCandidates": "Enter a whole number from 1 to 100000, or leave it empty.",
+      "recording": "Choose a recording option.",
+      "tabSwitchTracking": "Choose whether to note tab switches.",
+      "candidateSeesReport": "Choose whether candidates see their report.",
+      "sponsoredCredits": "Enter a whole number from 1 to 100000, or leave it empty.",
+      "reason": "Enter a reason of 3–300 characters."
+    }
+  },
+  "review": {
+    "flagged": "Flagged",
+    "states": {
+      "DRAFT": "Draft",
+      "ROLE_ANALYSIS": "Analysing role",
+      "READY": "Ready",
+      "DEVICE_CHECK": "Device check",
+      "CONSENT_REQUIRED": "Consent required",
+      "READY_TO_START": "Ready to start",
+      "ACTIVE": "In progress",
+      "ROUND_TRANSITION": "Between rounds",
+      "RECONNECTING": "Reconnecting",
+      "PAUSED": "Paused",
+      "COMPLETING": "Completing",
+      "PROCESSING": "Processing",
+      "REPORT_READY": "Report ready",
+      "EXPIRED": "Expired",
+      "CANCELLED": "Cancelled",
+      "FAILED": "Failed"
+    },
+    "bands": {
+      "READY": "Ready",
+      "READY_WITH_GAPS": "Ready with gaps",
+      "DEVELOPING": "Developing",
+      "NOT_YET": "Not yet",
+      "INSUFFICIENT_EVIDENCE": "Insufficient evidence"
+    },
+    "confidence": {
+      "HIGH": "High",
+      "MEDIUM": "Medium",
+      "LOW": "Low"
+    },
+    "list": {
+      "title": "Interviews",
+      "subtitle": "Find interviews to review their transcript, evidence and scores. Opening an interview is recorded in the audit log.",
+      "filtersLabel": "Interview filters",
+      "stateFilter": "State",
+      "allStates": "All states",
+      "campaignFilter": "Campaign",
+      "anyCampaign": "Any campaign",
+      "flagFilter": "Flag",
+      "anyFlag": "Flagged or not",
+      "onlyFlagged": "Flagged only",
+      "notFlagged": "Not flagged",
+      "search": "Search",
+      "searchHint": "Interview id, user id or exact email.",
+      "listLabel": "Interviews",
+      "started": "Started",
+      "interview": "Interview",
+      "candidate": "Candidate",
+      "campaign": "Campaign",
+      "state": "State",
+      "flag": "Flag",
+      "empty": "No interviews match these filters.",
+      "openLabel": "Open interview {{id}}"
+    },
+    "detail": {
+      "back": "All interviews",
+      "title": "Interview",
+      "audited": "Your view of this interview is recorded in the audit log.",
+      "summary": "Details",
+      "noCampaign": "Not part of a campaign",
+      "mode": "Mode",
+      "ended": "Ended",
+      "aiCost": "AI cost",
+      "revisionN": "revision {{n}}"
+    },
+    "flag": {
+      "title": "Flag and actions",
+      "notFlagged": "Not flagged for review.",
+      "flaggedBy": "by {{by}} on {{at}}",
+      "reason": "Reason: {{reason}}",
+      "flag": "Flag for review",
+      "unflag": "Remove flag",
+      "confirmFlag": "Flag interview",
+      "confirmUnflag": "Remove flag",
+      "flaggedDone": "The interview is flagged for review.",
+      "unflaggedDone": "The flag was removed."
+    },
+    "rerun": {
+      "button": "Re-run evaluation",
+      "explain": "The evaluation is queued again for this interview, which is still processing.",
+      "confirm": "Re-run evaluation",
+      "done": "The evaluation was queued again."
+    },
+    "scores": {
+      "title": "Scores",
+      "hint": "Each review adds a new revision with its own report. Revision 0 is the AI original and is never modified.",
+      "none": "No scores yet.",
+      "original": "Revision 0 (AI original, never modified)",
+      "overallLine": "overall {{overall}}",
+      "byLine": "by {{by}} on {{at}}",
+      "reasonLine": "Reason: {{reason}}",
+      "weight": "Weight",
+      "score": "Score"
+    },
+    "revise": {
+      "button": "Revise scores",
+      "notReviewable": "Scores can be revised once the report is ready.",
+      "title": "Revise scores (from revision {{n}})",
+      "hint": "Change only the dimensions that need it. Each change needs a note explaining it. Leave a score empty to mark the dimension as not scored. Saving creates a new score and report revision; earlier revisions are kept unchanged.",
+      "dimension": "Dimension",
+      "current": "Current",
+      "newScore": "New score (0–100)",
+      "note": "Note",
+      "scoreLabel": "New score for {{name}}",
+      "noteLabel": "Note for {{name}}",
+      "noteUnchanged": "Unchanged",
+      "reason": "Reason for this revision (recorded in the audit log)",
+      "submit": "Save revision",
+      "done": "Revision {{n}} saved. A new report was generated from it.",
+      "errors": {
+        "score": "Enter a whole number from 0 to 100, or leave it empty.",
+        "note": "Explain this change in 3–500 characters.",
+        "reason": "Enter a reason of 3–500 characters.",
+        "nothingChanged": "Change at least one score."
+      }
+    },
+    "reports": {
+      "title": "Report revisions",
+      "none": "No reports yet.",
+      "revision": "Report revision",
+      "scoreRevision": "Score revision",
+      "visible": "Visible to candidate",
+      "pdf": "PDF",
+      "pdfStatus": {
+        "PENDING": "Being prepared",
+        "READY": "Ready",
+        "FAILED": "Failed"
+      },
+      "generated": "Generated"
+    },
+    "transcript": {
+      "title": "Transcript",
+      "none": "No questions were asked.",
+      "turnMeta": "#{{seq}} · {{round}}",
+      "coding": "Coding",
+      "voice": "Voice answer",
+      "noAnswer": "No answer"
+    },
+    "evidence": {
+      "title": "Evidence",
+      "none": "No evidence was recorded.",
+      "competency": "Competency",
+      "claim": "Observation",
+      "strength": "Strength",
+      "confidence": "Confidence",
+      "practical": "Practical",
+      "uncertainty": "Uncertain: {{note}}"
     }
   }
 }
