@@ -29,9 +29,12 @@
     "purchases": "Purchases",
     "plans": "Plans",
     "coupons": "Coupons",
+    "recordings": "Recordings",
+    "consentTexts": "Consent texts",
     "groups": {
       "library": "Library",
-      "payments": "Payments"
+      "payments": "Payments",
+      "privacy": "Privacy & recordings"
     }
   },
   "roles": {
@@ -919,6 +922,158 @@
         "PENDING": "Reconciled: the payment is still pending with the provider.",
         "AMOUNT_MISMATCH": "Reconciled: the amount paid does not match the order. No credits were issued; investigate before acting.",
         "UNCHANGED": "Reconciled: nothing changed; the purchase already matches the provider."
+      }
+    }
+  },
+  "privacy": {
+    "mediaStatus": {
+      "RECORDING": "Recording",
+      "COMPLETE": "Complete",
+      "PARTIAL": "Partial",
+      "FAILED": "Failed"
+    },
+    "deletionFilter": {
+      "NONE": "Stored",
+      "DELETED": "Deleted"
+    },
+    "deletion": {
+      "stored": "Stored",
+      "deleted": "Deleted",
+      "deletedAt": "Deleted {{at}}"
+    },
+    "segments": {
+      "received_one": "{{count}} segment received",
+      "received_other": "{{count}} segments received",
+      "ofExpected": "{{received}} of {{expected}}"
+    },
+    "duration": {
+      "seconds_one": "{{count}} second",
+      "seconds_other": "{{count}} seconds",
+      "minutes_one": "{{count}} minute",
+      "minutes_other": "{{count}} minutes",
+      "minutesSeconds": "{{min}} min {{sec}} s"
+    },
+    "recordings": {
+      "title": "Recordings",
+      "subtitle": "Video recordings of interviews, kept privately until their retention date. Watching or deleting a recording is recorded in the audit log.",
+      "filtersLabel": "Recording filters",
+      "statusFilter": "Status",
+      "allStatuses": "All statuses",
+      "deletionFilter": "Deletion",
+      "allDeletion": "Stored and deleted",
+      "search": "Search",
+      "searchHint": "Interview session id, user id or exact email.",
+      "apply": "Apply",
+      "listLabel": "Recordings",
+      "candidate": "Candidate",
+      "interview": "Interview",
+      "segments": "Segments",
+      "size": "Size",
+      "retention": "Kept until",
+      "deletion": "Deletion",
+      "empty": "No recordings match these filters.",
+      "openLabel": "Open recording for {{who}}"
+    },
+    "detail": {
+      "back": "All recordings",
+      "title": "Recording",
+      "summary": "Details",
+      "duration": "Duration",
+      "format": "Format",
+      "deletionReason": "Reason: {{reason}}",
+      "missingTitle": "Missing segments",
+      "missingHint": "These parts never arrived, so playback skips them. The stored parts are kept.",
+      "segmentIndex": "#{{index}}"
+    },
+    "player": {
+      "title": "Playback",
+      "logged": "Viewing is logged: each time you open the player, your name and the time are recorded in the audit log.",
+      "watch": "Watch",
+      "close": "Close player",
+      "videoLabel": "Interview recording",
+      "expires": "This link expires at {{at}}. Close and watch again for a new one.",
+      "deleted": "This recording was deleted and can no longer be watched.",
+      "nothingStored": "Nothing playable was stored for this recording."
+    },
+    "purge": {
+      "heading": "Delete recording",
+      "button": "Delete recording",
+      "title": "Delete this recording now?",
+      "explainNow": "The video is permanently deleted from storage now, before its retention date. It cannot be recovered.",
+      "explainKept": "The interview, its transcript and its report are not affected.",
+      "acknowledge": "I understand the video is permanently deleted and this cannot be undone.",
+      "confirm": "Delete permanently",
+      "done": "The recording was deleted."
+    },
+    "integrity": {
+      "title": "Browser observations",
+      "note": "These are browser events noted during the session. Most have ordinary explanations, such as a notification or a second screen. They are not part of the score.",
+      "empty": "No browser events were noted for this interview.",
+      "listLabel": "Browser observations timeline",
+      "events": {
+        "TAB_HIDDEN": "Switched to another tab",
+        "TAB_VISIBLE": "Returned to the interview tab",
+        "TAB_VISIBLE_after": "Returned to the interview tab after {{duration}}",
+        "WINDOW_BLUR": "Interview window lost focus",
+        "WINDOW_FOCUS": "Interview window focused again",
+        "WINDOW_FOCUS_after": "Interview window focused again after {{duration}}",
+        "FULLSCREEN_EXIT": "Left full screen",
+        "PASTE": "Pasted text",
+        "PASTE_count_one": "Pasted {{count}} character",
+        "PASTE_count_other": "Pasted {{count}} characters",
+        "CAMERA_LOST": "Camera stopped sending video",
+        "MICROPHONE_LOST": "Microphone stopped sending audio"
+      }
+    },
+    "consentType": {
+      "VOICE_PROCESSING": "Voice processing",
+      "RECORDING": "Recording",
+      "INTEGRITY": "Browser observations"
+    },
+    "consentTypeHint": {
+      "VOICE_PROCESSING": "Asked before voice and video interviews: answers are sent to speech providers and questions are read aloud.",
+      "RECORDING": "Asked when a template records video: the camera and microphone are recorded and kept until the retention date.",
+      "INTEGRITY": "Asked when a template notes tab switches, focus changes and pastes."
+    },
+    "locale": {
+      "en": "English",
+      "hi": "Hindi",
+      "te": "Telugu"
+    },
+    "consent": {
+      "title": "Consent texts",
+      "subtitle": "The wording candidates accept before an interview, per consent and language. Versions are immutable: editing creates a new inactive version, and activating it makes it the one candidates see. Changes are recorded in the audit log.",
+      "legalNote": "Consent texts need legal review before launch. Only activate wording that has been approved.",
+      "new": "New consent text",
+      "newTitle": "New consent text",
+      "newVersionTitle": "New version of {{type}} ({{locale}}) from v{{version}}",
+      "editorHint": "Saving creates a new inactive version. Candidates keep seeing the current version until you activate the new one.",
+      "createVersion": "Create version",
+      "type": "Consent",
+      "locale": "Language",
+      "titleField": "Title",
+      "body": "Text",
+      "reason": "Reason",
+      "groupHeading": "{{type}} · {{locale}}",
+      "current": "Current: v{{version}} · {{title}}",
+      "noCurrent": "No version is active, so candidates cannot be asked for this consent in this language.",
+      "noVersions": "No versions yet.",
+      "historyCaption": "Version history of {{type}} in {{locale}}",
+      "versionLabel": "{{type}} {{locale}} v{{version}}",
+      "viewLabel": "View {{label}}",
+      "editLabel": "New version from {{label}}",
+      "activateLabel": "Activate {{label}}",
+      "confirmActivate": "Activate {{label}}",
+      "activateExplain": "v{{version}} becomes the {{type}} text candidates see in {{locale}}, replacing the current version.",
+      "activateReaccept": "Candidates who accepted an earlier version must accept this one before their next interview starts.",
+      "created": "Created {{type}} ({{locale}}) v{{version}} (inactive). Activate it to show it to candidates.",
+      "activated": "{{type}} ({{locale}}) v{{version}} is now the current text.",
+      "errors": {
+        "type": "Choose a consent.",
+        "locale": "Choose a language.",
+        "title": "Enter a title of 3–120 characters.",
+        "body": "Enter a text of 20–8000 characters.",
+        "reason": "Enter a reason of 3–300 characters."
       }
     }
   }

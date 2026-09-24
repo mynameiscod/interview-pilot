@@ -12,7 +12,7 @@ type NavItem = {
   icon: string;
   permission?: Permission;
   /** Consecutive items with the same group render under one labelled heading. */
-  group?: 'library' | 'payments';
+  group?: 'library' | 'payments' | 'privacy';
 };
 
 // Sections are added here as each phase delivers its admin module.
@@ -63,6 +63,20 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'bi-ticket-perforated',
     permission: 'payments.read',
     group: 'payments',
+  },
+  {
+    to: '/recordings',
+    key: 'nav.recordings',
+    icon: 'bi-camera-video',
+    permission: 'media.read',
+    group: 'privacy',
+  },
+  {
+    to: '/consent-texts',
+    key: 'nav.consentTexts',
+    icon: 'bi-file-earmark-check',
+    permission: 'consent.read',
+    group: 'privacy',
   },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];

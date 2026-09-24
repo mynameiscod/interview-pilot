@@ -221,6 +221,39 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'recordings',
+                element: <RequirePermission permission="media.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/privacy/RecordingsPage'))
+                        .RecordingsPage,
+                    }),
+                  },
+                  {
+                    path: ':mediaId',
+                    lazy: async () => ({
+                      Component: (await import('../features/privacy/RecordingDetailPage'))
+                        .RecordingDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'consent-texts',
+                element: <RequirePermission permission="consent.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/privacy/ConsentTextsPage'))
+                        .ConsentTextsPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: '*',
                 lazy: async () => ({
                   Component: (await import('../pages/NotFoundPage')).NotFoundPage,
