@@ -43,6 +43,12 @@ export const routes: RouteObject[] = [
         lazy: async () => ({ Component: (await import('../pages/LandingPage')).LandingPage }),
       },
       {
+        path: 'pricing',
+        lazy: async () => ({
+          Component: (await import('../features/payments/PricingPage')).PricingPage,
+        }),
+      },
+      {
         element: <RedirectIfSignedIn />,
         children: [
           {
@@ -125,6 +131,25 @@ export const routes: RouteObject[] = [
                 path: 'compare',
                 lazy: async () => ({
                   Component: (await import('../features/reports/ComparePage')).ComparePage,
+                }),
+              },
+              {
+                path: 'checkout/:planCode',
+                lazy: async () => ({
+                  Component: (await import('../features/payments/CheckoutPage')).CheckoutPage,
+                }),
+              },
+              {
+                path: 'payments/:purchaseId',
+                lazy: async () => ({
+                  Component: (await import('../features/payments/PaymentStatusPage'))
+                    .PaymentStatusPage,
+                }),
+              },
+              {
+                path: 'purchases',
+                lazy: async () => ({
+                  Component: (await import('../features/payments/PurchasesPage')).PurchasesPage,
                 }),
               },
             ],

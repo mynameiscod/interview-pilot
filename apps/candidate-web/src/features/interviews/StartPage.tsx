@@ -31,6 +31,12 @@ function CreditSummary({ interview }: { interview: InterviewSummary }) {
         {balance.isPending && t('common.loading')}
         {balance.isError && t('start.balanceError')}
         {balance.data && t('start.balance', { count: balance.data.available })}
+        {balance.data?.available === 0 && (
+          <>
+            {' '}
+            <Link to="/pricing">{t('nav.buyCredits')}</Link>
+          </>
+        )}
       </p>
       <p className="small cb-text-secondary mb-0">{t('start.refundNote')}</p>
     </section>
@@ -43,7 +49,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<{ message: string; inProgress: boolean } | null>(null);
+  const [error, setError] = useState<{
+    message: string;
+    inProgress: boolean;
+    noCredits: boolean;
+  } | null>(null);
   const rounds = interview.analysis?.plannedRounds ?? [];
 
   async function start() {
@@ -59,6 +69,7 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       setError({
         message: startErrorMessage(t, err),
         inProgress: err instanceof ApiClientError && err.code === 'CONFLICT',
+        noCredits: err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS',
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.credits });
       setStarting(false);
@@ -109,6 +120,11 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
           {error.inProgress && (
             <Link to="/app" className="alert-link">
               {t('start.goToDashboard')}
+            </Link>
+          )}
+          {error.noCredits && (
+            <Link to="/pricing" className="alert-link">
+              {t('start.buyCredits')}
             </Link>
           )}
         </div>

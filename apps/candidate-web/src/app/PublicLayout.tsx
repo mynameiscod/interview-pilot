@@ -12,9 +12,14 @@ function AccountNav() {
   if (status === 'loading') return null;
   if (status === 'signedOut') {
     return (
-      <Link to="/login" className="btn btn-primary btn-sm">
-        {t('nav.signIn')}
-      </Link>
+      <div className="d-flex align-items-center gap-1 gap-sm-2">
+        <NavLink to="/pricing" className="btn btn-link btn-sm">
+          {t('nav.pricing')}
+        </NavLink>
+        <Link to="/login" className="btn btn-primary btn-sm">
+          {t('nav.signIn')}
+        </Link>
+      </div>
     );
   }
   return (
@@ -24,6 +29,12 @@ function AccountNav() {
       </NavLink>
       <NavLink to="/app/history" className="btn btn-link btn-sm">
         {t('nav.history')}
+      </NavLink>
+      <NavLink to="/app/purchases" className="btn btn-link btn-sm">
+        {t('nav.purchases')}
+      </NavLink>
+      <NavLink to="/pricing" className="btn btn-link btn-sm">
+        {t('nav.buyCredits')}
       </NavLink>
       <NavLink to="/app/profile" className="btn btn-link btn-sm">
         {t('nav.profile')}

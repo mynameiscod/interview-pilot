@@ -19,7 +19,10 @@
     "dashboard": "Dashboard",
     "profile": "Profile",
     "signOut": "Sign out",
-    "history": "History"
+    "history": "History",
+    "pricing": "Pricing",
+    "buyCredits": "Buy credits",
+    "purchases": "Purchases"
   },
   "landing": {
     "hero": {
@@ -506,7 +509,8 @@
     "available_other": "{{count}} credits available",
     "reserved_one": "{{count}} held by an interview in progress",
     "reserved_other": "{{count}} held by interviews in progress",
-    "note": "Each interview uses 1 credit. If you end very early, the credit is returned."
+    "note": "Each interview uses 1 credit. If you end very early, the credit is returned.",
+    "purchasesLink": "Purchase history"
   },
   "start": {
     "title": "Ready to begin?",
@@ -529,10 +533,11 @@
     "backToSetup": "Back to setup",
     "goToDashboard": "Go to your dashboard",
     "errors": {
-      "noCredits": "You have no credits left, so this interview cannot start. Buying credits is coming soon.",
+      "noCredits": "You have no credits left, so this interview cannot start. Buy credits to continue.",
       "inProgress": "You already have an interview in progress. Finish or end it before starting a new one.",
       "invalidState": "This interview cannot be started now. Check its status on your dashboard."
-    }
+    },
+    "buyCredits": "See plans and buy credits"
   },
   "room": {
     "timeLeft": "Time left",
@@ -825,5 +830,114 @@
     "invalidBody": "Choose 2 to 4 attempts at the same role from your history.",
     "loadError": "We could not load this comparison",
     "backToHistory": "Back to history"
+  },
+  "pricing": {
+    "title": "Pricing",
+    "subtitle": "Buy interview credits. Each interview uses 1 credit, and every account starts with one free credit.",
+    "featured": "Most popular",
+    "free": "Free",
+    "credits_one": "{{count}} interview credit",
+    "credits_other": "{{count}} interview credits",
+    "includedFree": "Included with every account",
+    "buy": "Buy",
+    "buyNamed": "Buy {{name}}",
+    "error": "We could not load the plans. Please refresh the page.",
+    "note": "Payments are processed securely by Razorpay. Credits are added as soon as the payment is confirmed."
+  },
+  "payments": {
+    "noExpiry": "No expiry",
+    "validFor_one": "Valid for {{count}} day",
+    "validFor_other": "Valid for {{count}} days",
+    "coupon": {
+      "rejection": {
+        "NOT_FOUND": "This coupon code is not valid.",
+        "INACTIVE": "This coupon is no longer active.",
+        "NOT_STARTED": "This coupon cannot be used yet.",
+        "EXPIRED": "This coupon has expired.",
+        "USED_UP": "This coupon has reached its usage limit.",
+        "ALREADY_USED": "You have already used this coupon.",
+        "NOT_FOR_PLAN": "This coupon does not apply to this plan."
+      }
+    },
+    "errors": {
+      "providerUnavailable": "Payments are temporarily unavailable. Please try again in a few minutes.",
+      "rateLimited": "Too many attempts. Please wait a minute and try again.",
+      "verificationFailed": "We could not verify this payment. If money was deducted, it will be confirmed or refunded automatically.",
+      "planNotFound": "This plan is not available.",
+      "notPurchasable": "This plan cannot be bought."
+    }
+  },
+  "checkout": {
+    "title": "Checkout",
+    "subtitle": "Review your order and pay securely.",
+    "summaryTitle": "Order summary",
+    "listPrice": "Price",
+    "discount": "Discount ({{code}})",
+    "total": "Total",
+    "couponTitle": "Coupon",
+    "couponLabel": "Coupon code",
+    "couponApply": "Apply",
+    "couponRemove": "Remove",
+    "couponApplied": "Coupon {{code}} applied.",
+    "payTitle": "Payment",
+    "payNote": "You will complete the payment in a secure Razorpay window. Credits are added as soon as the payment is confirmed.",
+    "pay": "Pay {{amount}}",
+    "paying": "Please wait…",
+    "loadErrorTitle": "We could not prepare this order",
+    "backToPricing": "Back to pricing",
+    "mock": {
+      "badge": "Test mode",
+      "title": "Simulated payment",
+      "body": "This environment uses a test payment gateway. No real money is charged.",
+      "success": "Simulate successful payment",
+      "failure": "Simulate failed payment"
+    },
+    "errors": {
+      "checkoutUnavailable": "The payment window could not be loaded. Check your connection and try again.",
+      "paymentFailed": "Your payment did not go through. You can try again or use another payment method."
+    }
+  },
+  "paymentStatus": {
+    "paidTitle": "Payment successful",
+    "paidBody_one": "{{count}} interview credit has been added to your account.",
+    "paidBody_other": "{{count}} interview credits have been added to your account.",
+    "failedTitle": "Payment failed",
+    "failedBody": "Your payment did not go through and no credits were added. If money was deducted, it will be refunded automatically.",
+    "retry": "Try again",
+    "expiredTitle": "This order has expired",
+    "expiredBody": "The payment was not completed in time, so this order was closed. No credits were added.",
+    "buyAgain": "Buy again",
+    "refundedTitle": "This purchase was refunded",
+    "refundedBody": "The amount has been refunded to your original payment method, and the credits from this purchase were removed.",
+    "pendingTitle": "Confirming your payment",
+    "pendingBody": "Please wait while we confirm your payment…",
+    "stillConfirming": "We are still confirming your payment. We'll add your credits as soon as the payment is confirmed; you can leave this page.",
+    "verifyFailed": "We could not verify the payment straight away. We will keep checking and add your credits once it is confirmed.",
+    "viewPurchases": "View purchase history",
+    "detailsTitle": "Purchase details",
+    "loadErrorTitle": "We could not load this purchase"
+  },
+  "purchases": {
+    "title": "Purchases",
+    "subtitle": "Your credit purchases, newest first.",
+    "error": "We could not load your purchases. Please refresh the page.",
+    "emptyTitle": "No purchases yet",
+    "emptyBody": "Every account includes one free interview credit. Buy more whenever you need them.",
+    "seePlans": "See plans",
+    "caption": "Your purchases",
+    "date": "Date",
+    "plan": "Plan",
+    "total": "Total",
+    "status": "Status",
+    "details": "Details",
+    "view": "View",
+    "viewNamed": "View {{name}} purchase from {{date}}",
+    "statuses": {
+      "CREATED": "Pending",
+      "PAID": "Paid",
+      "FAILED": "Failed",
+      "EXPIRED": "Expired",
+      "REFUNDED": "Refunded"
+    }
   }
 }

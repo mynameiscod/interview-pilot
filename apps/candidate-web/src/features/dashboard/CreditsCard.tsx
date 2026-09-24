@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 import { useCreditBalance } from '../interviews/interviews-api';
 
 /** Interview credits: what can start an interview now and what an interview in progress holds. */
@@ -26,9 +27,20 @@ export function CreditsCard() {
           {balance.data.reserved > 0 && (
             <p className="small mb-1">{t('credits.reserved', { count: balance.data.reserved })}</p>
           )}
-          <p className="small cb-text-secondary mb-0">{t('credits.note')}</p>
+          <p className="small cb-text-secondary">{t('credits.note')}</p>
         </>
       )}
+      <div className="d-flex flex-wrap gap-2">
+        <Link
+          to="/pricing"
+          className={`btn btn-sm ${balance.data?.available === 0 ? 'btn-primary' : 'btn-outline-primary'}`}
+        >
+          {t('nav.buyCredits')}
+        </Link>
+        <Link to="/app/purchases" className="btn btn-link btn-sm">
+          {t('credits.purchasesLink')}
+        </Link>
+      </div>
     </section>
   );
 }

@@ -42,7 +42,7 @@ describe('start screen', () => {
     expect(api.calls.filter((c) => c.key === 'POST /interviews/int1/start')).toHaveLength(1);
   });
 
-  it('explains when there are no credits left', async () => {
+  it('explains when there are no credits left and links to pricing', async () => {
     const api = fakeApi({
       ...signedIn,
       'GET /interviews/int1': () => ok(makeInterview()),
@@ -55,8 +55,11 @@ describe('start screen', () => {
     await user.click(await screen.findByRole('button', { name: 'Start interview' }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('You have no credits left');
-    expect(alert).toHaveTextContent('Buying credits is coming soon.');
-    expect(within(alert).queryByRole('link')).not.toBeInTheDocument();
+    expect(alert).toHaveTextContent('Buy credits to continue.');
+    expect(within(alert).getByRole('link', { name: 'See plans and buy credits' })).toHaveAttribute(
+      'href',
+      '/pricing',
+    );
     expect(router.state.location.pathname).toBe('/app/interviews/int1/start');
   });
 
