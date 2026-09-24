@@ -12,7 +12,7 @@ type NavItem = {
   icon: string;
   permission?: Permission;
   /** Consecutive items with the same group render under one labelled heading. */
-  group?: 'library';
+  group?: 'library' | 'payments';
 };
 
 // Sections are added here as each phase delivers its admin module.
@@ -42,6 +42,27 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'bi-layout-text-window',
     permission: 'library.read',
     group: 'library',
+  },
+  {
+    to: '/purchases',
+    key: 'nav.purchases',
+    icon: 'bi-receipt',
+    permission: 'payments.read',
+    group: 'payments',
+  },
+  {
+    to: '/plans',
+    key: 'nav.plans',
+    icon: 'bi-box-seam',
+    permission: 'payments.read',
+    group: 'payments',
+  },
+  {
+    to: '/coupons',
+    key: 'nav.coupons',
+    icon: 'bi-ticket-perforated',
+    permission: 'payments.read',
+    group: 'payments',
   },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];

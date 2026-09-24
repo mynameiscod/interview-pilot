@@ -178,6 +178,49 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'purchases',
+                element: <RequirePermission permission="payments.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/payments/PurchasesPage')).PurchasesPage,
+                    }),
+                  },
+                  {
+                    path: ':purchaseId',
+                    lazy: async () => ({
+                      Component: (await import('../features/payments/PurchaseDetailPage'))
+                        .PurchaseDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'plans',
+                element: <RequirePermission permission="payments.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/payments/PlansPage')).PlansPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                path: 'coupons',
+                element: <RequirePermission permission="payments.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/payments/CouponsPage')).CouponsPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: '*',
                 lazy: async () => ({
                   Component: (await import('../pages/NotFoundPage')).NotFoundPage,
