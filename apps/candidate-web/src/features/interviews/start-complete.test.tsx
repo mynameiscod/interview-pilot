@@ -1,0 +1,190 @@
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it } from 'vitest';
+import { fail, fakeApi, makeSession, ok } from '@cbi/web-core/testing';
+import { makeInterview } from '../../test/interview-fixtures';
+import { renderRoute } from '../../test/render';
+
+const signedIn = { 'POST /auth/refresh': () => ok(makeSession()) };
+const balance =
+  (available: number, reserved = 0) =>
+  () =>
+    ok({ available, reserved, lots: [] });
+
+describe('start screen', () => {
+  it('recaps the rules and credit, then starts the interview and opens the room', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview()),
+      'GET /credits/balance': balance(1),
+      'POST /interviews/int1/start': () =>
+        ok(makeInterview({ state: 'ACTIVE', credit: 'RESERVED' })),
+    });
+    const { router } = await renderRoute('/app/interviews/int1/start', { api });
+    const user = userEvent.setup();
+
+    expect(await screen.findByRole('heading', { name: 'Ready to begin?' })).toBeInTheDocument();
+    expect(screen.getByText(/This is a text interview/)).toBeInTheDocument();
+    expect(screen.getByText('It takes about 30 minutes.')).toBeInTheDocument();
+    expect(screen.getByText(/You will not see scores during the interview/)).toBeInTheDocument();
+    expect(screen.getByText(/You have 10 minutes to reconnect/)).toBeInTheDocument();
+    const rounds = screen.getByRole('heading', { name: 'Rounds' })
+      .nextElementSibling as HTMLElement;
+    expect(within(rounds).getByText('Introduction')).toBeInTheDocument();
+    expect(within(rounds).getByText('Technical')).toBeInTheDocument();
+    expect(screen.getByText('Uses 1 credit')).toBeInTheDocument();
+    expect(await screen.findByText('You have 1 credit available.')).toBeInTheDocument();
+    expect(screen.getByText(/If you end very early, the credit is returned/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start interview' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/app/interviews/int1/room'));
+    expect(api.calls.filter((c) => c.key === 'POST /interviews/int1/start')).toHaveLength(1);
+  });
+
+  it('explains when there are no credits left', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview()),
+      'GET /credits/balance': balance(0),
+      'POST /interviews/int1/start': () => fail(402, 'INSUFFICIENT_CREDITS'),
+    });
+    const { router } = await renderRoute('/app/interviews/int1/start', { api });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Start interview' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('You have no credits left');
+    expect(alert).toHaveTextContent('Buying credits is coming soon.');
+    expect(within(alert).queryByRole('link')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/app/interviews/int1/start');
+  });
+
+  it('points to the dashboard when another interview is in progress', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview()),
+      'GET /credits/balance': balance(0, 1),
+      'POST /interviews/int1/start': () => fail(409, 'CONFLICT'),
+    });
+    await renderRoute('/app/interviews/int1/start', { api });
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole('button', { name: 'Start interview' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('You already have an interview in progress');
+    expect(within(alert).getByRole('link', { name: 'Go to your dashboard' })).toHaveAttribute(
+      'href',
+      '/app',
+    );
+  });
+
+  it('goes straight to the room for an interview in progress', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PAUSED', credit: 'RESERVED' })),
+    });
+    const { router } = await renderRoute('/app/interviews/int1/start', { api });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/app/interviews/int1/room'));
+  });
+});
+
+describe('complete screen', () => {
+  it('thanks the candidate and shows that the credit was used', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'CONSUMED' })),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Thank you for completing your interview' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Your readiness report is being prepared. Reports arrive in the next update.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 credit used')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/app');
+  });
+
+  it('says the credit was returned after an early end', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'PROCESSING', credit: 'REFUNDED' })),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+    expect(
+      await screen.findByText('Your credit was returned because the interview ended early.'),
+    ).toBeInTheDocument();
+  });
+
+  it('explains an expired interview', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview({ state: 'EXPIRED', credit: 'CONSUMED' })),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+    expect(
+      await screen.findByText('This interview expired after being paused for 24 hours.'),
+    ).toBeInTheDocument();
+  });
+
+  it('apologises when the interview failed', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () =>
+        ok(
+          makeInterview({
+            state: 'FAILED',
+            credit: 'REFUNDED',
+            startedAt: '2026-09-20T10:01:00.000Z',
+          }),
+        ),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+    expect(
+      await screen.findByRole('heading', { name: 'Sorry, something went wrong' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Your credit was returned.')).toBeInTheDocument();
+  });
+});
+
+describe('dashboard credits and resume links', () => {
+  it('shows available and held credits and links each interview to the right screen', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /credits/balance': balance(2, 1),
+      'GET /interviews': () =>
+        ok([
+          makeInterview({ state: 'ACTIVE', credit: 'RESERVED' }),
+          makeInterview({ id: 'int2', title: 'Data Analyst', state: 'READY_TO_START' }),
+          makeInterview({
+            id: 'int3',
+            title: 'QA Engineer',
+            state: 'PROCESSING',
+            credit: 'CONSUMED',
+          }),
+        ]),
+    });
+    await renderRoute('/app', { api });
+
+    const credits = await screen.findByRole('region', { name: 'Credits' });
+    expect(await within(credits).findByText('2 credits available')).toBeInTheDocument();
+    expect(within(credits).getByText('1 held by an interview in progress')).toBeInTheDocument();
+
+    const recent = screen.getByRole('region', { name: 'Recent interviews' });
+    const resume = await within(recent).findByRole('link', { name: 'Resume Backend Developer' });
+    expect(resume).toHaveAttribute('href', '/app/interviews/int1/room');
+    expect(resume).toHaveTextContent('Resume');
+    expect(within(recent).getByText('In progress')).toBeInTheDocument();
+    expect(within(recent).getByRole('link', { name: 'Open Data Analyst' })).toHaveAttribute(
+      'href',
+      '/app/interviews/int2/start',
+    );
+    expect(within(recent).getByRole('link', { name: 'Open QA Engineer' })).toHaveAttribute(
+      'href',
+      '/app/interviews/int3/complete',
+    );
+  });
+});

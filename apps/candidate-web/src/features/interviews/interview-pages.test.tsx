@@ -127,7 +127,11 @@ describe('interview setup page', () => {
     expect(
       await screen.findByRole('heading', { name: 'Your interview is ready' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Starting interviews arrives soon/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Continue' })).toHaveAttribute(
+      'href',
+      '/app/interviews/int1/start',
+    );
+    expect(screen.getByRole('button', { name: 'Cancel interview' })).toBeInTheDocument();
     expect(api.calls.find((c) => c.key === 'PATCH /interviews/int1/setup')!.body).toEqual({
       mode: 'TEXT',
       language: 'hi',

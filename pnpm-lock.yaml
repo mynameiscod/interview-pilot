@@ -268,6 +268,9 @@ importers:
       react-router:
         specifier: 8.4.0
         version: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      socket.io-client:
+        specifier: 4.8.1
+        version: 4.8.1
       zod:
         specifier: 4.6.5
         version: 4.6.5

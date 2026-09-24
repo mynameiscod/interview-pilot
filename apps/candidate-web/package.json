@@ -26,6 +26,7 @@
     "react-hook-form": "7.88.0",
     "react-i18next": "17.0.15",
     "react-router": "8.4.0",
+    "socket.io-client": "4.8.1",
     "zod": "4.6.5"
   },
   "devDependencies": {

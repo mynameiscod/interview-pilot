@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router';
+import { FocusLayout } from './FocusLayout';
 import { RedirectIfSignedIn, RequireAuth, RequireOnboarded } from './guards';
 import { PublicLayout } from './PublicLayout';
 import { RouteError, RouteLoading } from './RouteStates';
@@ -8,6 +9,30 @@ import { RouteError, RouteLoading } from './RouteStates';
  * heavy features (Monaco, charts, media) stay out of the landing bundle.
  */
 export const routes: RouteObject[] = [
+  {
+    // The interview room uses a focus layout without the main navigation.
+    element: <FocusLayout />,
+    ErrorBoundary: RouteError,
+    HydrateFallback: RouteLoading,
+    children: [
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            element: <RequireOnboarded />,
+            children: [
+              {
+                path: 'app/interviews/:id/room',
+                lazy: async () => ({
+                  Component: (await import('../features/room/RoomPage')).RoomPage,
+                }),
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
   {
     element: <PublicLayout />,
     ErrorBoundary: RouteError,
@@ -70,6 +95,18 @@ export const routes: RouteObject[] = [
                 path: 'interviews/:id/setup',
                 lazy: async () => ({
                   Component: (await import('../features/interviews/SetupPage')).SetupPage,
+                }),
+              },
+              {
+                path: 'interviews/:id/start',
+                lazy: async () => ({
+                  Component: (await import('../features/interviews/StartPage')).StartPage,
+                }),
+              },
+              {
+                path: 'interviews/:id/complete',
+                lazy: async () => ({
+                  Component: (await import('../features/interviews/CompletePage')).CompletePage,
                 }),
               },
             ],

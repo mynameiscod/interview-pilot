@@ -1,6 +1,9 @@
 import type {
   CreateJobTargetBody,
+  CreditBalance,
+  CreditLedgerEntry,
   Extraction,
+  InterviewSnapshot,
   InterviewSummary,
   JobTargetSummary,
   LibrarySearchItem,
@@ -60,6 +63,19 @@ function interviewsApi(api: ApiClient) {
       api.patch<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/setup`, body),
     cancel: (id: string) =>
       api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/cancel`),
+    /** Starts a text interview (READY or READY_TO_START → ACTIVE), reserving a credit. */
+    start: (id: string) =>
+      api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/start`),
+    /** Ends an interview in progress early (→ PROCESSING). */
+    end: (id: string) =>
+      api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/end`, {
+        reason: 'CANDIDATE_ENDED',
+      }),
+    /** The same snapshot the realtime room sends on join. */
+    live: (id: string) => api.get<InterviewSnapshot>(`/interviews/${encodeURIComponent(id)}/live`),
+
+    creditBalance: () => api.get<CreditBalance>('/credits/balance'),
+    creditLedger: (limit = 20) => api.get<CreditLedgerEntry[]>(`/credits/ledger?limit=${limit}`),
   };
 }
 
@@ -78,6 +94,7 @@ export const queryKeys = {
   library: (kind: string, q: string) => ['library', kind, q] as const,
   interviews: ['interviews'] as const,
   interview: (id: string) => ['interviews', id] as const,
+  credits: ['credits', 'balance'] as const,
 };
 
 export function useResumes() {
@@ -138,7 +155,10 @@ export function useInterviews() {
   return useQuery({ queryKey: queryKeys.interviews, queryFn: api.listInterviews });
 }
 
-/** Loads an interview and keeps polling while the role analysis runs. */
+/** States the server moves on by itself; the page keeps polling while in them. */
+const TRANSIENT_STATES = new Set(['ROLE_ANALYSIS', 'COMPLETING']);
+
+/** Loads an interview and keeps polling while the role analysis (or the wrap-up) runs. */
 export function useInterview(id: string, enabled = true) {
   const api = useInterviewsApi();
   return useQuery({
@@ -146,6 +166,12 @@ export function useInterview(id: string, enabled = true) {
     queryFn: () => api.getInterview(id),
     enabled,
     refetchInterval: (q) =>
-      q.state.data?.state === 'ROLE_ANALYSIS' && !q.state.error ? POLL_INTERVAL_MS : false,
+      TRANSIENT_STATES.has(q.state.data?.state ?? '') && !q.state.error ? POLL_INTERVAL_MS : false,
   });
+}
+
+/** The candidate's credits (the one-time free credit is granted on the first read). */
+export function useCreditBalance() {
+  const api = useInterviewsApi();
+  return useQuery({ queryKey: queryKeys.credits, queryFn: api.creditBalance });
 }

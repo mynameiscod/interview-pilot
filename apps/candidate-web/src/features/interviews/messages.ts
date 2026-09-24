@@ -1,4 +1,4 @@
-import type { InterviewSummary } from '@cbi/shared-types';
+import type { InterviewState, InterviewSummary } from '@cbi/shared-types';
 import { ApiClientError, errorMessage } from '@cbi/web-core';
 import type { TFunction } from 'i18next';
 
@@ -42,10 +42,51 @@ export function inputErrorMessage(t: TFunction, err: unknown): string {
   return errorMessage(t, err);
 }
 
+/** An interview the candidate can (re)enter the room for. */
+export const LIVE_STATES: readonly InterviewState[] = [
+  'ACTIVE',
+  'ROUND_TRANSITION',
+  'RECONNECTING',
+  'PAUSED',
+];
+
+/** An interview that has ended; its outcome is shown on the complete screen. */
+export const ENDED_STATES: readonly InterviewState[] = [
+  'COMPLETING',
+  'PROCESSING',
+  'REPORT_READY',
+  'EXPIRED',
+];
+
+export const isLive = (state: InterviewState) => LIVE_STATES.includes(state);
+
+/** True when the interview ran (or was started) and is now over. */
+export const isEnded = (
+  interview: Pick<InterviewSummary, 'state'> & { startedAt?: string | null },
+) =>
+  ENDED_STATES.includes(interview.state) ||
+  (interview.state === 'FAILED' && Boolean(interview.startedAt));
+
 /** Where an interview in this state is best continued. */
-export function interviewPath(interview: Pick<InterviewSummary, 'id' | 'state'>): string {
+export function interviewPath(
+  interview: Pick<InterviewSummary, 'id' | 'state'> & { startedAt?: string | null },
+): string {
   const base = `/app/interviews/${interview.id}`;
-  return interview.state === 'READY' ? `${base}/setup` : `${base}/analysis`;
+  if (interview.state === 'READY') return `${base}/setup`;
+  if (interview.state === 'READY_TO_START') return `${base}/start`;
+  if (isLive(interview.state)) return `${base}/room`;
+  if (isEnded(interview)) return `${base}/complete`;
+  return `${base}/analysis`;
+}
+
+/** Errors from starting an interview, in the candidate's language. */
+export function startErrorMessage(t: TFunction, err: unknown): string {
+  if (err instanceof ApiClientError) {
+    if (err.code === 'INSUFFICIENT_CREDITS') return t('start.errors.noCredits');
+    if (err.code === 'CONFLICT') return t('start.errors.inProgress');
+    if (err.code === 'INVALID_STATE') return t('start.errors.invalidState');
+  }
+  return inputErrorMessage(t, err);
 }
 
 export function formatMinutes(t: TFunction, seconds: number): string {

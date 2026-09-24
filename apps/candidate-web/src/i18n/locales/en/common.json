@@ -129,7 +129,10 @@
     "recentError": "We could not load your interviews. Please refresh the page.",
     "continue": "Continue",
     "view": "View",
-    "openNamed": "Open {{title}}"
+    "openNamed": "Open {{title}}",
+    "resume": "Resume",
+    "resumeNamed": "Resume {{title}}",
+    "start": "Start"
   },
   "profile": {
     "title": "Profile",
@@ -481,8 +484,9 @@
     "backToAnalysis": "Back to the plan",
     "ready": {
       "title": "Your interview is ready",
-      "body": "Starting interviews arrives soon. We will let you know as soon as you can begin.",
-      "change": "Change settings"
+      "body": "Next, review the interview rules and start when you are ready.",
+      "change": "Change settings",
+      "continue": "Continue"
     },
     "cancel": {
       "title": "Cancel this interview",
@@ -490,6 +494,121 @@
       "action": "Cancel interview",
       "confirm": "Yes, cancel it",
       "keep": "Keep it"
+    }
+  },
+  "credits": {
+    "title": "Credits",
+    "error": "We could not load your credits. Please refresh the page.",
+    "available_one": "{{count}} credit available",
+    "available_other": "{{count}} credits available",
+    "reserved_one": "{{count}} held by an interview in progress",
+    "reserved_other": "{{count}} held by interviews in progress",
+    "note": "Each interview uses 1 credit. If you end very early, the credit is returned."
+  },
+  "start": {
+    "title": "Ready to begin?",
+    "rulesTitle": "Before you start",
+    "rules": {
+      "text": "This is a text interview: read each question and type your answer.",
+      "duration": "It takes about {{duration}}.",
+      "ownWords": "Answer in your own words, as you would in a real interview. The interviewer may ask follow-up questions.",
+      "noScores": "You will not see scores during the interview. Your readiness report comes afterwards.",
+      "connection": "If you lose connection, your progress is saved and the clock stops. You have 10 minutes to reconnect; after that the interview is paused and you can resume it within 24 hours."
+    },
+    "roundsTitle": "Rounds",
+    "creditTitle": "Credits",
+    "balance_one": "You have {{count}} credit available.",
+    "balance_other": "You have {{count}} credits available.",
+    "balanceError": "We could not load your credit balance.",
+    "refundNote": "Credits are only used if enough of the interview happens. If you end very early, the credit is returned.",
+    "action": "Start interview",
+    "starting": "Starting…",
+    "backToSetup": "Back to setup",
+    "goToDashboard": "Go to your dashboard",
+    "errors": {
+      "noCredits": "You have no credits left, so this interview cannot start. Buying credits is coming soon.",
+      "inProgress": "You already have an interview in progress. Finish or end it before starting a new one.",
+      "invalidState": "This interview cannot be started now. Check its status on your dashboard."
+    }
+  },
+  "room": {
+    "timeLeft": "Time left",
+    "clockPaused": "(paused)",
+    "timeWarning": {
+      "fiveMinutes": "5 minutes left",
+      "oneMinute": "1 minute left"
+    },
+    "connection": {
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "reconnecting": "Reconnecting…",
+      "offline": "Offline"
+    },
+    "roundsLabel": "Interview rounds",
+    "roundOf": "Round {{n}} of {{total}}:",
+    "roundDone": "completed",
+    "interviewer": "Interviewer",
+    "followUp": "Follow-up",
+    "thinking": "Preparing the next question…",
+    "waiting": "Waiting for the interviewer…",
+    "transcript_one": "Transcript ({{count}} question)",
+    "transcript_other": "Transcript ({{count}} questions)",
+    "you": "You",
+    "noAnswer": "No answer",
+    "answerLabel": "Your answer",
+    "shortcutHint": "Press Ctrl+Enter (Cmd+Enter on Mac) to send.",
+    "waitingHint": "You can answer as soon as the next question appears.",
+    "charCount_one": "{{formatted}} / {{max}} character",
+    "charCount_other": "{{formatted}} / {{max}} characters",
+    "tooLong": "Your answer is too long. Shorten it to {{max}} characters or fewer.",
+    "send": "Send answer",
+    "sending": "Sending…",
+    "sendWhenBack": "Your answer will be sent when the connection is back.",
+    "reconnectingTitle": "Reconnecting… your progress is saved",
+    "offlineTitle": "You are offline. Your progress is saved",
+    "reconnectingBody": "The interview clock is paused while you are away. You have 10 minutes to reconnect before the interview is paused.",
+    "retryIn_one": "Trying again in {{count}} second.",
+    "retryIn_other": "Trying again in {{count}} seconds.",
+    "retryingAutomatically": "Trying again automatically.",
+    "retryNow": "Try now",
+    "end": {
+      "action": "End interview",
+      "title": "End now?",
+      "body": "Unanswered questions are skipped.",
+      "confirm": "Yes, end the interview",
+      "ending": "Ending…",
+      "keep": "Keep going"
+    },
+    "problems": {
+      "stale": "The interview had already moved on, so that answer was not sent. Check the current question.",
+      "sendFailed": "We could not send your answer. Please try again.",
+      "endFailed": "We could not end the interview. Please try again."
+    },
+    "dismiss": "Dismiss",
+    "notFound": "This interview could not be found.",
+    "noScoresNote": "No scores are shown during the interview. Answer as you would in a real one."
+  },
+  "complete": {
+    "processing": {
+      "title": "Thank you for completing your interview",
+      "body": "Your readiness report is being prepared. Reports arrive in the next update."
+    },
+    "expired": {
+      "title": "This interview has expired",
+      "body": "This interview expired after being paused for 24 hours."
+    },
+    "failed": {
+      "title": "Sorry, something went wrong",
+      "body": "We are sorry: this interview could not be completed because of a problem on our side. Please start a new interview."
+    },
+    "creditTitle": "Your credit",
+    "credit": {
+      "CONSUMED_one": "{{count}} credit used",
+      "CONSUMED_other": "{{count}} credits used",
+      "REFUNDED": "Your credit was returned because the interview ended early.",
+      "refundedGeneric": "Your credit was returned.",
+      "RESERVED": "We are finalising your credit.",
+      "NONE": "No credit was used."
     }
   }
 }

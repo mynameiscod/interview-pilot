@@ -1,0 +1,308 @@
+import { ANSWER_LIMITS } from '@cbi/shared-types';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
+import { RouteLoading } from '../../app/RouteStates';
+import { queryKeys } from '../interviews/interviews-api';
+import { clearDraft, loadDraft, saveDraft } from './drafts';
+import { ConnectionPill, InterviewerPanel, RoundStepper, RoomTimer, Transcript } from './RoomParts';
+import { useInterviewRoom, type InterviewRoom } from './useInterviewRoom';
+
+/** Answer box: keeps an unsent draft per question and clears it only once the server has it. */
+function AnswerForm({ room, sessionId }: { room: InterviewRoom; sessionId: string }) {
+  const { t, i18n } = useTranslation();
+  const id = useId();
+  const question = room.question;
+  const questionId = question?.questionId ?? null;
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const text = questionId ? (drafts[questionId] ?? loadDraft(sessionId, questionId)) : '';
+  const tooLong = text.length > ANSWER_LIMITS.maxChars;
+  const canSend = Boolean(questionId) && !room.sending && text.trim().length > 0 && !tooLong;
+
+  function update(value: string) {
+    if (!questionId) return;
+    setDrafts((d) => ({ ...d, [questionId]: value }));
+    saveDraft(sessionId, questionId, value);
+  }
+
+  async function submit() {
+    if (!canSend || !questionId) return;
+    const result = await room.sendAnswer(questionId, text);
+    if (result === 'sent') {
+      clearDraft(sessionId, questionId);
+      setDrafts((d) => ({ ...d, [questionId]: '' }));
+    }
+  }
+
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void submit();
+    }
+  }
+
+  const count = new Intl.NumberFormat(i18n.resolvedLanguage).format(text.length);
+  const max = new Intl.NumberFormat(i18n.resolvedLanguage).format(ANSWER_LIMITS.maxChars);
+
+  return (
+    <form
+      noValidate
+      className="p-4 border cb-border rounded-3 bg-white"
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label htmlFor={`${id}-answer`} className="form-label fw-semibold">
+        {t('room.answerLabel')}
+      </label>
+      <textarea
+        id={`${id}-answer`}
+        className={`form-control ${tooLong ? 'is-invalid' : ''}`}
+        rows={7}
+        value={text}
+        readOnly={!questionId || room.sending}
+        aria-describedby={[question ? 'room-question-text' : null, `${id}-hint`, `${id}-count`]
+          .filter(Boolean)
+          .join(' ')}
+        aria-invalid={tooLong || undefined}
+        onChange={(e) => update(e.target.value)}
+        onKeyDown={onKeyDown}
+      />
+      <div className="d-flex flex-wrap justify-content-between gap-2 mt-1 small">
+        <span id={`${id}-hint`} className="cb-text-secondary">
+          {questionId ? t('room.shortcutHint') : t('room.waitingHint')}
+        </span>
+        <span id={`${id}-count`} className={tooLong ? 'text-danger' : 'cb-text-secondary'}>
+          {t('room.charCount', { count: text.length, formatted: count, max })}
+        </span>
+      </div>
+      {tooLong && (
+        <div className="text-danger small mt-1" role="alert">
+          {t('room.tooLong', { max })}
+        </div>
+      )}
+      <div className="d-flex flex-wrap align-items-center gap-2 mt-3">
+        <button type="submit" className="btn btn-primary" disabled={!canSend}>
+          {room.sending ? (
+            <>
+              <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+              {t('room.sending')}
+            </>
+          ) : (
+            <>
+              <i className="bi bi-send me-2" aria-hidden="true" />
+              {t('room.send')}
+            </>
+          )}
+        </button>
+        {room.sending && room.connection !== 'connected' && (
+          <span className="small cb-text-secondary">{t('room.sendWhenBack')}</span>
+        )}
+      </div>
+    </form>
+  );
+}
+
+/** Non-blocking notice while the connection is down; the interview continues when it returns. */
+function ReconnectingOverlay({ room }: { room: InterviewRoom }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="position-fixed bottom-0 start-0 end-0 p-3 d-flex justify-content-center"
+      style={{ zIndex: 1050, pointerEvents: 'none' }}
+    >
+      <section
+        className="p-3 border cb-border rounded-3 bg-white shadow-sm d-flex flex-wrap align-items-center gap-3"
+        style={{ pointerEvents: 'auto', maxWidth: '40rem' }}
+        aria-labelledby="reconnecting-title"
+      >
+        <span className="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
+        <div className="flex-grow-1">
+          <h2 id="reconnecting-title" className="h6 mb-1">
+            {room.connection === 'offline' ? t('room.offlineTitle') : t('room.reconnectingTitle')}
+          </h2>
+          <p className="small mb-0">{t('room.reconnectingBody')}</p>
+          <p className="small cb-text-secondary mb-0">
+            {room.retryInSec !== null
+              ? t('room.retryIn', { count: room.retryInSec })
+              : t('room.retryingAutomatically')}
+          </p>
+        </div>
+        <button type="button" className="btn btn-sm btn-outline-primary" onClick={room.retryNow}>
+          {t('room.retryNow')}
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function EndInterview({ room }: { room: InterviewRoom }) {
+  const { t } = useTranslation();
+  const [confirming, setConfirming] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (confirming) headingRef.current?.focus();
+  }, [confirming]);
+
+  if (!confirming) {
+    return (
+      <button
+        type="button"
+        className="btn btn-outline-danger btn-sm"
+        onClick={() => setConfirming(true)}
+      >
+        {t('room.end.action')}
+      </button>
+    );
+  }
+  return (
+    <section
+      className="p-3 border border-danger rounded-3 bg-white w-100"
+      aria-labelledby="end-confirm-title"
+    >
+      <h2 id="end-confirm-title" ref={headingRef} tabIndex={-1} className="h6">
+        {t('room.end.title')}
+      </h2>
+      <p className="small mb-2">{t('room.end.body')}</p>
+      <div className="d-flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-danger btn-sm"
+          disabled={room.ending}
+          // Ending moves the room to the complete screen (see RoomPage).
+          onClick={() => void room.end()}
+        >
+          {room.ending ? t('room.end.ending') : t('room.end.confirm')}
+        </button>
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm"
+          onClick={() => setConfirming(false)}
+        >
+          {t('room.end.keep')}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+const PROBLEM_KEYS = {
+  stale: 'room.problems.stale',
+  sendFailed: 'room.problems.sendFailed',
+  endFailed: 'room.problems.endFailed',
+} as const;
+
+export function RoomPage() {
+  const { t } = useTranslation();
+  const { id = '' } = useParams();
+  const room = useInterviewRoom(id);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+
+  const completePath = `/app/interviews/${id}/complete`;
+  const finished = room.finished;
+
+  useEffect(() => {
+    if (!finished) return;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.interview(id) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.credits });
+    void navigate(completePath, { replace: true });
+  }, [finished, completePath, id, navigate, queryClient]);
+
+  if (room.problem === 'notStarted') {
+    return <Navigate to={`/app/interviews/${id}/start`} replace />;
+  }
+  if (room.problem === 'signedOut') {
+    const next = encodeURIComponent(location.pathname);
+    return <Navigate to={`/login?next=${next}`} replace />;
+  }
+  if (room.problem === 'notFound') {
+    return (
+      <div className="container py-5" role="alert">
+        <h1 className="h3">{t('analysis.loadErrorTitle')}</h1>
+        <p className="cb-text-secondary">{t('room.notFound')}</p>
+        <Link to="/app" className="btn btn-outline-primary">
+          {t('interview.backToDashboard')}
+        </Link>
+      </div>
+    );
+  }
+  if (!room.joined) {
+    return (
+      <div className="container py-5">
+        <div className="d-flex align-items-center gap-3 mb-3">
+          <ConnectionPill status={room.connection} />
+        </div>
+        <RouteLoading />
+        {room.connection !== 'connecting' && room.connection !== 'connected' && (
+          <ReconnectingOverlay room={room} />
+        )}
+      </div>
+    );
+  }
+
+  const earlier = room.turns.filter((turn) => turn.questionId !== room.question?.questionId);
+  const problemKey =
+    room.problem && room.problem in PROBLEM_KEYS
+      ? PROBLEM_KEYS[room.problem as keyof typeof PROBLEM_KEYS]
+      : null;
+
+  return (
+    <div className="container-lg py-3">
+      <header className="d-flex flex-column gap-2 pb-3 mb-3 border-bottom cb-border">
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <h1 className="h4 mb-0 text-break">{room.title}</h1>
+          <div className="d-flex flex-wrap align-items-center gap-3">
+            <RoomTimer
+              remainingMs={room.remainingMs}
+              syncedAt={room.syncedAt}
+              running={room.clockRunning && room.connection === 'connected'}
+            />
+            <ConnectionPill status={room.connection} />
+          </div>
+        </div>
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          <RoundStepper rounds={room.rounds} current={room.roundIdx} />
+          <EndInterview room={room} />
+        </div>
+      </header>
+
+      {problemKey && (
+        <div className="alert alert-warning d-flex align-items-start gap-2" role="alert">
+          <span className="flex-grow-1">{t(problemKey)}</span>
+          <button
+            type="button"
+            className="btn-close"
+            aria-label={t('room.dismiss')}
+            onClick={room.dismissProblem}
+          />
+        </div>
+      )}
+
+      <div className="row g-4">
+        <div className="col-lg-5 d-flex flex-column gap-4">
+          <InterviewerPanel
+            question={room.question}
+            thinking={room.thinking}
+            questionTextId="room-question-text"
+          />
+          <p className="small cb-text-secondary mb-0">
+            <i className="bi bi-shield-check me-1" aria-hidden="true" />
+            {t('room.noScoresNote')}
+          </p>
+        </div>
+        <div className="col-lg-7 d-flex flex-column gap-4">
+          <AnswerForm room={room} sessionId={id} />
+          <Transcript turns={earlier} />
+        </div>
+      </div>
+
+      {room.connection !== 'connected' && <ReconnectingOverlay room={room} />}
+    </div>
+  );
+}

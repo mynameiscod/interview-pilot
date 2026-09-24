@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
-import { formatMinutes, inputErrorMessage } from './messages';
+import { formatMinutes, inputErrorMessage, interviewPath, isEnded, isLive } from './messages';
 
 const MODE_ICON = { TEXT: 'bi-keyboard', VOICE: 'bi-mic', VIDEO: 'bi-camera-video' } as const;
 
@@ -22,14 +22,11 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
   const id = useId();
   const api = useInterviewsApi();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const [mode, setMode] = useState<InterviewMode>(interview.mode);
   const [language, setLanguage] = useState(interview.language);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
 
   const duration = interview.analysis?.totalDurationSec ?? interview.template.totalDurationSec;
 
@@ -45,21 +42,6 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
       setError(inputErrorMessage(t, err));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function cancelInterview() {
-    setCancelling(true);
-    setError(null);
-    try {
-      const updated = await api.cancel(interview.id);
-      queryClient.setQueryData(queryKeys.interview(interview.id), updated);
-      await queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
-      await navigate('/app', { replace: true });
-    } catch (err) {
-      setError(inputErrorMessage(t, err));
-      setCancelling(false);
-      setConfirmCancel(false);
     }
   }
 
@@ -82,8 +64,8 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
           <dd className="col-sm-8">{formatMinutes(t, duration)}</dd>
         </dl>
         <div className="d-flex flex-wrap gap-2">
-          <Link to="/app" className="btn btn-primary">
-            {t('interview.backToDashboard')}
+          <Link to={`/app/interviews/${interview.id}/start`} className="btn btn-primary btn-lg">
+            {t('setup.ready.continue')}
           </Link>
           <button
             type="button"
@@ -200,44 +182,75 @@ function SetupForm({ interview }: { interview: InterviewSummary }) {
           </Link>
         </div>
       </div>
+    </form>
+  );
+}
 
-      <section
-        className="p-4 border cb-border rounded-3 bg-white mt-4"
-        aria-labelledby={`${id}-cancel`}
-      >
-        <h2 id={`${id}-cancel`} className="h6">
-          {t('setup.cancel.title')}
-        </h2>
-        <p className="small cb-text-secondary">{t('setup.cancel.body')}</p>
-        {confirmCancel ? (
-          <div className="d-flex flex-wrap gap-2" role="group" aria-label={t('setup.cancel.title')}>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={cancelling}
-              onClick={() => void cancelInterview()}
-            >
-              {t('setup.cancel.confirm')}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => setConfirmCancel(false)}
-            >
-              {t('setup.cancel.keep')}
-            </button>
-          </div>
-        ) : (
+/** Cancelling (with an in-page confirmation) stays available after the settings are saved. */
+function CancelInterview({ interview }: { interview: InterviewSummary }) {
+  const { t } = useTranslation();
+  const id = useId();
+  const api = useInterviewsApi();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function cancelInterview() {
+    setCancelling(true);
+    setError(null);
+    try {
+      const updated = await api.cancel(interview.id);
+      queryClient.setQueryData(queryKeys.interview(interview.id), updated);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
+      await navigate('/app', { replace: true });
+    } catch (err) {
+      setError(inputErrorMessage(t, err));
+      setCancelling(false);
+      setConfirmCancel(false);
+    }
+  }
+
+  return (
+    <section className="p-4 border cb-border rounded-3 bg-white mt-4" aria-labelledby={id}>
+      <h2 id={id} className="h6">
+        {t('setup.cancel.title')}
+      </h2>
+      <p className="small cb-text-secondary">{t('setup.cancel.body')}</p>
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+        </div>
+      )}
+      {confirmCancel ? (
+        <div className="d-flex flex-wrap gap-2" role="group" aria-label={t('setup.cancel.title')}>
           <button
             type="button"
-            className="btn btn-outline-danger"
-            onClick={() => setConfirmCancel(true)}
+            className="btn btn-danger"
+            disabled={cancelling}
+            onClick={() => void cancelInterview()}
           >
-            {t('setup.cancel.action')}
+            {t('setup.cancel.confirm')}
           </button>
-        )}
-      </section>
-    </form>
+          <button
+            type="button"
+            className="btn btn-outline-secondary"
+            onClick={() => setConfirmCancel(false)}
+          >
+            {t('setup.cancel.keep')}
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-outline-danger"
+          onClick={() => setConfirmCancel(true)}
+        >
+          {t('setup.cancel.action')}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -259,6 +272,9 @@ export function SetupPage() {
     );
   }
   const data = interview.data;
+  if (data.state === 'READY_TO_START' || isLive(data.state) || isEnded(data)) {
+    return <Navigate to={interviewPath(data)} replace />;
+  }
   if (['DRAFT', 'ROLE_ANALYSIS', 'FAILED'].includes(data.state)) {
     return <Navigate to={`/app/interviews/${data.id}/analysis`} replace />;
   }
@@ -268,7 +284,10 @@ export function SetupPage() {
       <h1 className="h3">{t('setup.title')}</h1>
       <p className="cb-text-secondary">{data.title}</p>
       {data.state === 'READY' ? (
-        <SetupForm interview={data} />
+        <>
+          <SetupForm interview={data} />
+          <CancelInterview interview={data} />
+        </>
       ) : (
         <section className="p-4 border cb-border rounded-3 bg-white">
           <p className="mb-3">
