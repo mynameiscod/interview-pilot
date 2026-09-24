@@ -24,6 +24,7 @@ const deployed = {
   ...base,
   APP_ENV: 'production',
   CORS_ALLOWED_ORIGINS: 'https://interview.codebegun.com',
+  TRUST_PROXY_HOPS: '1',
   SMS_PROVIDER: 'disabled',
   AI_SECRETS_MASTER_KEY: productionAiKey,
   STORAGE_PROVIDER: 'bunny',
@@ -99,6 +100,12 @@ describe('loadEnv', () => {
     expect(() =>
       loadEnv(apiEnvSchema, { ...deployed, CORS_ALLOWED_ORIGINS: base.CORS_ALLOWED_ORIGINS }),
     ).toThrow(/non-HTTPS origins/);
+  });
+
+  it('requires a trusted proxy hop when deployed (per-client rate limits behind NGINX)', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...deployed, TRUST_PROXY_HOPS: '0' })).toThrow(
+      /TRUST_PROXY_HOPS/,
+    );
   });
 
   it('refuses interactive API docs in production', () => {

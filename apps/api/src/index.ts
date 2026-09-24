@@ -39,6 +39,7 @@ async function main(): Promise<void> {
     connectMongo({
       uri: env.MONGODB_URI,
       autoIndex: false,
+      maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
       logger,
     }),
     redis.connect(),

@@ -42,6 +42,11 @@ const baseEnvSchema = z.object({
   APP_ENV: AppEnv,
   LOG_LEVEL: LogLevel.default('info'),
   MONGODB_URI: mongoUri,
+  /**
+   * MongoDB connections per process. Every live turn runs a short transaction,
+   * so a small pool queues requests under load (Phase 12 load test).
+   */
+  MONGODB_MAX_POOL_SIZE: z.coerce.number().int().min(5).max(500).default(100),
   REDIS_URL: redisUrl,
   /** Build/release identifier surfaced on /healthz. */
   APP_VERSION: z.string().default('0.0.0-dev'),
@@ -424,6 +429,7 @@ interface DeployRuleInput {
   APP_ENV: AppEnv;
   CORS_ALLOWED_ORIGINS?: string[];
   API_DOCS_ENABLED?: boolean;
+  TRUST_PROXY_HOPS?: number;
 }
 
 /** Rules that only apply to deployed environments. */
@@ -434,6 +440,13 @@ function deployedEnvIssues(env: DeployRuleInput): string[] {
     if (insecure.length > 0) {
       issues.push(
         `CORS_ALLOWED_ORIGINS: non-HTTPS origins not allowed in ${env.APP_ENV}: ${insecure.join(', ')}`,
+      );
+    }
+    // Deployed APIs sit behind NGINX: without this every client shares the proxy's address,
+    // so per-IP rate limits (sign-in codes included) would apply to everyone at once.
+    if (env.TRUST_PROXY_HOPS === 0) {
+      issues.push(
+        `TRUST_PROXY_HOPS: must be at least 1 in ${env.APP_ENV} (the API runs behind NGINX)`,
       );
     }
   }

@@ -30,7 +30,12 @@ async function main(): Promise<void> {
   const redis = createRedis(env.REDIS_URL, logger, 'command');
   const queueConnection = createRedis(env.REDIS_URL, logger, 'queue');
   await Promise.all([
-    connectMongo({ uri: env.MONGODB_URI, autoIndex: env.APP_ENV !== 'production', logger }),
+    connectMongo({
+      uri: env.MONGODB_URI,
+      autoIndex: env.APP_ENV !== 'production',
+      maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
+      logger,
+    }),
     redis.connect(),
     queueConnection.connect(),
   ]);

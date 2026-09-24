@@ -4,6 +4,8 @@ import mongoose from 'mongoose';
 export interface MongoOptions {
   uri: string;
   autoIndex: boolean;
+  /** Connections in the driver pool (default 100). */
+  maxPoolSize?: number;
   logger: Logger;
 }
 
@@ -22,7 +24,7 @@ export async function connectMongo(opts: MongoOptions): Promise<typeof mongoose>
   mongoose.connection.on('reconnected', () => opts.logger.info('mongo reconnected'));
   const conn = await mongoose.connect(opts.uri, {
     serverSelectionTimeoutMS: 5000,
-    maxPoolSize: 20,
+    maxPoolSize: opts.maxPoolSize ?? 100,
     autoIndex: opts.autoIndex,
   });
   opts.logger.info({ db: conn.connection.name }, 'mongo connected');
