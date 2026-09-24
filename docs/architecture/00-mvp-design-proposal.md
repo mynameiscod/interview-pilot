@@ -418,6 +418,7 @@ payment.failed → FAILED; refund.processed → REFUNDED + ledger ADMIN_ADJUSTME
 
 - The first of the frontend verify and the webhook to arrive issues the credits. The second is a no-op because of the conditional update and the unique ledger key.
 - A reconciliation job (hourly) fetches Razorpay order status for purchases stuck in `CREATED` for more than 30 min.
+- Implemented in Phase 6: see [payments.md](payments.md).
 - Seed plans: FREE (₹0, 1 credit, granted once per verified account via `FREE_GRANT` keyed by `userId`), SPRINT (₹199, 3 credits, 7 d), JOB_HUNT (₹499, 12 credits, 30 d). All values are editable in Admin.
 
 ---
@@ -584,6 +585,14 @@ Resolved on 2026-09-23 (design approved; Phase 0 started):
 | P5-6 | Report language          | Report narrative is generated in English and the PDF uses standard fonts; UI chrome is translated. Localised narrative and PDFs need embedded fonts (later)                                                               |
 | P5-7 | Worker email             | Email settings are shared with the worker; `EMAIL_PROVIDER=disabled` (worker default) skips report-ready emails                                                                                                           |
 | P5-8 | Re-runs                  | `POST /admin/interviews/:id/reprocess` (`interviews.manage`: super, operations) starts a new run for sessions still in PROCESSING; revisions are never rebuilt                                                            |
+| P6-1 | Gateway access           | Razorpay over its REST API (four calls and two HMAC checks), not the SDK; a mock with identical signatures and webhook shapes for development/test, refused in staging/production                                         |
+| P6-2 | Issuing credits          | `markPurchasePaid` is the only issuer: a conditional CREATED/FAILED/EXPIRED→PAID update plus the `purchase:<id>` ledger key in one transaction, so verify, webhook and reconciliation can race                            |
+| P6-3 | Verify checks            | After the Checkout signature, the payment is fetched from the order and must be captured for the exact amount and currency; mismatches issue nothing and are logged for review                                            |
+| P6-4 | Webhook idempotency      | The event id is claimed with a unique insert before processing; a processing error releases the claim and answers 500 so the gateway retries                                                                              |
+| P6-5 | Plan versions            | Plans are append-only versions per code with one active version; purchases snapshot the plan; `VITE_RAZORPAY_KEY_ID` is unnecessary because orders return the key id                                                      |
+| P6-6 | Coupon limits            | Uses are counted at payment, not at order, so concurrent unpaid orders may exceed `maxUses`; paying customers are never refused. Totals between ₹0 and ₹1 are raised to ₹1                                                |
+| P6-7 | Refunds                  | Full refunds only (admin, audited before the gateway call); unused credits of the purchase lot are withdrawn, spent or reserved ones are kept                                                                             |
+| P6-8 | Reconciliation           | Hourly worker job for purchases unconfirmed after 30 min (expire after 24 h) and pending refunds; admins can reconcile one purchase on demand                                                                             |
 
 Still open:
 

@@ -54,6 +54,8 @@ Every account gets one free credit. Create an interview in the candidate app, wa
 
 When an interview finishes, the worker evaluates it and the report appears at `/app/reports/<id>` within seconds (with the mock provider, texts start with `[mock]`). The "report ready" email arrives in Mailpit. `pnpm --filter @cbi/worker ai:eval --mode=structure` checks the evaluation prompts and scoring end to end; see [AI evaluation regression](../ai/evaluation-regression.md) for running it against real models.
 
+With `PAYMENT_PROVIDER=mock` (the default), buying a plan at `/pricing` opens a **Test mode** panel instead of Razorpay Checkout: **Simulate successful payment** goes through the same verify path as Razorpay and adds the credits; **Simulate failed payment** marks the attempt failed. To try the real Checkout, set `PAYMENT_PROVIDER=razorpay` with Razorpay **test** keys; webhooks need a public URL (for example a tunnel) pointing at `/api/v1/payments/webhooks/razorpay`, but without them the verify call and the hourly reconciliation still complete purchases. Plans, coupons, refunds and reconciliation are under **Payments** in the admin console. Details: [Payments](../architecture/payments.md).
+
 ### Uploads and background jobs locally
 
 Resumes and JD files are stored under `.data/storage` in the repository (`STORAGE_PROVIDER=local`, git-ignored). The API and the worker must point at the same folder, so start both with `pnpm dev`. Parsing, JD URL fetching and role analysis run in the **worker**: if the worker is not running, inputs stay "processing" and analysis fails after 3 minutes with `INPUT_TIMEOUT`. In Option B both containers share the `storage-data` volume.

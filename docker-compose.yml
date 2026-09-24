@@ -79,6 +79,8 @@ services:
       AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
       AI_MOCK_MODE: 'true'
       STORAGE_PROVIDER: local
+      # Development-only mock payment gateway (Checkout is simulated in the app).
+      PAYMENT_PROVIDER: mock
       LOCAL_STORAGE_DIR: /data/storage
     volumes:
       - storage-data:/data/storage
@@ -118,6 +120,8 @@ services:
       AI_SECRETS_MASTER_KEY: ZGV2LW9ubHktYWktbWFzdGVyLWtleS1jaGFuZ2UtbWU=
       AI_MOCK_MODE: 'true'
       STORAGE_PROVIDER: local
+      # Development-only mock payment gateway (Checkout is simulated in the app).
+      PAYMENT_PROVIDER: mock
       LOCAL_STORAGE_DIR: /data/storage
     volumes:
       - storage-data:/data/storage
