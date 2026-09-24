@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ANSWER_LIMITS } from './interview-runtime.js';
 import { Difficulty } from './library.js';
 
 /**
@@ -218,4 +219,18 @@ export function toRunResult(
     tests: outcomes,
     at: at.toISOString(),
   };
+}
+
+/** The answer recorded for a submitted solution: the result summary and the code. */
+export function submissionAnswerText(opts: {
+  language: CodingLanguage;
+  code: string;
+  result: CodeRunResult | null;
+}): string {
+  const head = opts.result
+    ? `Submitted a ${CODING_LANGUAGE_LABELS[opts.language]} solution: ${opts.result.passed} of ${opts.result.total} tests passed (${opts.result.verdict.toLowerCase().replace('_', ' ')}).`
+    : `Submitted a ${CODING_LANGUAGE_LABELS[opts.language]} solution. The code judge was unavailable, so it was not run.`;
+  const room = ANSWER_LIMITS.maxChars - head.length - 20;
+  const code = opts.code.length > room ? `${opts.code.slice(0, room)}\n…` : opts.code;
+  return `${head}\n\n${code}`;
 }

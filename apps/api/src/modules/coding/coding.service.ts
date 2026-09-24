@@ -13,13 +13,11 @@ import {
 import type { QuestionTarget } from '@cbi/interview-engine';
 import { JudgeUnavailableError, runOnJudge, type JudgeAdapter } from '@cbi/provider-adapters';
 import {
-  ANSWER_LIMITS,
-  CODING_LANGUAGE_LABELS,
   CODING_LIMITS,
+  submissionAnswerText,
   toRunResult,
   type AnswerTextPayload,
   type CodeRunResult,
-  type CodingLanguage,
   type CodingWorkspace,
   type CreateProblemVersionBody,
   type ProblemSummary,
@@ -61,20 +59,6 @@ export const problemSummary = (p: ProblemRecord): ProblemSummary => ({
 export function codingQuestionText(p: ProblemRecord): string {
   const first = p.content.statement.split(/\n\s*\n/)[0] ?? '';
   return `Coding problem: ${p.content.title}. ${first}`.slice(0, 1500);
-}
-
-/** The answer recorded for a submitted solution: the result summary and the code. */
-export function submissionAnswerText(opts: {
-  language: CodingLanguage;
-  code: string;
-  result: CodeRunResult | null;
-}): string {
-  const head = opts.result
-    ? `Submitted a ${CODING_LANGUAGE_LABELS[opts.language]} solution: ${opts.result.passed} of ${opts.result.total} tests passed (${opts.result.verdict.toLowerCase().replace('_', ' ')}).`
-    : `Submitted a ${CODING_LANGUAGE_LABELS[opts.language]} solution. The code judge was unavailable, so it was not run.`;
-  const room = ANSWER_LIMITS.maxChars - head.length - 20;
-  const code = opts.code.length > room ? `${opts.code.slice(0, room)}\n…` : opts.code;
-  return `${head}\n\n${code}`;
 }
 
 interface Deps {

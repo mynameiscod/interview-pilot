@@ -1,7 +1,10 @@
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger } from '@cbi/config';
 import {
+  CodingAttemptModel,
+  ensureProblemBank,
   IntegrityEventModel,
+  ProblemModel,
   AiRouteModel,
   beginEvaluation,
   connectMongo,
@@ -23,6 +26,7 @@ import {
   UserModel,
 } from '@cbi/db';
 import { competenciesForRound, createPlanner } from '@cbi/interview-engine';
+import { createMockJudge } from '@cbi/provider-adapters';
 import { createMemoryStorage, createRecordingEmailProvider } from '@cbi/provider-adapters/testing';
 import { ReportContent, type ProcessingStage } from '@cbi/shared-types';
 import { Queue } from 'bullmq';
@@ -330,6 +334,142 @@ describe('evaluation pipeline', () => {
     expect(withObs.overall.score).toBe((await report(plain.id)).overall.score);
     const pdfReport = await InterviewReportModel.findOne({ sessionId: tracked.id }).lean();
     expect(pdfReport!.pdf.status).toBe('READY');
+  });
+
+  it('merges judged code into evidence, judges unsubmitted code and reports coding', async () => {
+    await ensureProblemBank();
+    const problem = (await ProblemModel.findOne({
+      key: 'balanced-brackets',
+      active: true,
+    }).lean())!;
+    const judge = createMockJudge();
+
+    /** Turns the second round's two questions into coding questions. */
+    async function withCoding(
+      id: string,
+      opts: { submitted: object | null; unsubmittedCode: string },
+    ) {
+      const turns = await InterviewTurnModel.find({ sessionId: id, roundIdx: 1 })
+        .sort({ seq: 1 })
+        .lean();
+      const [a, b] = turns;
+      const coding = { problemId: problem._id, title: problem.content.title };
+      await InterviewTurnModel.updateOne({ _id: a!._id }, { $set: { 'question.coding': coding } });
+      // The second was never submitted: time ran out with code in the editor.
+      await InterviewTurnModel.updateOne(
+        { _id: b!._id },
+        { $set: { 'question.coding': coding, answer: null, turnEval: null } },
+      );
+      const s = (await InterviewSessionModel.findById(id).lean())!;
+      await CodingAttemptModel.insertMany([
+        {
+          sessionId: id,
+          userId: s.userId,
+          questionId: a!.questionId,
+          problemId: problem._id,
+          language: 'python',
+          code: 'print("YES")',
+          submission: opts.submitted,
+        },
+        {
+          sessionId: id,
+          userId: s.userId,
+          questionId: b!.questionId,
+          problemId: problem._id,
+          language: 'python',
+          code: opts.unsubmittedCode,
+          submission: null,
+        },
+      ]);
+      return { a: a!.questionId, b: b!.questionId };
+    }
+
+    const passedAll = {
+      at: new Date(),
+      language: 'python',
+      code: 'print("YES")',
+      result: {
+        verdict: 'ACCEPTED',
+        passed: 7,
+        total: 7,
+        compileOutput: null,
+        tests: [],
+        at: new Date().toISOString(),
+      },
+      judgeUnavailable: false,
+      source: 'CANDIDATE',
+    };
+    const up = await finishedInterview();
+    const q = await withCoding(up.id, {
+      submitted: passedAll,
+      unsubmittedCode: '# MOCK_PASS_2\nprint(1)',
+    });
+    await beginEvaluation(up.id);
+    let stage: ProcessingStage | null = 'FINALIZE_TRANSCRIPT';
+    while (stage) {
+      const outcome = await runEvaluationStage(
+        { ...deps, judge: judge.adapter },
+        { sessionId: up.id, stage, run: 1 },
+        false,
+      );
+      stage = outcome.status === 'done' ? outcome.next : null;
+    }
+    const auto = (await CodingAttemptModel.findOne({ sessionId: up.id, questionId: q.b }).lean())!;
+    expect(auto.submission).toMatchObject({
+      source: 'AUTO',
+      judgeUnavailable: false,
+      result: { passed: 2 },
+    });
+    const judged = await InterviewEvidenceModel.find({
+      sessionId: up.id,
+      extractorVersion: null,
+      practical: true,
+    }).lean();
+    const byQ = new Map(judged.map((e) => [e.questionId, e]));
+    expect(byQ.get(q.a)).toMatchObject({ strength: 2, confidence: 0.9 });
+    expect(byQ.get(q.b)!.claim).toMatch(/2 of 7 tests.*not submitted/);
+    const report = ReportContent.parse(
+      (await InterviewReportModel.findOne({ sessionId: up.id }).lean())!.content,
+    );
+    expect(report.coding).toEqual([
+      expect.objectContaining({
+        title: problem.content.title,
+        submitted: true,
+        passed: 7,
+        total: 7,
+      }),
+      expect.objectContaining({ submitted: false, passed: 2, judgeUnavailable: false }),
+    ]);
+
+    // The judge is down: nothing is invented, evidence about the code is less confident.
+    judge.setDown(true);
+    const down = await finishedInterview();
+    const unavailable = { ...passedAll, result: null, judgeUnavailable: true };
+    const q2 = await withCoding(down.id, { submitted: unavailable, unsubmittedCode: 'print(2)' });
+    await beginEvaluation(down.id);
+    stage = 'FINALIZE_TRANSCRIPT';
+    while (stage) {
+      const outcome = await runEvaluationStage(
+        { ...deps, judge: judge.adapter },
+        { sessionId: down.id, stage, run: 1 },
+        false,
+      );
+      stage = outcome.status === 'done' ? outcome.next : null;
+    }
+    expect((await InterviewSessionModel.findById(down.id).lean())!.state).toBe('REPORT_READY');
+    const aboutCode = await InterviewEvidenceModel.find({
+      sessionId: down.id,
+      questionId: { $in: [q2.a, q2.b] },
+    }).lean();
+    expect(aboutCode.every((e) => e.confidence <= 0.5)).toBe(true);
+    expect(
+      aboutCode.every((e) => !(e.practical && e.extractorVersion === null && e.confidence === 0.9)),
+    ).toBe(true);
+    const downReport = ReportContent.parse(
+      (await InterviewReportModel.findOne({ sessionId: down.id }).lean())!.content,
+    );
+    expect(downReport.coding!.every((c) => c.judgeUnavailable)).toBe(true);
+    judge.setDown(false);
   });
 
   it('is idempotent: re-running stages changes nothing and stale runs are ignored', async () => {

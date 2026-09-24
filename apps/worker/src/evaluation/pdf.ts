@@ -135,6 +135,20 @@ export function renderReportPdf(content: ReportContent): Promise<Buffer> {
       );
     }
 
+    if (content.coding?.length) {
+      h2('Coding');
+      for (const c of content.coding) {
+        const outcome = c.judgeUnavailable
+          ? 'not run (the code judge was unavailable); reviewed from the code'
+          : c.passed !== null
+            ? `${c.passed} of ${c.total} tests passed`
+            : 'no solution';
+        bullet(
+          `${c.title} (${c.difficulty.toLowerCase()}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ' - not submitted before time ran out'}`,
+        );
+      }
+    }
+
     if (content.integrity) {
       h2('Session observations');
       const counts = Object.entries(content.integrity.counts).filter(

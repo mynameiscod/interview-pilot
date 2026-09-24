@@ -2,7 +2,12 @@ import { hostname } from 'node:os';
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
-import { createEmailProvider, createPaymentGateway, createStorage } from '@cbi/provider-adapters';
+import {
+  createEmailProvider,
+  createJudge,
+  createPaymentGateway,
+  createStorage,
+} from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { startWorkers } from './worker.js';
 
@@ -66,6 +71,7 @@ async function main(): Promise<void> {
         email: createEmailProvider(env),
         logger,
         candidateUrl: env.PUBLIC_CANDIDATE_URL,
+        judge: createJudge(env),
       },
     },
   });

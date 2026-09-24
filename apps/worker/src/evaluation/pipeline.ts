@@ -39,6 +39,14 @@ import {
 } from './ai-steps.js';
 import { renderReportPdf } from './pdf.js';
 import { buildReportContent, fallbackRecommendations } from './report-content.js';
+import type { JudgeAdapter } from '@cbi/provider-adapters';
+import {
+  answeredWithCode,
+  codingReport,
+  judgeUnsubmitted,
+  loadCoding,
+  mergeCodingEvidence,
+} from './coding.js';
 
 export interface EvaluationDeps {
   ai: AiRuntime;
@@ -46,6 +54,8 @@ export interface EvaluationDeps {
   email: EmailProvider | null;
   logger: Logger;
   candidateUrl: string;
+  /** Code judge for solutions left unsubmitted (null: they are recorded as not run). */
+  judge?: JudgeAdapter | null;
   now?: () => Date;
 }
 
@@ -79,10 +89,12 @@ const roleOf = (b: BlueprintContent) => `${b.role.title} (${b.role.seniority.toL
 // ---- Stages ----------------------------------------------------------------------------------------
 
 /** 1. The transcript is final once the session is PROCESSING; nothing to change, only checked. */
-async function finalizeTranscript(_deps: EvaluationDeps, s: Session) {
+async function finalizeTranscript(deps: EvaluationDeps, s: Session) {
   const turns = await InterviewTurnModel.countDocuments({ sessionId: s._id });
   if (turns === 0 && s.planner?.askedCount)
     throw new Error('turns missing for a session that asked questions');
+  // Code written but not submitted before the end is judged now (never fails the stage).
+  await judgeUnsubmitted(s._id, deps.judge ?? null, deps.logger, deps.now?.() ?? new Date());
 }
 
 /** 2. Evidence per round (AI), falling back to the live turn assessments. */
@@ -91,23 +103,25 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   const run = s.processing!.run;
   const keys = new Set(blueprint.competencies.map((c) => c.key));
   const rounds = [...new Set(turns.map((t) => t.roundIdx))].sort((a, b) => a - b);
+  const coding = await loadCoding(s._id);
 
   for (const roundIdx of rounds) {
-    const answered = turns.filter((t) => t.roundIdx === roundIdx && t.answer?.text.trim());
+    const roundTurns = turns.filter((t) => t.roundIdx === roundIdx);
+    const answered = answeredWithCode(roundTurns, coding);
     // Idempotent per run and round: a retried job replaces its own previous output.
     await InterviewEvidenceModel.deleteMany({ sessionId: s._id, run, roundIdx });
     if (answered.length === 0) continue;
     const result = await extractEvidenceWithAi(
       deps,
       {
-        roundType: answered[0]!.roundType,
+        roundType: answered[0]!.turn.roundType,
         competencies: blueprint.competencies,
-        turns: answered.map((t) => ({
+        turns: answered.map(({ turn: t, text, spoken }) => ({
           questionId: t.questionId,
           competencyKey: t.question.competencyKey,
           question: t.question.text,
-          answer: t.answer!.text,
-          spoken: t.answer!.source === 'VOICE',
+          answer: text,
+          spoken,
         })),
       },
       ctxOf(s),
@@ -120,6 +134,7 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
     const items = extracted.length
       ? extracted
       : answered
+          .map((a) => a.turn)
           .filter(
             (t) => t.question.competencyKey && keys.has(t.question.competencyKey) && t.turnEval,
           )
@@ -137,9 +152,11 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
               'Derived from the live assessment because evidence extraction was unavailable.',
             extractorVersion: null,
           }));
-    if (items.length) {
+    // Judge results are deterministic evidence; code the judge could not run is less certain.
+    const merged = mergeCodingEvidence(items, roundTurns, coding, blueprint);
+    if (merged.length) {
       await InterviewEvidenceModel.insertMany(
-        items.map((i) => ({ ...i, sessionId: s._id, userId: s.userId, run, roundIdx })),
+        merged.map((i) => ({ ...i, sessionId: s._id, userId: s.userId, run, roundIdx })),
       );
     }
   }
@@ -356,8 +373,11 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
         )
       : null;
 
+    const codingItems = codingReport(await loadCoding(s._id), turns);
+
     const content: ReportContent = buildReportContent({
       integrity,
+      coding: codingItems,
       header: {
         title: s.analysis?.detectedRole.title ?? template.name,
         companyName: target?.companyName ?? target?.structured?.companyName ?? null,
