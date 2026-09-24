@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'tests/*'
 
 engineStrict: true
 autoInstallPeers: true
@@ -15,3 +16,6 @@ ignoredBuiltDependencies:
   - '@google/genai'
   # Transitive (Gemini SDK): postinstall only checks for the optional protobufjs CLI.
   - protobufjs
+overrides:
+  # Monaco bundles an older DOMPurify with known sanitizer bypasses (pnpm audit, Phase 12).
+  dompurify: '>=3.4.13 <4'

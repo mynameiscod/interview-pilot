@@ -3,7 +3,10 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    # The repository's default branch is master; release tags run CI for the deploy gate.
+    branches: [master]
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -77,6 +80,88 @@ jobs:
       - run: pnpm test:integration
       - name: Boot compiled API and worker under plain Node
         run: pnpm build && pnpm smoke:boot
+
+  e2e:
+    name: End-to-end (Playwright, ${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop-chrome, mobile-chrome, webkit]
+    services:
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.27
+        ports: ['1025:1025', '8025:8025']
+    env:
+      E2E_MONGODB_URI: mongodb://localhost:27017/cbi_interview_e2e?directConnection=true
+      E2E_REDIS_URL: redis://localhost:6379/13
+      E2E_MAILPIT_URL: http://localhost:8025
+      E2E_SMTP_HOST: 127.0.0.1
+      E2E_SMTP_PORT: '1025'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Get pnpm store path
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - name: Start MongoDB single-node replica set
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval \
+              "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }" \
+              && break
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && exit 0
+            sleep 2
+          done
+          echo "MongoDB replica set did not become primary" && exit 1
+      - name: Wait for Mailpit
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8025/api/v1/info > /dev/null && exit 0
+            sleep 2
+          done
+          echo "Mailpit did not start" && exit 1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install Playwright browser and system dependencies
+        run: |
+          case "${{ matrix.project }}" in
+            webkit) browser=webkit ;;
+            *) browser=chromium ;;
+          esac
+          pnpm --filter @cbi/e2e exec playwright install --with-deps "$browser"
+      - name: Run the e2e suite
+        run: pnpm e2e --project=${{ matrix.project }}
+      - name: Upload the Playwright report, traces and server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.project }}
+          path: |
+            tests/e2e/playwright-report/
+            tests/e2e/test-results/
+            tests/e2e/.cache/logs/
+          include-hidden-files: true
+          retention-days: 14
 
   docker:
     name: Docker images build

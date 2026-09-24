@@ -19,6 +19,8 @@
     "openapi:generate": "pnpm --filter @cbi/api openapi:generate",
     "brand:check": "node infrastructure/scripts/brand-check.mjs",
     "smoke:boot": "node infrastructure/scripts/boot-smoke.mjs",
+    "e2e": "pnpm --filter @cbi/e2e e2e",
+    "e2e:install": "pnpm --filter @cbi/e2e e2e:install",
     "infra:up": "docker compose up -d mongo redis mailpit",
     "infra:down": "docker compose down"
   },

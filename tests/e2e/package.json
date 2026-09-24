@@ -1,0 +1,19 @@
+{
+  "name": "@cbi/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end suite: built API + worker + both web apps against a real MongoDB, Redis and Mailpit",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium webkit",
+    "e2e:report": "playwright show-report playwright-report",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint specs support playwright.config.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.58.2",
+    "@types/node": "24.13.6"
+  }
+}
