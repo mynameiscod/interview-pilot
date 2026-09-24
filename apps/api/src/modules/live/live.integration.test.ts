@@ -115,20 +115,27 @@ function nextEvent<T>(socket: Socket, event: string, timeoutMs = 15_000): Promis
   });
 }
 
+/** Questions pushed while a join is in flight (they can arrive before its acknowledgement). */
+const pushedDuringJoin = new WeakMap<Socket, Promise<LiveQuestion>>();
+
 async function joined(socket: Socket, sessionId: string, lastSeq = 0) {
   await new Promise<void>((resolve, reject) => {
     if (socket.connected) return resolve();
     socket.once('connect', () => resolve());
     socket.once('connect_error', reject);
   });
+  // Listen before joining, as real clients must.
+  const pushed = nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
+  pushed.catch(() => undefined);
+  pushedDuringJoin.set(socket, pushed);
   const ack = await emit<RtAck>(socket, RtEvent.JOIN, { sessionId, lastSeq });
   if (!ack.ok) throw new Error(`join failed: ${ack.code}`);
   return ack.snapshot!;
 }
 
-/** The question waiting in the snapshot, or the next one the server pushes. */
+/** The question waiting in the snapshot, or the one the server pushes. */
 async function currentQuestion(socket: Socket, snapshot: InterviewSnapshot): Promise<LiveQuestion> {
-  return snapshot.currentQuestion ?? nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
+  return snapshot.currentQuestion ?? pushedDuringJoin.get(socket)!;
 }
 
 const session = (id: string) => InterviewSessionModel.findById(id).lean();

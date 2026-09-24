@@ -91,11 +91,20 @@ export async function createRealtime(opts: {
     socket.on(RtEvent.JOIN, async (raw: unknown, ack?: Ack) => {
       try {
         const payload = JoinPayload.parse(raw);
-        const snapshot = await c.live.join(data.userId, payload.sessionId, payload.lastSeq);
-        if (data.sessionId && data.sessionId !== payload.sessionId)
-          await socket.leave(roomOf(data.sessionId));
+        const room = roomOf(payload.sessionId);
+        const previous = data.sessionId;
+        // Join the room before reading the snapshot: a question saved after the read is then
+        // still delivered as an event (clients de-duplicate by seq), so nothing falls in between.
+        await socket.join(room);
+        let snapshot;
+        try {
+          snapshot = await c.live.join(data.userId, payload.sessionId, payload.lastSeq);
+        } catch (err) {
+          if (previous !== payload.sessionId) await socket.leave(room);
+          throw err;
+        }
+        if (previous && previous !== payload.sessionId) await socket.leave(roomOf(previous));
         data.sessionId = payload.sessionId;
-        await socket.join(roomOf(payload.sessionId));
         ack?.({ ok: true, snapshot });
       } catch (err) {
         fail(ack, err);
