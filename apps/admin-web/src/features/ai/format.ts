@@ -37,3 +37,21 @@ export function consoleError(t: TFunction, err: unknown): string {
   }
   return errorMessage(t, err);
 }
+
+/**
+ * A readable provider name for a key. Unknown keys (a provider added on the
+ * server before this console) fall back to the server's display name, then
+ * to a capitalised key, never an i18n path.
+ */
+export function providerName(t: TFunction, key: string, displayName?: string): string {
+  const fallback = displayName ?? key.charAt(0).toUpperCase() + key.slice(1);
+  return t(`ai.providerNames.${key}`, { defaultValue: fallback });
+}
+
+/** A readable name for a routed feature (the raw key stays visible beside it). */
+export function featureName(t: TFunction, feature: string): string {
+  return t(`ai.features.${feature.replace('.', '_')}`, { defaultValue: '' });
+}
+
+/** Features whose calls are metered in audio or characters rather than tokens. */
+export const SPEECH_FEATURES: ReadonlySet<string> = new Set(['stt.live', 'tts.live']);

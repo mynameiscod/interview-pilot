@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../app/session';
 import { ErrorAlert, LoadingRow } from './shared';
-import { consoleError } from './format';
+import { consoleError, providerName } from './format';
 
 const STATUS_BADGE: Record<AiModelHealth['status'], string> = {
   HEALTHY: 'text-bg-success',
@@ -68,9 +68,9 @@ export function HealthPage() {
                 {health.data.map((h) => (
                   <tr key={h.modelId}>
                     <th scope="row">
-                      <code className="small">
-                        {h.provider} / {h.model}
-                      </code>
+                      <span className="small">
+                        {providerName(t, h.provider)} / <code>{h.model}</code>
+                      </span>
                     </th>
                     <td>
                       {/* Icon + text: status is never conveyed by colour alone. */}

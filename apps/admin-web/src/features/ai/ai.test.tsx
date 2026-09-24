@@ -20,7 +20,7 @@ import { describe, expect, it } from 'vitest';
 import { routes } from '../../app/routes';
 import { loadAdminUser } from '../../app/session';
 import { initI18n } from '../../i18n';
-import { formatMicros, microsToDecimal } from './format';
+import { formatMicros, microsToDecimal, providerName } from './format';
 
 const now = new Date().toISOString();
 
@@ -246,7 +246,7 @@ describe('routing', () => {
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
-    await user.click(screen.getByRole('button', { name: 'Move Claude Sonnet 5 (anthropic) up' }));
+    await user.click(screen.getByRole('button', { name: 'Move Claude Sonnet 5 (Anthropic) up' }));
     await user.type(
       screen.getByLabelText('Reason (recorded in the audit log)'),
       'Faster first answer',
@@ -292,6 +292,201 @@ describe('usage & cost', () => {
     expect(await screen.findAllByText('$0.02')).toHaveLength(2);
     expect(screen.getByText('4,000 in · 800 out')).toBeInTheDocument();
     expect(screen.getByText('No AI calls in this period.')).toBeInTheDocument();
+  });
+});
+
+describe('voice (speech models)', () => {
+  const tts = (overrides: Partial<AiModelSummary> = {}) =>
+    model({
+      id: 'tts1',
+      providerId: 'p-el',
+      providerKey: 'elevenlabs',
+      modelId: 'eleven_flash_v2_5',
+      displayName: 'ElevenLabs Flash v2.5',
+      capabilities: ['TTS'],
+      params: {
+        temperature: null,
+        maxOutputTokens: 4096,
+        timeoutMs: 15000,
+        retries: 1,
+        concurrency: 20,
+        voice: null,
+      },
+      currentPricing: [
+        {
+          unit: 'PER_1M_CHARACTERS',
+          pricePerUnitMicros: 50_000_000,
+          currency: 'USD',
+          effectiveFrom: now,
+        },
+      ],
+      ...overrides,
+    });
+  const stt = model({
+    id: 'stt1',
+    providerId: 'p-dg',
+    providerKey: 'deepgram',
+    modelId: 'nova-3',
+    displayName: 'Deepgram Nova-3',
+    capabilities: ['STT'],
+    currentPricing: [
+      { unit: 'PER_STT_HOUR', pricePerUnitMicros: 460_000, currency: 'USD', effectiveFrom: now },
+    ],
+  });
+
+  it('names providers by key, never by an i18n path', async () => {
+    const i18n = await initI18n();
+    expect(providerName(i18n.t, 'deepgram')).toBe('Deepgram');
+    expect(providerName(i18n.t, 'elevenlabs')).toBe('ElevenLabs');
+    expect(providerName(i18n.t, 'acme')).toBe('Acme');
+  });
+
+  it('labels new providers by name, with key hints', async () => {
+    await renderAt('/ai', ['SUPER_ADMIN'], {
+      'GET /admin/ai/providers': () =>
+        ok([
+          provider({ id: 'p-dg', key: 'deepgram', displayName: 'Deepgram' }),
+          provider({ id: 'p-el', key: 'elevenlabs', displayName: '' }),
+        ]),
+    });
+    expect(await screen.findByText('Deepgram')).toBeInTheDocument();
+    // A blank display name falls back to the key's label, not the raw key.
+    expect(screen.getByText('ElevenLabs')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole('button', { name: 'Add key' })[1]!);
+    expect(screen.getByLabelText('ElevenLabs API key')).toBeInTheDocument();
+    expect(screen.getByText(/elevenlabs\.io → Developers → API keys/)).toBeInTheDocument();
+  });
+
+  it('shows speech prices in their own units and the test sample', async () => {
+    await renderAt('/ai/models', ['SUPER_ADMIN'], {
+      'GET /admin/ai/models': () => ok([tts(), stt]),
+      'POST /admin/ai/models/tts1/test': () =>
+        ok({
+          ok: true,
+          outcome: 'SUCCESS',
+          latencyMs: 300,
+          servedModel: 'eleven_flash_v2_5',
+          sample: '12345 bytes of audio/mpeg',
+          message: null,
+        }),
+    });
+    expect(await screen.findByText('$50.00 per 1M characters')).toBeInTheDocument();
+    expect(screen.getByText('$0.46 per STT hour')).toBeInTheDocument();
+    // Token prices are not listed for speech-only models.
+    expect(screen.queryByText(/\/ 1M tokens/)).not.toBeInTheDocument();
+    expect(screen.getByText('Provider default voice')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getAllByRole('button', { name: 'Test' })[0]!);
+    expect(
+      await screen.findByText(
+        'Connected in 300 ms (eleven_flash_v2_5): “12345 bytes of audio/mpeg”',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('edits the voice id of a TTS model and sends null when blank', async () => {
+    const api = await renderAt('/ai/models', ['SUPER_ADMIN'], {
+      'GET /admin/ai/models': () => ok([tts({ params: { ...tts().params, voice: 'old-voice' } })]),
+      'PATCH /admin/ai/models/tts1': () => ok(tts()),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit limits' }));
+    const voice = screen.getByLabelText('Voice ID');
+    expect(voice).toHaveValue('old-voice');
+    expect(screen.queryByLabelText('Max output tokens')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Temperature')).not.toBeInTheDocument();
+    await user.clear(voice);
+    await user.type(voice, '  EXAVITQu4vr4xnSDxMaL ');
+    await user.click(screen.getByRole('button', { name: 'Save limits' }));
+    await screen.findByRole('button', { name: 'Edit limits' });
+    const patches = () => api.calls.filter((c) => c.key === 'PATCH /admin/ai/models/tts1');
+    expect(patches()[0]!.body).toMatchObject({ params: { voice: 'EXAVITQu4vr4xnSDxMaL' } });
+
+    await user.click(screen.getByRole('button', { name: 'Edit limits' }));
+    await user.clear(screen.getByLabelText('Voice ID'));
+    await user.click(screen.getByRole('button', { name: 'Save limits' }));
+    await screen.findByRole('button', { name: 'Edit limits' });
+    expect(patches()[1]!.body).toMatchObject({ params: { voice: null } });
+  });
+
+  it('does not offer a voice for text models', async () => {
+    const api = await renderAt('/ai/models', ['SUPER_ADMIN'], {
+      'GET /admin/ai/models': () => ok([model()]),
+      'PATCH /admin/ai/models/m1': () => ok(model()),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit limits' }));
+    expect(screen.queryByLabelText('Voice ID')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Max output tokens')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save limits' }));
+    await screen.findByRole('button', { name: 'Edit limits' });
+    const body = api.calls.find((c) => c.key === 'PATCH /admin/ai/models/m1')!.body as {
+      params: Record<string, unknown>;
+    };
+    expect(body.params).not.toHaveProperty('voice');
+  });
+
+  it('creates a TTS model with its voice (null when blank)', async () => {
+    const api = await renderAt('/ai/models', ['SUPER_ADMIN'], {
+      'GET /admin/ai/models': () => ok([]),
+      'GET /admin/ai/providers': () =>
+        ok([provider(), provider({ id: 'p-el', key: 'elevenlabs', displayName: 'ElevenLabs' })]),
+      'POST /admin/ai/models': () => ({ status: 201, body: { data: tts() } }),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add model' }));
+    expect(screen.queryByLabelText('Voice ID')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Provider'), 'p-el');
+    // ElevenLabs suggests the TTS capability, which brings up the voice field.
+    expect(screen.getByLabelText('Text to speech (TTS)')).toBeChecked();
+    expect(screen.getByLabelText('Text generation (LLM)')).not.toBeChecked();
+    expect(screen.getByLabelText('Voice ID')).toHaveValue('');
+    await user.type(screen.getByLabelText('Provider model id'), 'eleven_flash_v2_5');
+    await user.type(screen.getByLabelText('Display name'), 'ElevenLabs Flash');
+    await user.click(screen.getAllByRole('button', { name: 'Add model' }).at(-1)!);
+    await screen.findByRole('button', { name: 'Add model' });
+    expect(api.calls.find((c) => c.key === 'POST /admin/ai/models')!.body).toEqual({
+      providerId: 'p-el',
+      modelId: 'eleven_flash_v2_5',
+      displayName: 'ElevenLabs Flash',
+      capabilities: ['TTS'],
+      params: { voice: null },
+    });
+  });
+
+  it('offers only TTS models in the tts.live chain editor', async () => {
+    const route: AiRouteSummary = {
+      feature: 'tts.live',
+      capability: 'TTS',
+      active: true,
+      chain: [],
+      updatedAt: null,
+    };
+    await renderAt('/ai/routes', ['SUPER_ADMIN'], {
+      'GET /admin/ai/routes': () => ok([route]),
+      'GET /admin/ai/models': () =>
+        ok([
+          model(),
+          stt,
+          tts(),
+          tts({
+            id: 'tts2',
+            providerKey: 'openai',
+            modelId: 'gpt-4o-mini-tts',
+            displayName: 'GPT-4o mini TTS',
+          }),
+        ]),
+    });
+    expect(await screen.findByText('Text to speech (live interviews)')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Edit' }));
+    const options = within(screen.getByLabelText('Add a model…'))
+      .getAllByRole('option')
+      .map((o) => o.textContent);
+    expect(options).toEqual([
+      'Add a model…',
+      'ElevenLabs Flash v2.5 (ElevenLabs)',
+      'GPT-4o mini TTS (OpenAI)',
+    ]);
   });
 });
 

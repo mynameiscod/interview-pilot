@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth, useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow, ReasonForm } from './shared';
-import { consoleError } from './format';
+import { consoleError, providerName } from './format';
 
 type Mode = 'view' | 'key' | 'removeKey' | 'toggle';
 
@@ -40,6 +40,10 @@ function ProviderRow({ provider, canManage }: { provider: AiProviderSummary; can
     },
   });
 
+  // The server's display name wins; the key-based label covers blank names.
+  const name = provider.displayName.trim() || providerName(t, provider.key);
+  const keyHintKey = `ai.providers.keyHints.${provider.key}`;
+
   const updated = provider.credential
     ? new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium' }).format(
         new Date(provider.credential.updatedAt),
@@ -50,7 +54,7 @@ function ProviderRow({ provider, canManage }: { provider: AiProviderSummary; can
     <>
       <tr>
         <th scope="row">
-          <div className="fw-semibold">{provider.displayName}</div>
+          <div className="fw-semibold">{name}</div>
           <code className="small">{provider.key}</code>
         </th>
         <td>
@@ -112,8 +116,8 @@ function ProviderRow({ provider, canManage }: { provider: AiProviderSummary; can
               <div className="p-3 cb-surface-muted rounded-2 d-flex flex-wrap gap-2 align-items-center">
                 <span>
                   {provider.enabled
-                    ? t('ai.providers.disableExplain', { name: provider.displayName })
-                    : t('ai.providers.enableExplain', { name: provider.displayName })}
+                    ? t('ai.providers.disableExplain', { name })
+                    : t('ai.providers.enableExplain', { name })}
                 </span>
                 <button
                   type="button"
@@ -143,7 +147,7 @@ function ProviderRow({ provider, canManage }: { provider: AiProviderSummary; can
                 {mode === 'key' ? (
                   <div className="mb-3">
                     <label htmlFor={`${id}-key`} className="form-label">
-                      {t('ai.providers.apiKey', { name: provider.displayName })}
+                      {t('ai.providers.apiKey', { name })}
                     </label>
                     <input
                       id={`${id}-key`}
@@ -154,10 +158,11 @@ function ProviderRow({ provider, canManage }: { provider: AiProviderSummary; can
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
                     />
+                    {i18n.exists(keyHintKey) && <div className="form-text">{t(keyHintKey)}</div>}
                     <div className="form-text">{t('ai.providers.keyHint')}</div>
                   </div>
                 ) : (
-                  <p>{t('ai.providers.removeExplain', { name: provider.displayName })}</p>
+                  <p>{t('ai.providers.removeExplain', { name })}</p>
                 )}
               </ReasonForm>
             )}

@@ -186,7 +186,31 @@
       "keyHint": "Stored encrypted. After saving, only the last 4 characters are ever shown again.",
       "removeExplain": "Models from {{name}} will be skipped until a new key is added. Calls fall back to the next model in each route.",
       "disableExplain": "While {{name}} is disabled its models are skipped and calls fall back to the next model.",
-      "enableExplain": "{{name}} models will serve calls again."
+      "enableExplain": "{{name}} models will serve calls again.",
+      "keyHints": {
+        "openai": "Create a key at platform.openai.com → API keys. OpenAI keys start with “sk-”.",
+        "anthropic": "Create a key at console.anthropic.com → API keys. Anthropic keys start with “sk-ant-”.",
+        "gemini": "Create a key in Google AI Studio (aistudio.google.com → Get API key).",
+        "deepgram": "Create a key in the Deepgram console (console.deepgram.com → API Keys). It is a 40-character hexadecimal string.",
+        "elevenlabs": "Create a key at elevenlabs.io → Developers → API keys. If you restrict its scope, allow Text to Speech. ElevenLabs keys start with “sk_”."
+      }
+    },
+    "providerNames": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "gemini": "Google Gemini",
+      "deepgram": "Deepgram",
+      "elevenlabs": "ElevenLabs",
+      "mock": "Mock (development)"
+    },
+    "capabilities": {
+      "LLM": "Text generation (LLM)",
+      "STT": "Speech to text (STT)",
+      "TTS": "Text to speech (TTS)",
+      "REALTIME": "Realtime voice",
+      "EMBEDDING": "Embeddings",
+      "OCR": "Document reading (OCR)",
+      "TRANSLATION": "Translation"
     },
     "models": {
       "model": "Model",
@@ -198,10 +222,15 @@
       "cachedPrice": "Cached input {{price}} / 1M tokens",
       "upcoming_one": "{{count}} scheduled price change",
       "upcoming_other": "{{count}} scheduled price changes",
+      "otherPrice": "{{price}} {{unit}}",
       "paramsSummary": "Timeout {{timeout}} s · {{retries}} retries · {{concurrency}} concurrent · max output {{maxOutput}} tokens",
+      "paramsSummarySpeech": "Timeout {{timeout}} s · {{retries}} retries · {{concurrency}} concurrent",
+      "voiceSummary": "Voice {{voice}}",
+      "voiceDefault": "Provider default voice",
       "test": "Test",
       "testing": "Testing…",
       "testOk": "Connected in {{latency}} ms ({{model}}): “{{sample}}”",
+      "testOkNoSample": "Connected in {{latency}} ms ({{model}}).",
       "testFailed": "Test failed ({{outcome}}). {{message}}",
       "editParams": "Edit limits",
       "saveParams": "Save limits",
@@ -227,7 +256,10 @@
         "concurrency": "Max concurrent calls",
         "temperature": "Temperature",
         "temperatureUnset": "Not sent",
-        "hint": "Leave temperature empty for models that reject sampling parameters (current Claude models)."
+        "hint": "Leave temperature empty for models that reject sampling parameters (current Claude models).",
+        "speechHint": "Speech models do not use temperature or output-token limits.",
+        "voice": "Voice ID",
+        "voiceHint": "Applies to text-to-speech models only: the provider’s voice id (for example an ElevenLabs voice id). Leave empty to use the provider default (ElevenLabs “Rachel”, OpenAI “alloy”)."
       }
     },
     "routes": {
@@ -246,6 +278,7 @@
       "moveUp": "Move {{model}} up",
       "moveDown": "Move {{model}} down",
       "remove": "Remove {{model}}",
+      "noEligible": "No models have the {{capability}} capability yet. Add one under Models & pricing.",
       "hint": "Calls try each model in order, skipping models that are disabled, have no key or are failing. If every model fails, the feature reports that AI is unavailable; it never makes up an answer."
     },
     "features": {
@@ -258,9 +291,10 @@
       "evaluation_extractEvidence": "Extract evidence from a round",
       "evaluation_scoreDimension": "Score one dimension from evidence",
       "report_recommendations": "Write the improvement plan",
-      "stt_live": "Live speech-to-text (Phase 7)",
-      "tts_live": "Live text-to-speech (Phase 7)",
-      "ocr_document": "Read scanned documents (Phase 3)"
+      "stt_live": "Speech to text (live interviews)",
+      "tts_live": "Text to speech (live interviews)",
+      "ocr_document": "Read scanned documents (Phase 3)",
+      "admin_test": "Admin connectivity test"
     },
     "units": {
       "PER_1M_INPUT_TOKENS": "per 1M input tokens",
@@ -268,7 +302,7 @@
       "PER_1M_OUTPUT_TOKENS": "per 1M output tokens",
       "PER_MINUTE": "per minute",
       "PER_AUDIO_MINUTE": "per audio minute",
-      "PER_STT_HOUR": "per hour of transcribed audio",
+      "PER_STT_HOUR": "per STT hour",
       "PER_1M_CHARACTERS": "per 1M characters",
       "PER_IMAGE": "per image",
       "PER_REQUEST": "per request"

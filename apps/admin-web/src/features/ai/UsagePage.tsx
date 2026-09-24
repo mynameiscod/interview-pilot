@@ -9,7 +9,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../app/session';
 import { ErrorAlert, LoadingRow } from './shared';
-import { consoleError, formatMicros } from './format';
+import { consoleError, featureName, formatMicros, providerName, SPEECH_FEATURES } from './format';
 
 const RANGES = { '24h': 1, '7d': 7, '30d': 30 } as const;
 type Range = keyof typeof RANGES;
@@ -53,6 +53,12 @@ export function UsagePage() {
     );
     return parts.length ? parts.join(' + ') : formatMicros(0, 'USD', i18n.language);
   };
+  // Speech calls are billed by audio time or characters, which this report
+  // does not carry; zero token counts there would read as "free", so show a dash.
+  const tokens = (row: AiUsageRow, value: number) =>
+    groupBy === 'feature' && SPEECH_FEATURES.has(row.key) && value === 0
+      ? '—'
+      : number.format(value);
   const time = new Intl.DateTimeFormat(i18n.language, { dateStyle: 'short', timeStyle: 'medium' });
   const rows = entries.data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -162,12 +168,23 @@ export function UsagePage() {
                   {report.data.rows.map((r) => (
                     <tr key={r.key}>
                       <th scope="row" className="fw-normal">
-                        {groupBy === 'feature' ? <code>{r.key}</code> : r.key}
+                        {groupBy === 'feature' ? (
+                          <>
+                            <code>{r.key}</code>
+                            {featureName(t, r.key) && (
+                              <span className="d-block small cb-text-secondary">
+                                {featureName(t, r.key)}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          r.key
+                        )}
                       </th>
                       <td className="text-end">{number.format(r.calls)}</td>
                       <td className="text-end">{number.format(r.failures)}</td>
-                      <td className="text-end">{number.format(r.inputTokens)}</td>
-                      <td className="text-end">{number.format(r.outputTokens)}</td>
+                      <td className="text-end">{tokens(r, r.inputTokens)}</td>
+                      <td className="text-end">{tokens(r, r.outputTokens)}</td>
                       <td className="text-end">{t('ai.health.ms', { value: r.avgLatencyMs })}</td>
                       <td className="text-end">{cost(r)}</td>
                     </tr>
@@ -213,9 +230,14 @@ export function UsagePage() {
                     <td className="small text-nowrap">{time.format(new Date(e.at))}</td>
                     <td>
                       <code className="small">{e.feature}</code>
+                      {featureName(t, e.feature) && (
+                        <span className="d-block small cb-text-secondary">
+                          {featureName(t, e.feature)}
+                        </span>
+                      )}
                     </td>
                     <td className="small">
-                      {e.provider} / {e.model}
+                      {providerName(t, e.provider)} / {e.model}
                       {e.servedModel && e.servedModel !== e.model && (
                         <span className="d-block cb-text-secondary">
                           {t('ai.usage.servedBy', { model: e.servedModel })}

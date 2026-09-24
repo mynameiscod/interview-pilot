@@ -4,7 +4,7 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth, useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow, ReasonForm } from './shared';
-import { consoleError } from './format';
+import { consoleError, featureName, providerName } from './format';
 
 function RouteEditor({
   route,
@@ -26,7 +26,7 @@ function RouteEditor({
   const eligible = models.filter((m) => m.capabilities.includes(route.capability));
   const label = (modelId: string) => {
     const m = models.find((x) => x.id === modelId);
-    return m ? `${m.displayName} (${m.providerKey})` : t('ai.routes.deletedModel');
+    return m ? `${m.displayName} (${providerName(t, m.providerKey)})` : t('ai.routes.deletedModel');
   };
   const move = (index: number, delta: -1 | 1) => {
     const next = [...chain];
@@ -123,7 +123,8 @@ function RouteEditor({
             .filter((m) => !chain.includes(m.id))
             .map((m) => (
               <option key={m.id} value={m.id}>
-                {m.displayName} ({m.providerKey}){m.enabled ? '' : ` — ${t('ai.disabled')}`}
+                {label(m.id)}
+                {m.enabled ? '' : ` — ${t('ai.disabled')}`}
               </option>
             ))}
         </select>
@@ -139,6 +140,15 @@ function RouteEditor({
           {t('ai.routes.add')}
         </button>
       </div>
+      {eligible.length === 0 && (
+        <p className="small text-warning-emphasis">
+          {t('ai.routes.noEligible', {
+            capability: t(`ai.capabilities.${route.capability}`, {
+              defaultValue: route.capability,
+            }),
+          })}
+        </p>
+      )}
       <p className="small cb-text-secondary">{t('ai.routes.hint')}</p>
     </ReasonForm>
   );
@@ -219,9 +229,7 @@ function FeatureRow({
       <tr>
         <th scope="row">
           <code>{route.feature}</code>
-          <div className="small cb-text-secondary">
-            {t(`ai.features.${route.feature.replace('.', '_')}`)}
-          </div>
+          <div className="small cb-text-secondary">{featureName(t, route.feature)}</div>
         </th>
         <td>
           {!route.active ? (

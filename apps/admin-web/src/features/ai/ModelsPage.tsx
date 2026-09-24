@@ -2,7 +2,9 @@ import {
   AiCapability,
   PricingUnit,
   type AiModelParams,
+  type AiModelParamsPatch,
   type AiModelSummary,
+  type AiProviderKey,
   type AiProviderSummary,
   type TestAiModelResponse,
 } from '@cbi/shared-types';
@@ -11,17 +13,83 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth, useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow, ReasonForm } from './shared';
-import { consoleError, formatMicros, microsToDecimal } from './format';
+import { consoleError, formatMicros, microsToDecimal, providerName } from './format';
 
 type Mode = 'view' | 'params' | 'price' | 'toggle';
 
-const PARAM_FIELDS: { key: keyof Omit<AiModelParams, 'temperature'>; min: number; max: number }[] =
-  [
-    { key: 'maxOutputTokens', min: 16, max: 128_000 },
-    { key: 'timeoutMs', min: 1000, max: 600_000 },
-    { key: 'retries', min: 0, max: 5 },
-    { key: 'concurrency', min: 1, max: 500 },
-  ];
+const PARAM_FIELDS: {
+  key: keyof Omit<AiModelParams, 'temperature' | 'voice'>;
+  min: number;
+  max: number;
+  /** Only meaningful for text generation; hidden for speech-only models. */
+  llmOnly?: boolean;
+}[] = [
+  { key: 'maxOutputTokens', min: 16, max: 128_000, llmOnly: true },
+  { key: 'timeoutMs', min: 1000, max: 600_000 },
+  { key: 'retries', min: 0, max: 5 },
+  { key: 'concurrency', min: 1, max: 500 },
+];
+
+const TOKEN_UNITS: ReadonlySet<PricingUnit> = new Set([
+  'PER_1M_INPUT_TOKENS',
+  'PER_1M_CACHED_INPUT_TOKENS',
+  'PER_1M_OUTPUT_TOKENS',
+]);
+
+/** The pricing unit a new price most likely uses for a model with these capabilities. */
+function defaultUnit(capabilities: readonly AiCapability[]): PricingUnit {
+  if (!capabilities.includes('LLM')) {
+    if (capabilities.includes('TTS')) return 'PER_1M_CHARACTERS';
+    if (capabilities.includes('STT')) return 'PER_AUDIO_MINUTE';
+  }
+  return 'PER_1M_INPUT_TOKENS';
+}
+
+/** Voice form value to `params.voice`: blank means the provider's default voice. */
+const voiceParam = (value: string | null | undefined) => value?.trim() || null;
+
+/** Speech-only providers pre-select their capability in the add form. */
+const SUGGESTED_CAPABILITIES: Partial<Record<AiProviderKey, AiCapability[]>> = {
+  deepgram: ['STT'],
+  elevenlabs: ['TTS'],
+};
+const suggestedCapabilities = (key: AiProviderKey | undefined): AiCapability[] =>
+  (key && SUGGESTED_CAPABILITIES[key]) || ['LLM'];
+const sameCapabilities = (a: readonly AiCapability[], b: readonly AiCapability[]) =>
+  a.length === b.length && a.every((c) => b.includes(c));
+
+function VoiceField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-2">
+      <label htmlFor={id} className="form-label small">
+        {t('ai.models.params.voice')}
+      </label>
+      <input
+        id={id}
+        className="form-control form-control-sm"
+        spellCheck={false}
+        autoComplete="off"
+        maxLength={100}
+        placeholder={t('ai.models.voiceDefault')}
+        aria-describedby={`${id}-hint`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <div id={`${id}-hint`} className="form-text">
+        {t('ai.models.params.voiceHint')}
+      </div>
+    </div>
+  );
+}
 
 function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: boolean }) {
   const { t, i18n } = useTranslation();
@@ -31,8 +99,11 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
   const [mode, setMode] = useState<Mode>('view');
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useState(model.params);
+  const llm = model.capabilities.includes('LLM');
+  const tts = model.capabilities.includes('TTS');
+  const unitDefault = defaultUnit(model.capabilities);
   const [price, setPrice] = useState({
-    unit: 'PER_1M_INPUT_TOKENS' as PricingUnit,
+    unit: unitDefault,
     amount: '',
     effectiveFrom: '',
   });
@@ -57,13 +128,17 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
           reason,
         });
       }
-      if (mode === 'params') return manager.api.patch(path, { params });
+      if (mode === 'params') {
+        const { voice, ...rest } = params;
+        const patch: AiModelParamsPatch = tts ? { ...rest, voice: voiceParam(voice) } : rest;
+        return manager.api.patch(path, { params: patch });
+      }
       return manager.api.patch(path, { enabled: !model.enabled });
     },
     onSuccess: async () => {
       setMode('view');
       setError(null);
-      setPrice({ unit: 'PER_1M_INPUT_TOKENS', amount: '', effectiveFrom: '' });
+      setPrice({ unit: unitDefault, amount: '', effectiveFrom: '' });
       await queryClient.invalidateQueries({ queryKey: ['ai'] });
     },
     onError: (err) => setError(consoleError(t, err)),
@@ -90,9 +165,9 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
       <tr>
         <th scope="row">
           <div className="fw-semibold">{model.displayName}</div>
-          <code className="small">
-            {model.providerKey} / {model.modelId}
-          </code>
+          <div className="small cb-text-secondary">
+            {providerName(t, model.providerKey)} · <code>{model.modelId}</code>
+          </div>
         </th>
         <td>
           <span className={`badge ${model.enabled ? 'text-bg-success' : 'text-bg-secondary'}`}>
@@ -101,13 +176,27 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
           <div className="small cb-text-secondary mt-1">{model.capabilities.join(', ')}</div>
         </td>
         <td className="small">
-          <div>{t('ai.models.inputPrice', { price: money('PER_1M_INPUT_TOKENS') })}</div>
-          <div>{t('ai.models.outputPrice', { price: money('PER_1M_OUTPUT_TOKENS') })}</div>
+          {(llm || priceOf('PER_1M_INPUT_TOKENS')) && (
+            <div>{t('ai.models.inputPrice', { price: money('PER_1M_INPUT_TOKENS') })}</div>
+          )}
+          {(llm || priceOf('PER_1M_OUTPUT_TOKENS')) && (
+            <div>{t('ai.models.outputPrice', { price: money('PER_1M_OUTPUT_TOKENS') })}</div>
+          )}
           {priceOf('PER_1M_CACHED_INPUT_TOKENS') && (
             <div className="cb-text-secondary">
               {t('ai.models.cachedPrice', { price: money('PER_1M_CACHED_INPUT_TOKENS') })}
             </div>
           )}
+          {model.currentPricing
+            .filter((p) => !TOKEN_UNITS.has(p.unit))
+            .map((p) => (
+              <div key={p.unit}>
+                {t('ai.models.otherPrice', {
+                  price: formatMicros(p.pricePerUnitMicros, p.currency, i18n.language),
+                  unit: t(`ai.units.${p.unit}`),
+                })}
+              </div>
+            ))}
           {model.currentPricing.length === 0 && (
             <span className="badge text-bg-warning">{t('ai.models.unpriced')}</span>
           )}
@@ -118,12 +207,19 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
           )}
         </td>
         <td className="small">
-          {t('ai.models.paramsSummary', {
+          {t(llm ? 'ai.models.paramsSummary' : 'ai.models.paramsSummarySpeech', {
             timeout: Math.round(model.params.timeoutMs / 1000),
             retries: model.params.retries,
             concurrency: model.params.concurrency,
             maxOutput: model.params.maxOutputTokens,
           })}
+          {tts && (
+            <div className="cb-text-secondary">
+              {model.params.voice
+                ? t('ai.models.voiceSummary', { voice: model.params.voice })
+                : t('ai.models.voiceDefault')}
+            </div>
+          )}
         </td>
         <td className="text-end text-nowrap">
           {canManage && mode === 'view' && (
@@ -174,7 +270,7 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
                 role="status"
               >
                 {test.ok
-                  ? t('ai.models.testOk', {
+                  ? t(test.sample === null ? 'ai.models.testOkNoSample' : 'ai.models.testOk', {
                       latency: test.latencyMs,
                       model: test.servedModel ?? model.modelId,
                       sample: test.sample,
@@ -216,7 +312,7 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
                 }}
               >
                 <div className="row g-2 mb-2">
-                  {PARAM_FIELDS.map((field) => (
+                  {PARAM_FIELDS.filter((field) => llm || !field.llmOnly).map((field) => (
                     <div className="col-6 col-md-3" key={field.key}>
                       <label htmlFor={`${id}-${field.key}`} className="form-label small">
                         {t(`ai.models.params.${field.key}`)}
@@ -234,29 +330,40 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
                       />
                     </div>
                   ))}
-                  <div className="col-6 col-md-3">
-                    <label htmlFor={`${id}-temperature`} className="form-label small">
-                      {t('ai.models.params.temperature')}
-                    </label>
-                    <input
-                      id={`${id}-temperature`}
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={2}
-                      className="form-control form-control-sm"
-                      placeholder={t('ai.models.params.temperatureUnset')}
-                      value={params.temperature ?? ''}
-                      onChange={(e) =>
-                        setParams({
-                          ...params,
-                          temperature: e.target.value === '' ? null : Number(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
+                  {llm && (
+                    <div className="col-6 col-md-3">
+                      <label htmlFor={`${id}-temperature`} className="form-label small">
+                        {t('ai.models.params.temperature')}
+                      </label>
+                      <input
+                        id={`${id}-temperature`}
+                        type="number"
+                        step="0.1"
+                        min={0}
+                        max={2}
+                        className="form-control form-control-sm"
+                        placeholder={t('ai.models.params.temperatureUnset')}
+                        value={params.temperature ?? ''}
+                        onChange={(e) =>
+                          setParams({
+                            ...params,
+                            temperature: e.target.value === '' ? null : Number(e.target.value),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
-                <p className="small cb-text-secondary">{t('ai.models.params.hint')}</p>
+                {tts && (
+                  <VoiceField
+                    id={`${id}-voice`}
+                    value={params.voice ?? ''}
+                    onChange={(voice) => setParams({ ...params, voice })}
+                  />
+                )}
+                <p className="small cb-text-secondary">
+                  {llm ? t('ai.models.params.hint') : t('ai.models.params.speechHint')}
+                </p>
                 <ErrorAlert error={error} />
                 <div className="d-flex gap-2">
                   <button
@@ -352,11 +459,18 @@ function AddModel({ providers, onDone }: { providers: AiProviderSummary[]; onDon
     providerId: usable[0]?.id ?? '',
     modelId: '',
     displayName: '',
-    capabilities: ['LLM'] as AiCapability[],
+    capabilities: suggestedCapabilities(usable[0]?.key),
   });
+  const [voice, setVoice] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const tts = form.capabilities.includes('TTS');
+  const keyOf = (providerId: string) => usable.find((p) => p.id === providerId)?.key;
   const create = useMutation({
-    mutationFn: () => manager.api.post('/admin/ai/models', form),
+    mutationFn: () =>
+      manager.api.post(
+        '/admin/ai/models',
+        tts ? { ...form, params: { voice: voiceParam(voice) } } : form,
+      ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ai'] });
       onDone();
@@ -382,7 +496,21 @@ function AddModel({ providers, onDone }: { providers: AiProviderSummary[]; onDon
             id={`${id}-provider`}
             className="form-select form-select-sm"
             value={form.providerId}
-            onChange={(e) => setForm({ ...form, providerId: e.target.value })}
+            onChange={(e) => {
+              const providerId = e.target.value;
+              // Follow the provider's likely capability unless the admin changed it.
+              const untouched = sameCapabilities(
+                form.capabilities,
+                suggestedCapabilities(keyOf(form.providerId)),
+              );
+              setForm({
+                ...form,
+                providerId,
+                capabilities: untouched
+                  ? suggestedCapabilities(keyOf(providerId))
+                  : form.capabilities,
+              });
+            }}
           >
             {usable.map((p) => (
               <option key={p.id} value={p.id}>
@@ -435,12 +563,13 @@ function AddModel({ providers, onDone }: { providers: AiProviderSummary[]; onDon
                 }
               />
               <label htmlFor={`${id}-cap-${cap}`} className="form-check-label small">
-                {cap}
+                {t(`ai.capabilities.${cap}`, { defaultValue: cap })}
               </label>
             </div>
           ))}
         </div>
       </fieldset>
+      {tts && <VoiceField id={`${id}-voice`} value={voice} onChange={setVoice} />}
       <p className="small cb-text-secondary">{t('ai.models.addHint')}</p>
       <ErrorAlert error={error} />
       <div className="d-flex gap-2">
