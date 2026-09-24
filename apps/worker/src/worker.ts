@@ -1,5 +1,5 @@
 import type { Logger } from '@cbi/config';
-import type { Redis } from '@cbi/db';
+import type { ReconcileGateway, Redis } from '@cbi/db';
 import {
   AnalysisJob,
   DocumentJob,
@@ -22,11 +22,13 @@ import {
   type DocumentProcessorDeps,
 } from './processors/documents.js';
 import { sweepLiveSessions } from './processors/live-sweep.js';
+import { reconcilePayments } from './processors/payment-reconcile.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
 export const LIVE_SWEEP_JOB = 'live-sweep' as const;
+export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -45,6 +47,8 @@ export interface WorkerRuntimeOptions {
   documents?: { deps: DocumentProcessorDeps; concurrency: number };
   /** Role analysis and blueprint selection; omit to leave the queue unconsumed. */
   analysis?: { deps: AnalysisProcessorDeps; concurrency: number };
+  /** Reconciliation of purchases with the payment gateway; omit to disable. */
+  payments?: { gateway: ReconcileGateway; intervalMs: number };
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
   evaluation?: { deps: EvaluationDeps; concurrency: number };
 }
@@ -96,6 +100,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.payments) {
+    await systemQueue.upsertJobScheduler(
+      PAYMENT_RECONCILE_JOB,
+      { every: opts.payments.intervalMs },
+      { name: PAYMENT_RECONCILE_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -125,6 +137,15 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
                 opts.logger.info(evaluations, 'evaluations started or resumed');
               }
             }
+            return;
+          }
+          case PAYMENT_RECONCILE_JOB: {
+            if (!opts.payments) return;
+            const counts = await reconcilePayments({
+              gateway: opts.payments.gateway,
+              logger: opts.logger,
+            });
+            if (counts.checked > 0) opts.logger.info(counts, 'purchases reconciled');
             return;
           }
           case PROVIDER_HEALTH_JOB: {

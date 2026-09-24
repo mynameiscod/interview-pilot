@@ -2,7 +2,7 @@ import { hostname } from 'node:os';
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
-import { createEmailProvider, createStorage } from '@cbi/provider-adapters';
+import { createEmailProvider, createPaymentGateway, createStorage } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { startWorkers } from './worker.js';
 
@@ -40,6 +40,10 @@ async function main(): Promise<void> {
     heartbeatIntervalMs: env.WORKER_HEARTBEAT_INTERVAL_MS,
     providerHealthIntervalMs: env.WORKER_PROVIDER_HEALTH_INTERVAL_MS,
     liveSweepIntervalMs: env.WORKER_LIVE_SWEEP_INTERVAL_MS,
+    payments: {
+      gateway: createPaymentGateway(env),
+      intervalMs: env.WORKER_PAYMENT_RECONCILE_INTERVAL_MS,
+    },
     queueConnection,
     redis,
     logger,
