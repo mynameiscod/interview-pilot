@@ -1,5 +1,6 @@
 export { createSesEmailProvider, type SesEmailOptions } from './email/ses.js';
 export { createSmtpEmailProvider, type SmtpEmailOptions } from './email/smtp.js';
+export { createEmailProvider, type EmailSettings } from './email/factory.js';
 export type { EmailMessage, EmailProvider, SendResult } from './email/types.js';
 export { ProviderError } from './errors.js';
 export { createAnthropicLlmAdapter, type AnthropicAdapterOptions } from './llm/anthropic.js';

@@ -6,6 +6,9 @@ import {
   type RoleAnalysis,
 } from '@cbi/shared-types';
 import type {
+  ProcessingStage,
+  ProcessingStatus,
+  RecommendationsAi,
   AnalysisFailureCode as AnalysisFailureCodeT,
   InterviewLanguagePreference as InterviewLanguagePreferenceT,
   InterviewMode as InterviewModeT,
@@ -15,6 +18,32 @@ import type { PlannerState } from '@cbi/interview-engine';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
 export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED';
+
+/** A dimension scored by the pipeline, kept until the score revision is written. */
+export interface DraftDimensionScore {
+  key: string;
+  aiScore: number | null;
+  rationale: string | null;
+  evidenceIds: string[];
+  promptVersion: number | null;
+}
+
+/** Evaluation pipeline progress (Phase 5). */
+export interface SessionProcessingRecord {
+  /** Bumped when processing is re-run; job ids include it. */
+  run: number;
+  stage: ProcessingStage | null;
+  status: ProcessingStatus | null;
+  completed: ProcessingStage[];
+  attempts: number;
+  error: string | null;
+  updatedAt: Date | null;
+  /** Intermediate results handed from one stage to the next. */
+  draft: {
+    dimensions?: DraftDimensionScore[];
+    recommendations?: RecommendationsAi & { promptVersion: number | null; fallback: boolean };
+  };
+}
 
 export interface SessionClockRecord {
   budgetMs: number;
@@ -58,6 +87,7 @@ export interface InterviewSessionRecord {
   lastSeenAt: Date | null;
   disconnectedAt: Date | null;
   pausedAt: Date | null;
+  processing: SessionProcessingRecord | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -140,11 +170,13 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
     lastSeenAt: { type: Date, default: null },
     disconnectedAt: { type: Date, default: null },
     pausedAt: { type: Date, default: null },
+    processing: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true, collection: 'interviewSessions', minimize: false },
 );
 sessionSchema.index({ userId: 1, createdAt: -1 });
 sessionSchema.index({ state: 1, updatedAt: 1 });
+sessionSchema.index({ state: 1, 'processing.status': 1, 'processing.updatedAt': 1 });
 sessionSchema.index(
   { userId: 1 },
   { unique: true, partialFilterExpression: { live: true }, name: 'one_live_interview_per_user' },

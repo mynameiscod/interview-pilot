@@ -3,9 +3,8 @@ import type { ApiEnv, Logger } from '@cbi/config';
 import type { Redis } from '@cbi/db';
 import {
   createDevMailboxSmsProvider,
+  createEmailProvider,
   createMsg91OtpProvider,
-  createSesEmailProvider,
-  createSmtpEmailProvider,
   createStorage,
   type EmailProvider,
   type OtpSmsProvider,
@@ -50,27 +49,6 @@ export interface ContainerOptions {
   };
 }
 
-function buildEmailProvider(env: ApiEnv): EmailProvider {
-  if (env.EMAIL_PROVIDER === 'ses') {
-    return createSesEmailProvider({
-      region: env.SES_REGION!,
-      from: env.EMAIL_FROM,
-      credentials:
-        env.SES_ACCESS_KEY_ID && env.SES_SECRET_ACCESS_KEY
-          ? { accessKeyId: env.SES_ACCESS_KEY_ID, secretAccessKey: env.SES_SECRET_ACCESS_KEY }
-          : undefined,
-    });
-  }
-  return createSmtpEmailProvider({
-    host: env.SMTP_HOST!,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
-    requireTls: env.SMTP_REQUIRE_TLS,
-    from: env.EMAIL_FROM,
-    auth: env.SMTP_USER && env.SMTP_PASS ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
-  });
-}
-
 function buildSmsProvider(env: ApiEnv, email: EmailProvider): OtpSmsProvider | null {
   switch (env.SMS_PROVIDER) {
     case 'msg91':
@@ -93,7 +71,8 @@ function jobQueues(queueRedis: Redis | undefined): JobQueues {
 
 export function buildContainer(opts: ContainerOptions) {
   const { env, logger, redis } = opts;
-  const email = opts.overrides?.email ?? buildEmailProvider(env);
+  // The API always has email (sign-in codes); environment validation guarantees a provider.
+  const email = opts.overrides?.email ?? createEmailProvider(env)!;
   const sms = opts.overrides?.sms !== undefined ? opts.overrides.sms : buildSmsProvider(env, email);
 
   const tokens = createAccessTokenIssuer({

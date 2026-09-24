@@ -97,6 +97,52 @@ const storageShape = {
   UPLOAD_MAX_MB: z.coerce.number().int().min(1).max(25).default(8),
 };
 
+/** Outgoing email. The API needs it for sign-in codes; the worker for report notifications. */
+const emailFields = {
+  EMAIL_FROM: z.string().min(3),
+  SES_REGION: optionalString,
+  /** Omit both to use the default AWS credential chain. */
+  SES_ACCESS_KEY_ID: optionalString,
+  SES_SECRET_ACCESS_KEY: optionalString,
+  SMTP_HOST: optionalString,
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_SECURE: booleanString.default(false),
+  SMTP_REQUIRE_TLS: booleanString.default(true),
+  SMTP_USER: optionalString,
+  SMTP_PASS: optionalString,
+};
+
+type EmailEnv = {
+  APP_ENV: AppEnv;
+  EMAIL_PROVIDER: 'ses' | 'smtp' | 'disabled';
+  SES_REGION?: string;
+  SES_ACCESS_KEY_ID?: string;
+  SES_SECRET_ACCESS_KEY?: string;
+  SMTP_HOST?: string;
+  SMTP_SECURE: boolean;
+  SMTP_REQUIRE_TLS: boolean;
+};
+
+function emailIssues(env: EmailEnv, issue: (path: string, message: string) => void) {
+  if (env.EMAIL_PROVIDER === 'ses' && !env.SES_REGION) {
+    issue('SES_REGION', 'required when EMAIL_PROVIDER=ses');
+  }
+  if (Boolean(env.SES_ACCESS_KEY_ID) !== Boolean(env.SES_SECRET_ACCESS_KEY)) {
+    issue('SES_ACCESS_KEY_ID', 'set both SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY, or neither');
+  }
+  if (env.EMAIL_PROVIDER === 'smtp' && !env.SMTP_HOST) {
+    issue('SMTP_HOST', 'required when EMAIL_PROVIDER=smtp');
+  }
+  if (
+    isDeployed(env.APP_ENV) &&
+    env.EMAIL_PROVIDER === 'smtp' &&
+    !env.SMTP_REQUIRE_TLS &&
+    !env.SMTP_SECURE
+  ) {
+    issue('SMTP_REQUIRE_TLS', `unencrypted SMTP is not allowed in ${env.APP_ENV}`);
+  }
+}
+
 type SharedEnv = {
   APP_ENV: AppEnv;
   AI_SECRETS_MASTER_KEY: string;
@@ -184,17 +230,7 @@ const apiObjectSchema = baseEnvSchema.extend({
 
   // --- Email --------------------------------------------------------------
   EMAIL_PROVIDER: z.enum(['ses', 'smtp']),
-  EMAIL_FROM: z.string().min(3),
-  SES_REGION: optionalString,
-  /** Omit both to use the default AWS credential chain. */
-  SES_ACCESS_KEY_ID: optionalString,
-  SES_SECRET_ACCESS_KEY: optionalString,
-  SMTP_HOST: optionalString,
-  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
-  SMTP_SECURE: booleanString.default(false),
-  SMTP_REQUIRE_TLS: booleanString.default(true),
-  SMTP_USER: optionalString,
-  SMTP_PASS: optionalString,
+  ...emailFields,
 
   // --- SMS ----------------------------------------------------------------
   /** `disabled` hides mobile OTP (e.g. until DLT registration completes). */
@@ -213,15 +249,7 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
   const issue = (path: string, message: string) =>
     ctx.addIssue({ code: 'custom', path: [path], message });
 
-  if (env.EMAIL_PROVIDER === 'ses' && !env.SES_REGION) {
-    issue('SES_REGION', 'required when EMAIL_PROVIDER=ses');
-  }
-  if (Boolean(env.SES_ACCESS_KEY_ID) !== Boolean(env.SES_SECRET_ACCESS_KEY)) {
-    issue('SES_ACCESS_KEY_ID', 'set both SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY, or neither');
-  }
-  if (env.EMAIL_PROVIDER === 'smtp' && !env.SMTP_HOST) {
-    issue('SMTP_HOST', 'required when EMAIL_PROVIDER=smtp');
-  }
+  emailIssues(env, issue);
   if (env.SMS_PROVIDER === 'msg91' && (!env.MSG91_AUTH_KEY || !env.MSG91_OTP_TEMPLATE_ID)) {
     issue(
       'MSG91_AUTH_KEY',
@@ -241,9 +269,6 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
         issue(key, `the example development value must not be used in ${env.APP_ENV}`);
       }
     }
-    if (env.EMAIL_PROVIDER === 'smtp' && !env.SMTP_REQUIRE_TLS && !env.SMTP_SECURE) {
-      issue('SMTP_REQUIRE_TLS', `unencrypted SMTP is not allowed in ${env.APP_ENV}`);
-    }
   }
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
@@ -258,6 +283,14 @@ export const workerEnvSchema = baseEnvSchema
     WORKER_PROVIDER_HEALTH_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
     /** How often live interview timeouts (disconnect, pause, expiry) are checked. */
     WORKER_LIVE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(5_000).max(120_000).default(15_000),
+    /** Parallel evaluation stages (AI calls and PDF rendering). */
+    WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+    /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */
+    EMAIL_PROVIDER: z.enum(['ses', 'smtp', 'disabled']).default('disabled'),
+    ...emailFields,
+    EMAIL_FROM: z.string().min(3).default('CareerPilot Interview <no-reply@localhost>'),
+    /** Links in emails point here. */
+    PUBLIC_CANDIDATE_URL: z.url().default('http://localhost:5173'),
     /** Parallel document jobs (parsing is CPU- and memory-heavy). */
     WORKER_DOCUMENT_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
     WORKER_ANALYSIS_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(4),
@@ -270,9 +303,12 @@ export const workerEnvSchema = baseEnvSchema
       .max(10 * 1024 * 1024)
       .default(2 * 1024 * 1024),
   })
-  .superRefine((env, ctx) =>
-    sharedIssues(env, (path, message) => ctx.addIssue({ code: 'custom', path: [path], message })),
-  );
+  .superRefine((env, ctx) => {
+    const issue = (path: string, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
+    sharedIssues(env, issue);
+    emailIssues(env, issue);
+  });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 
 export class EnvValidationError extends Error {

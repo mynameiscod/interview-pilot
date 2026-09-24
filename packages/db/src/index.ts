@@ -2,6 +2,7 @@ export * from './ai-runtime.js';
 export * from './models/ai.js';
 export * from './models/audit-log.js';
 export * from './models/credits.js';
+export * from './models/evaluation.js';
 export * from './models/inputs.js';
 export * from './models/interview-session.js';
 export * from './models/interview-turn.js';

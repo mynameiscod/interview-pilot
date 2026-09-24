@@ -8,6 +8,12 @@ import {
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
 import { CreditAccountModel, CreditLedgerModel } from './models/credits.js';
+import {
+  FeedbackModel,
+  InterviewEvidenceModel,
+  InterviewReportModel,
+  InterviewScoreModel,
+} from './models/evaluation.js';
 import { InterviewTurnModel } from './models/interview-turn.js';
 import { JobTargetModel, ResumeModel } from './models/inputs.js';
 import { InterviewSessionModel } from './models/interview-session.js';
@@ -46,6 +52,10 @@ const MODELS = [
   InterviewTurnModel,
   CreditLedgerModel,
   CreditAccountModel,
+  InterviewEvidenceModel,
+  InterviewScoreModel,
+  InterviewReportModel,
+  FeedbackModel,
 ];
 
 /**
