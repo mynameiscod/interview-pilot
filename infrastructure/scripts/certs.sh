@@ -48,11 +48,14 @@ WEBROOT="$CBI_HOME/certbot-www"
 CERTBOT_IMAGE="${CERTBOT_IMAGE:-certbot/certbot:v4.1.1}"
 mkdir -p "$LE_DIR" "$WEBROOT"
 
+# certbot writes root-owned files (0700 directories), which the deploy user cannot
+# change, so the permissions are fixed from a short-lived root container.
 fix_permissions() {
-  if [ -d "$LE_DIR/archive" ]; then
-    chgrp -R 101 "$LE_DIR/live" "$LE_DIR/archive"
-    chmod -R g+rX,o-rwx "$LE_DIR/live" "$LE_DIR/archive"
-  fi
+  docker run --rm --entrypoint sh -v "$LE_DIR:/etc/letsencrypt" "$CERTBOT_IMAGE" -c '
+    if [ -d /etc/letsencrypt/archive ]; then
+      chgrp -R 101 /etc/letsencrypt/live /etc/letsencrypt/archive
+      chmod -R g+rX,o-rwx /etc/letsencrypt/live /etc/letsencrypt/archive
+    fi'
 }
 
 nginx_up() {
@@ -64,18 +67,27 @@ case "$CMD" in
     [ -n "$EMAIL" ] || die "--email is required (expiry notices)"
     domains=()
     for h in $(hostnames_for "$CBI_ENV"); do domains+=(-d "$h"); done
+    # A certificate from a --test-cert rehearsal is not "due", so certbot would keep it:
+    # replace it when a trusted certificate is requested.
+    replace=()
+    if [ "${#TEST_CERT[@]}" -eq 0 ] &&
+      docker run --rm --entrypoint sh -v "$LE_DIR:/etc/letsencrypt" "$CERTBOT_IMAGE" \
+        -c 'grep -qs acme-staging /etc/letsencrypt/renewal/cbi.conf'; then
+      log "replacing the test certificate with a trusted one"
+      replace=(--force-renewal --break-my-certs)
+    fi
     if nginx_up; then
       log "issuing via webroot (nginx is running)"
       docker run --rm -v "$LE_DIR:/etc/letsencrypt" -v "$WEBROOT:/var/www/certbot" "$CERTBOT_IMAGE" \
         certonly --webroot -w /var/www/certbot --cert-name cbi "${domains[@]}" \
         --email "$EMAIL" --agree-tos --no-eff-email --non-interactive --keep-until-expiring \
-        --expand "${TEST_CERT[@]}"
+        --expand "${TEST_CERT[@]}" "${replace[@]}"
     else
       log "issuing via standalone server on port 80 (nginx not running yet)"
       docker run --rm -p 80:80 -v "$LE_DIR:/etc/letsencrypt" "$CERTBOT_IMAGE" \
         certonly --standalone --cert-name cbi "${domains[@]}" \
         --email "$EMAIL" --agree-tos --no-eff-email --non-interactive --keep-until-expiring \
-        --expand "${TEST_CERT[@]}"
+        --expand "${TEST_CERT[@]}" "${replace[@]}"
     fi
     # Renewals always pass --webroot on the command line (certbot service, `renew`
     # below), which overrides the standalone authenticator saved at first issuance.
