@@ -101,7 +101,7 @@ export async function ensureLibraryCatalog(now: Date = new Date()): Promise<Ensu
         status: 'ACTIVE',
         messages: seed.messages,
         variables: extractVariables(seed.messages),
-        notes: 'Seeded default (Phase 3).',
+        notes: 'Seeded default.',
         contentHash: contentHash({ feature: seed.feature, messages: seed.messages }),
         activatedAt: now,
       });

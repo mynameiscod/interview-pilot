@@ -11,6 +11,7 @@ import { originGuard } from './middleware/origin-guard.js';
 import { resolveRequestId } from './middleware/request-id.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { creditsRouter } from './modules/credits/credits.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { jobsRouter, resumesRouter } from './modules/inputs/inputs.routes.js';
 import { interviewsRouter } from './modules/interviews/interviews.routes.js';
@@ -88,6 +89,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
   v1.use('/interviews', interviewsRouter(c));
+  v1.use('/credits', creditsRouter(c));
   v1.use(librarySearchRouter());
   v1.use('/admin/auth', authRouter('admin', c));
   v1.use('/admin', adminRouter(c));

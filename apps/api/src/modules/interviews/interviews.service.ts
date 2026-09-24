@@ -33,7 +33,7 @@ export const MAX_OPEN_INTERVIEWS = 10;
 
 const OPEN_STATES: InterviewState[] = ['DRAFT', 'ROLE_ANALYSIS', 'READY', 'FAILED'];
 const ANALYZABLE: InterviewState[] = ['DRAFT', 'FAILED', 'READY'];
-const CANCELLABLE: InterviewState[] = ['DRAFT', 'READY', 'FAILED'];
+const CANCELLABLE: InterviewState[] = ['DRAFT', 'READY', 'READY_TO_START', 'FAILED'];
 
 function interviewTitle(
   session: InterviewSessionRecord,
@@ -182,6 +182,11 @@ export function createInterviewService({ jobs, audit, logger }: Deps) {
 
     async get(userId: string, id: string) {
       return summary(await load(userId, id));
+    },
+
+    /** The raw session (owner only), for the live room. */
+    record(userId: string, id: string) {
+      return load(userId, id);
     },
 
     /** DRAFT / FAILED / READY → ROLE_ANALYSIS, then hands the work to the worker. */

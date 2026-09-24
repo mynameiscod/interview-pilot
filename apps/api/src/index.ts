@@ -1,5 +1,7 @@
 import { apiEnvSchema, createLogger, loadEnv } from '@cbi/config';
+import { createServer } from 'node:http';
 import { createApp, SERVICE_NAME } from './app.js';
+import { createRealtime } from './realtime.js';
 import { buildContainer } from './container.js';
 import { bootstrapAi } from './modules/ai/ai-bootstrap.js';
 import {
@@ -53,7 +55,9 @@ async function main(): Promise<void> {
     isDraining: () => draining,
   });
 
-  const server = app.listen(env.PORT_API, () => {
+  const server = createServer(app);
+  const realtime = await createRealtime({ server, container, redis });
+  server.listen(env.PORT_API, () => {
     logger.info({ port: env.PORT_API }, 'api listening');
   });
 
@@ -67,7 +71,8 @@ async function main(): Promise<void> {
     }, env.SHUTDOWN_GRACE_MS);
     forceTimer.unref();
 
-    server.close(async () => {
+    // Closing Socket.IO tells rooms to reconnect elsewhere and closes the HTTP server.
+    void realtime.close().then(async () => {
       try {
         await stopAiListener();
         await container.jobs.close();

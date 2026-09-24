@@ -27,8 +27,10 @@
     "@cbi/config": "workspace:*",
     "@cbi/db": "workspace:*",
     "@cbi/documents": "workspace:*",
+    "@cbi/interview-engine": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
     "@cbi/shared-types": "workspace:*",
+    "@socket.io/redis-adapter": "8.3.0",
     "bullmq": "6.3.8",
     "cors": "2.8.6",
     "express": "5.2.1",
@@ -38,6 +40,7 @@
     "multer": "2.4.0",
     "pino-http": "11.0.0",
     "rate-limit-redis": "6.0.1",
+    "socket.io": "4.8.1",
     "swagger-ui-express": "5.0.1",
     "zod": "4.6.5"
   },
@@ -48,6 +51,7 @@
     "@types/node": "24.13.6",
     "@types/supertest": "7.2.1",
     "@types/swagger-ui-express": "4.1.8",
+    "socket.io-client": "4.8.1",
     "supertest": "7.3.0",
     "tsx": "4.23.15",
     "vitest": "5.0.1"

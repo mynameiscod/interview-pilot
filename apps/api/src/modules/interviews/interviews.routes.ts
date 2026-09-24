@@ -39,6 +39,18 @@ export function interviewsRouter(c: Container): Router {
     const body = UpdateInterviewSetupBody.parse(req.body);
     res.json({ data: await svc.updateSetup(user(req), id(req.params.id), body) });
   });
+  router.post('/:id/start', async (req, res) => {
+    const session = await c.live.start(user(req), id(req.params.id));
+    res.json({ data: await svc.get(user(req), String(session._id)) });
+  });
+  router.post('/:id/end', async (req, res) => {
+    await c.live.end(user(req), id(req.params.id));
+    res.json({ data: await svc.get(user(req), id(req.params.id)) });
+  });
+  /** The same snapshot the room receives on join, for clients that cannot open a socket. */
+  router.get('/:id/live', async (req, res) => {
+    res.json({ data: await c.live.snapshot(await svc.record(user(req), id(req.params.id))) });
+  });
   router.post('/:id/cancel', async (req, res) => {
     res.json({ data: await svc.cancel(user(req), id(req.params.id), clientContext(req)) });
   });

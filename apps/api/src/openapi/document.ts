@@ -1,5 +1,9 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  CreditBalance,
+  CreditLedgerEntry,
+  CreditLedgerQuery,
+  InterviewSnapshot,
   BlueprintListQuery,
   BlueprintSummary,
   CompanySummary,
@@ -537,6 +541,37 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: UpdateInterviewSetupBody,
     response: InterviewSummary,
     errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/start', {
+    tag: 'Interviews',
+    summary:
+      'Start the interview (READY or READY_TO_START → ACTIVE), reserving one credit. The first question arrives in the realtime room',
+    response: InterviewSummary,
+    errors: [401, 402, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/end', {
+    tag: 'Interviews',
+    summary:
+      'End the interview early; it moves to PROCESSING and the credit is consumed only if enough of it was used',
+    response: InterviewSummary,
+    errors: [401, 404, 409],
+  });
+  candidate('get', '/interviews/{id}/live', {
+    tag: 'Interviews',
+    summary:
+      'The live snapshot the realtime room sends on join (Socket.IO namespace /rt; see docs/architecture/live-interview.md)',
+    response: InterviewSnapshot,
+  });
+  candidate('get', '/credits/balance', {
+    tag: 'Credits',
+    summary: 'Available and reserved credits (the one-time free credit is granted on first use)',
+    response: CreditBalance,
+  });
+  candidate('get', '/credits/ledger', {
+    tag: 'Credits',
+    summary: 'My credit ledger, newest first',
+    query: CreditLedgerQuery,
+    response: z.array(CreditLedgerEntry),
   });
   candidate('post', '/interviews/{id}/cancel', {
     tag: 'Interviews',
