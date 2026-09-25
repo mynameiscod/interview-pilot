@@ -1,0 +1,189 @@
+// Candidate dashboard. Colours come from the design tokens (var(--cb-*)) and
+// Bootstrap's RGB variables, used only for light tints of navy and teal.
+
+.cb-dash-card {
+  background-color: var(--cb-surface);
+  border: 1px solid var(--cb-border);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.cb-dash-eyebrow {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cb-text-secondary);
+}
+
+.cb-dash-greeting {
+  color: var(--cb-primary);
+  font-weight: 700;
+}
+
+// Rounded icon tile (teal tint by default, navy with --primary).
+.cb-icon-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.8rem;
+  font-size: 1.35rem;
+  color: var(--cb-secondary-strong);
+  background-color: rgba(var(--bs-secondary-rgb), 0.14);
+
+  &--primary {
+    color: var(--cb-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.08);
+  }
+
+  &--round {
+    border-radius: 50%;
+  }
+
+  &--sm {
+    width: 2.5rem;
+    height: 2.5rem;
+    font-size: 1.1rem;
+  }
+}
+
+// Hero visual: what an interview can cover, plus the slogan.
+.cb-dash-visual {
+  position: relative;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background-color: rgba(var(--bs-secondary-rgb), 0.08);
+  overflow: hidden;
+}
+
+.cb-dash-visual-card {
+  background-color: var(--cb-surface);
+  border-radius: 0.8rem;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 0.5rem 1.5rem rgba(var(--bs-primary-rgb), 0.08);
+}
+
+.cb-dash-slogan {
+  color: var(--cb-primary);
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1.15;
+  font-size: 1.6rem;
+
+  span:nth-child(2) {
+    color: var(--cb-secondary-strong);
+  }
+}
+
+// Navy "start an interview" card.
+.cb-dash-start {
+  border-radius: 1rem;
+  padding: 1.75rem;
+  color: var(--cb-background);
+  background-color: var(--cb-primary);
+  background-image: linear-gradient(
+    120deg,
+    transparent 55%,
+    rgba(var(--bs-secondary-rgb), 0.35) 100%
+  );
+
+  .cb-dash-start-body {
+    opacity: 0.85;
+  }
+
+  :focus-visible {
+    outline-color: var(--cb-background);
+  }
+}
+
+.cb-dash-play {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--cb-secondary);
+  font-size: 1.5rem;
+  color: var(--cb-background);
+}
+
+// Status pills for interviews.
+.cb-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  // Text stays dark for contrast; only the icon carries the status colour.
+  color: var(--cb-text-primary);
+  background-color: var(--cb-surface-muted);
+
+  .bi {
+    color: var(--cb-text-secondary);
+  }
+
+  &--success {
+    background-color: rgba(var(--bs-success-rgb), 0.1);
+
+    .bi {
+      color: var(--cb-success);
+    }
+  }
+
+  &--active {
+    background-color: rgba(var(--bs-primary-rgb), 0.08);
+
+    .bi {
+      color: var(--cb-primary);
+    }
+  }
+
+  &--danger {
+    background-color: rgba(var(--bs-danger-rgb), 0.08);
+
+    .bi {
+      color: var(--cb-danger);
+    }
+  }
+}
+
+.cb-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  text-decoration: none;
+  color: var(--cb-secondary-strong);
+  background-color: rgba(var(--bs-secondary-rgb), 0.12);
+
+  &:hover {
+    color: var(--cb-primary);
+  }
+}
+
+.cb-dash-row + .cb-dash-row {
+  border-top: 1px solid var(--cb-border);
+}
+
+// "What you can practise" tiles.
+.cb-area-tile {
+  height: 100%;
+  border-radius: 0.8rem;
+  padding: 1rem;
+  background-color: var(--cb-surface-muted);
+}
+
+.cb-dash-tip {
+  border-radius: 1rem;
+  padding: 1rem 1.5rem;
+  background-color: rgba(var(--bs-secondary-rgb), 0.08);
+}

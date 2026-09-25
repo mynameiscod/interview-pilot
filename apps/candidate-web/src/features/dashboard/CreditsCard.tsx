@@ -8,38 +8,53 @@ export function CreditsCard() {
   const balance = useCreditBalance();
 
   return (
-    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="credits-title">
-      <h2 id="credits-title" className="h5">
-        <i className="bi bi-coin me-2 text-secondary" aria-hidden="true" />
-        {t('credits.title')}
-      </h2>
-      {balance.isPending && <p className="cb-text-secondary mb-0">{t('common.loading')}</p>}
-      {balance.isError && (
-        <p className="cb-text-secondary mb-0" role="alert">
-          {t('credits.error')}
-        </p>
-      )}
-      {balance.data && (
-        <>
-          <p className="fs-5 fw-semibold mb-1">
-            {t('credits.available', { count: balance.data.available })}
-          </p>
-          {balance.data.reserved > 0 && (
-            <p className="small mb-1">{t('credits.reserved', { count: balance.data.reserved })}</p>
+    <section className="cb-dash-card" aria-labelledby="credits-title">
+      <div className="d-flex gap-3 align-items-start">
+        <span className="cb-icon-tile">
+          <i className="bi bi-database" aria-hidden="true" />
+        </span>
+        <div className="flex-grow-1">
+          <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <h2 id="credits-title" className="h5 mb-0">
+              {t('credits.title')}
+            </h2>
+            <Link to="/pricing" className="cb-link-pill">
+              <i className="bi bi-tag" aria-hidden="true" />
+              {t('credits.viewPricing')}
+            </Link>
+          </div>
+          {balance.isPending && (
+            <p className="cb-text-secondary mt-2 mb-0">{t('common.loading')}</p>
           )}
-          <p className="small cb-text-secondary">{t('credits.note')}</p>
-        </>
-      )}
-      <div className="d-flex flex-wrap gap-2">
-        <Link
-          to="/pricing"
-          className={`btn btn-sm ${balance.data?.available === 0 ? 'btn-primary' : 'btn-outline-primary'}`}
-        >
-          {t('nav.buyCredits')}
-        </Link>
-        <Link to="/app/purchases" className="btn btn-link btn-sm">
-          {t('credits.purchasesLink')}
-        </Link>
+          {balance.isError && (
+            <p className="cb-text-secondary mt-2 mb-0" role="alert">
+              {t('credits.error')}
+            </p>
+          )}
+          {balance.data && (
+            <>
+              <p className="fs-4 fw-bold text-primary mt-2 mb-1">
+                {t('credits.available', { count: balance.data.available })}
+              </p>
+              {balance.data.reserved > 0 && (
+                <p className="small mb-1">
+                  {t('credits.reserved', { count: balance.data.reserved })}
+                </p>
+              )}
+              <p className="small cb-text-secondary">{t('credits.note')}</p>
+            </>
+          )}
+          <div className="d-flex flex-wrap align-items-center gap-3 mt-3">
+            <Link to="/pricing" className="btn btn-primary">
+              <i className="bi bi-cart3 me-2" aria-hidden="true" />
+              {t('nav.buyCredits')}
+            </Link>
+            <Link to="/app/purchases" className="small fw-semibold">
+              {t('credits.purchasesLink')}
+              <i className="bi bi-arrow-right ms-1" aria-hidden="true" />
+            </Link>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -161,7 +161,7 @@ describe('session restore and onboarding', () => {
   it('restores the session from the refresh cookie and skips the login page', async () => {
     const api = fakeApi({ 'POST /auth/refresh': () => ok(makeSession()) });
     const { router } = await renderRoute('/login', { api });
-    expect(await screen.findByRole('heading', { name: 'Welcome, Asha' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Hi Asha' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/app');
     expect(api.calls.find((c) => c.key === 'POST /auth/refresh')!.headers['x-cb-csrf']).toBe('1');
   });
@@ -192,7 +192,7 @@ describe('session restore and onboarding', () => {
     await user.selectOptions(screen.getByLabelText('Preferred interview language'), 'te');
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
-    expect(await screen.findByRole('heading', { name: 'Welcome, Ravi' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Hi Ravi' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/app');
     expect(api.calls.find((c) => c.key === 'PATCH /users/me/profile')!.body).toEqual({
       displayName: 'Ravi',
@@ -210,7 +210,8 @@ describe('session restore and onboarding', () => {
     });
     const { router } = await renderRoute('/app', { api });
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await user.click(await screen.findByRole('button', { name: 'Account menu' }));
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
   });

@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router';
+import { AppLayout } from './AppLayout';
 import { FocusLayout } from './FocusLayout';
 import { RedirectIfSignedIn, RequireAuth, RequireOnboarded } from './guards';
 import { PublicLayout } from './PublicLayout';
@@ -34,54 +35,14 @@ export const routes: RouteObject[] = [
     ],
   },
   {
-    element: <PublicLayout />,
+    // Signed-in candidate pages: sidebar shell (dashboard, history, purchases, profile, interviews).
+    element: <AppLayout />,
     ErrorBoundary: RouteError,
     HydrateFallback: RouteLoading,
     children: [
       {
-        index: true,
-        lazy: async () => ({ Component: (await import('../pages/LandingPage')).LandingPage }),
-      },
-      {
-        path: 'pricing',
-        lazy: async () => ({
-          Component: (await import('../features/payments/PricingPage')).PricingPage,
-        }),
-      },
-      {
-        // Company invite links: public, so candidates see the interview before signing in.
-        path: 'campaign/:token',
-        lazy: async () => ({
-          Component: (await import('../features/campaigns/CampaignPage')).CampaignPage,
-        }),
-      },
-      {
-        // Candidate Proof: a read-only report summary shared by link (no sign-in).
-        path: 'proof/:token',
-        lazy: async () => ({
-          Component: (await import('../features/proof/ProofPage')).ProofPage,
-        }),
-      },
-      {
-        element: <RedirectIfSignedIn />,
-        children: [
-          {
-            path: 'login',
-            lazy: async () => ({
-              Component: (await import('../features/auth/LoginPage')).LoginPage,
-            }),
-          },
-        ],
-      },
-      {
         element: <RequireAuth />,
         children: [
-          {
-            path: 'onboarding',
-            lazy: async () => ({
-              Component: (await import('../features/profile/OnboardingPage')).OnboardingPage,
-            }),
-          },
           {
             path: 'app',
             element: <RequireOnboarded />,
@@ -181,6 +142,59 @@ export const routes: RouteObject[] = [
                 }),
               },
             ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    element: <PublicLayout />,
+    ErrorBoundary: RouteError,
+    HydrateFallback: RouteLoading,
+    children: [
+      {
+        index: true,
+        lazy: async () => ({ Component: (await import('../pages/LandingPage')).LandingPage }),
+      },
+      {
+        path: 'pricing',
+        lazy: async () => ({
+          Component: (await import('../features/payments/PricingPage')).PricingPage,
+        }),
+      },
+      {
+        // Company invite links: public, so candidates see the interview before signing in.
+        path: 'campaign/:token',
+        lazy: async () => ({
+          Component: (await import('../features/campaigns/CampaignPage')).CampaignPage,
+        }),
+      },
+      {
+        // Candidate Proof: a read-only report summary shared by link (no sign-in).
+        path: 'proof/:token',
+        lazy: async () => ({
+          Component: (await import('../features/proof/ProofPage')).ProofPage,
+        }),
+      },
+      {
+        element: <RedirectIfSignedIn />,
+        children: [
+          {
+            path: 'login',
+            lazy: async () => ({
+              Component: (await import('../features/auth/LoginPage')).LoginPage,
+            }),
+          },
+        ],
+      },
+      {
+        element: <RequireAuth />,
+        children: [
+          {
+            path: 'onboarding',
+            lazy: async () => ({
+              Component: (await import('../features/profile/OnboardingPage')).OnboardingPage,
+            }),
           },
         ],
       },

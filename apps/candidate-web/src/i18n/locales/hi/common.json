@@ -2,11 +2,14 @@
   "app": {
     "productName": "CareerPilot Interview",
     "endorsement": "by CodeBegun",
-    "homeLink": "CareerPilot Interview होम"
+    "homeLink": "CareerPilot Interview होम",
+    "tagline": "CodeBegun का AI इंटरव्यू अभ्यास"
   },
   "a11y": {
     "skipToContent": "मुख्य सामग्री पर जाएँ",
-    "primaryNavigation": "मुख्य नेविगेशन"
+    "primaryNavigation": "मुख्य नेविगेशन",
+    "toggleNavigation": "नेविगेशन दिखाएँ या छिपाएँ",
+    "appNavigation": "आपका अभ्यास स्थान"
   },
   "language": {
     "label": "भाषा",
@@ -22,7 +25,8 @@
     "history": "इतिहास",
     "pricing": "कीमतें",
     "buyCredits": "क्रेडिट ख़रीदें",
-    "purchases": "ख़रीदारियाँ"
+    "purchases": "ख़रीदारियाँ",
+    "accountMenu": "अकाउंट मेन्यू"
   },
   "landing": {
     "hero": {
@@ -128,8 +132,8 @@
     }
   },
   "dashboard": {
-    "greeting": "स्वागत है, {{name}}",
-    "subtitle": "आपका इंटरव्यू अभ्यास स्थान।",
+    "greeting": "नमस्ते {{name}}",
+    "subtitle": "आपका अपना इंटरव्यू अभ्यास स्थान।",
     "profileLink": "अपनी प्रोफ़ाइल देखें",
     "startTitle": "अपने अगले इंटरव्यू की तैयारी करें",
     "startBody": "अपना रिज़्यूमे और जॉब डिस्क्रिप्शन जोड़ें, या सिर्फ़ रोल चुनें। हम उसके लिए एक वास्तविक इंटरव्यू की योजना बनाएँगे।",
@@ -144,7 +148,33 @@
     "resumeNamed": "{{title}} फिर से शुरू करें",
     "start": "शुरू करें",
     "viewReport": "रिपोर्ट देखें",
-    "viewReportNamed": "{{title}} की रिपोर्ट देखें"
+    "viewReportNamed": "{{title}} की रिपोर्ट देखें",
+    "eyebrow": "फिर से स्वागत है",
+    "tagline": "AI के साथ अभ्यास करें। असली फ़ीडबैक पाएँ। इंटरव्यू के लिए तैयार रहें।",
+    "features": {
+      "roleSpecific": "रोल के हिसाब से सवाल",
+      "realistic": "असली जैसा इंटरव्यू अनुभव",
+      "feedback": "विस्तृत AI फ़ीडबैक"
+    },
+    "coverageTitle": "आपके इंटरव्यू में शामिल हो सकता है",
+    "slogan": {
+      "practise": "अभ्यास करें।",
+      "improve": "बेहतर बनें।",
+      "hired": "नौकरी पाएँ।"
+    },
+    "recentAll": "इतिहास देखें",
+    "minutes_one": "{{count}} मिनट",
+    "minutes_other": "{{count}} मिनट",
+    "practiseTitle": "आप क्या अभ्यास कर सकते हैं",
+    "practiseCta": "अभ्यास शुरू करें",
+    "areas": {
+      "TECHNICAL": "आपके रोल की मुख्य अवधारणाएँ",
+      "PROBLEM_SOLVING": "खुले सवालों को सोच-समझकर हल करना",
+      "CODING": "असली एडिटर में कोड लिखें",
+      "BEHAVIORAL": "टीमवर्क, नेतृत्व, परिस्थितियाँ"
+    },
+    "tipLabel": "सुझाव",
+    "tip": "रिज़्यूमे के साथ जॉब डिस्क्रिप्शन भी जोड़ें। तब सवाल वही पूछे जाते हैं जो रोल में सच में चाहिए।"
   },
   "profile": {
     "title": "प्रोफ़ाइल",
@@ -534,7 +564,8 @@
     "reserved_one": "{{count}} जारी इंटरव्यू के लिए रखा गया है",
     "reserved_other": "{{count}} जारी इंटरव्यू के लिए रखे गए हैं",
     "note": "हर इंटरव्यू में 1 क्रेडिट लगता है। अगर आप बहुत जल्दी ख़त्म करते हैं, तो क्रेडिट वापस मिल जाता है।",
-    "purchasesLink": "ख़रीदारी का इतिहास"
+    "purchasesLink": "ख़रीदारी का इतिहास",
+    "viewPricing": "कीमतें देखें"
   },
   "start": {
     "title": "शुरू करने के लिए तैयार हैं?",

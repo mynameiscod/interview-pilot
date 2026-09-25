@@ -2,11 +2,14 @@
   "app": {
     "productName": "CareerPilot Interview",
     "endorsement": "by CodeBegun",
-    "homeLink": "CareerPilot Interview హోమ్"
+    "homeLink": "CareerPilot Interview హోమ్",
+    "tagline": "CodeBegun AI ఇంటర్వ్యూ ప్రాక్టీస్"
   },
   "a11y": {
     "skipToContent": "ప్రధాన కంటెంట్‌కు వెళ్లండి",
-    "primaryNavigation": "ప్రధాన నావిగేషన్"
+    "primaryNavigation": "ప్రధాన నావిగేషన్",
+    "toggleNavigation": "నావిగేషన్ చూపించండి లేదా దాచండి",
+    "appNavigation": "మీ ప్రాక్టీస్ స్థలం"
   },
   "language": {
     "label": "భాష",
@@ -22,7 +25,8 @@
     "history": "చరిత్ర",
     "pricing": "ధరలు",
     "buyCredits": "క్రెడిట్‌లు కొనండి",
-    "purchases": "కొనుగోళ్లు"
+    "purchases": "కొనుగోళ్లు",
+    "accountMenu": "ఖాతా మెనూ"
   },
   "landing": {
     "hero": {
@@ -128,8 +132,8 @@
     }
   },
   "dashboard": {
-    "greeting": "స్వాగతం, {{name}}",
-    "subtitle": "మీ ఇంటర్వ్యూ ప్రాక్టీస్ స్థలం.",
+    "greeting": "హాయ్ {{name}}",
+    "subtitle": "మీ కోసమే ఇంటర్వ్యూ ప్రాక్టీస్ స్థలం.",
     "profileLink": "మీ ప్రొఫైల్ చూడండి",
     "startTitle": "మీ తదుపరి ఇంటర్వ్యూకి సాధన చేయండి",
     "startBody": "మీ రెజ్యూమే, జాబ్ డిస్క్రిప్షన్ జోడించండి, లేదా కేవలం రోల్‌ను ఎంచుకోండి. దానికి తగిన వాస్తవిక ఇంటర్వ్యూను మేము ప్లాన్ చేస్తాం.",
@@ -144,7 +148,33 @@
     "resumeNamed": "{{title}} మళ్లీ కొనసాగించండి",
     "start": "ప్రారంభించండి",
     "viewReport": "రిపోర్ట్ చూడండి",
-    "viewReportNamed": "{{title}} రిపోర్ట్ చూడండి"
+    "viewReportNamed": "{{title}} రిపోర్ట్ చూడండి",
+    "eyebrow": "మళ్లీ స్వాగతం",
+    "tagline": "AI తో సాధన చేయండి. నిజమైన ఫీడ్‌బ్యాక్ పొందండి. ఇంటర్వ్యూకి సిద్ధంగా ఉండండి.",
+    "features": {
+      "roleSpecific": "రోల్‌కు తగిన ప్రశ్నలు",
+      "realistic": "నిజమైన ఇంటర్వ్యూ అనుభవం",
+      "feedback": "వివరమైన AI ఫీడ్‌బ్యాక్"
+    },
+    "coverageTitle": "మీ ఇంటర్వ్యూలో ఉండగలవి",
+    "slogan": {
+      "practise": "సాధన చేయండి.",
+      "improve": "మెరుగుపడండి.",
+      "hired": "ఉద్యోగం పొందండి."
+    },
+    "recentAll": "చరిత్ర చూడండి",
+    "minutes_one": "{{count}} నిమిషం",
+    "minutes_other": "{{count}} నిమిషాలు",
+    "practiseTitle": "మీరు ఏమి సాధన చేయవచ్చు",
+    "practiseCta": "సాధన ప్రారంభించండి",
+    "areas": {
+      "TECHNICAL": "మీ రోల్‌కు ముఖ్యమైన కాన్సెప్ట్‌లు",
+      "PROBLEM_SOLVING": "ఓపెన్ సమస్యలను ఆలోచించి పరిష్కరించడం",
+      "CODING": "నిజమైన ఎడిటర్‌లో కోడ్ రాయండి",
+      "BEHAVIORAL": "టీమ్‌వర్క్, నాయకత్వం, సందర్భాలు"
+    },
+    "tipLabel": "సూచన",
+    "tip": "రెజ్యూమేతో పాటు జాబ్ డిస్క్రిప్షన్ కూడా జోడించండి. అప్పుడు ప్రశ్నలు ఆ రోల్‌కు నిజంగా కావలసిన వాటిపైనే ఉంటాయి."
   },
   "profile": {
     "title": "ప్రొఫైల్",
@@ -534,7 +564,8 @@
     "reserved_one": "{{count}} జరుగుతున్న ఇంటర్వ్యూ కోసం ఉంచబడింది",
     "reserved_other": "{{count}} జరుగుతున్న ఇంటర్వ్యూల కోసం ఉంచబడ్డాయి",
     "note": "ప్రతి ఇంటర్వ్యూకు 1 క్రెడిట్ ఉపయోగించబడుతుంది. మీరు చాలా త్వరగా ముగిస్తే, క్రెడిట్ తిరిగి వస్తుంది.",
-    "purchasesLink": "కొనుగోలు చరిత్ర"
+    "purchasesLink": "కొనుగోలు చరిత్ర",
+    "viewPricing": "ధరలు చూడండి"
   },
   "start": {
     "title": "ప్రారంభించడానికి సిద్ధమా?",

@@ -1,0 +1,107 @@
+// Signed-in candidate shell: navy sidebar + slim top bar. Colours come from the
+// design tokens (var(--cb-*)) and Bootstrap's RGB variables for tints only.
+
+.cb-app-shell {
+  min-height: 100vh;
+  background-color: var(--cb-surface-muted);
+}
+
+.cb-app-sidebar {
+  background-color: var(--cb-primary);
+  color: var(--cb-background);
+
+  @media (min-width: 992px) {
+    position: sticky;
+    top: 0;
+    width: 16rem;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  // The "[logo pending]" marker must stay readable on navy.
+  .cb-brand-placeholder {
+    color: var(--cb-background);
+    border-color: var(--cb-background);
+    opacity: 0.8;
+  }
+}
+
+.cb-app-brand {
+  display: block;
+  color: var(--cb-background);
+
+  &:hover,
+  &:focus {
+    color: var(--cb-background);
+  }
+}
+
+.cb-app-brand-muted {
+  color: var(--cb-background);
+  opacity: 0.75;
+}
+
+.cb-app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.6rem;
+  color: var(--cb-background);
+  text-decoration: none;
+  opacity: 0.85;
+
+  .bi {
+    font-size: 1.15rem;
+  }
+
+  &:hover {
+    color: var(--cb-background);
+    opacity: 1;
+    background-color: rgba(var(--bs-secondary-rgb), 0.18);
+  }
+
+  &.active {
+    color: var(--cb-background);
+    opacity: 1;
+    font-weight: 600;
+    background-color: var(--cb-secondary-strong);
+  }
+}
+
+.cb-app-sidebar :focus-visible {
+  outline-color: var(--cb-background);
+}
+
+.cb-app-topbar {
+  min-height: 3.75rem;
+}
+
+.cb-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background-color: var(--cb-primary);
+  color: var(--cb-background);
+  font-weight: 600;
+}
+
+.cb-account-menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 1050;
+  min-width: 14rem;
+  box-shadow: 0 0.5rem 1.5rem rgba(var(--bs-primary-rgb), 0.12);
+
+  .btn-link {
+    color: var(--cb-text-primary);
+
+    &:hover {
+      background-color: var(--cb-surface-muted);
+    }
+  }
+}

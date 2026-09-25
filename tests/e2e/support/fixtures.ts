@@ -100,7 +100,7 @@ export async function signUpCandidate(page: Page, opts: { email?: string; name?:
   await page.goto(`${URLS.candidate}/login`);
   await completeOtpSignIn(page, email);
   await completeOnboarding(page, name);
-  await expect(page.getByRole('heading', { name: `Welcome, ${name}` })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `Hi ${name}` })).toBeVisible();
   return { email, name };
 }
 
