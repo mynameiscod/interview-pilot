@@ -6,7 +6,9 @@ import {
   RetryJobBody,
   RollupBody,
   SettingKey,
+  TestIntegrationBody,
   TrackEventsBody,
+  UpdateIntegrationBody,
   UpdateFlagBody,
   UpdateSettingBody,
 } from '@cbi/shared-types';
@@ -14,6 +16,7 @@ import { Router, type RequestHandler, type Response } from 'express';
 import type { Container } from '../../container.js';
 import { AppError } from '../../lib/errors.js';
 import { clientContext } from '../../lib/request-context.js';
+import { parseKind } from './integrations.service.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
 
 const noStore = (res: Response) => res.set('Cache-Control', 'no-store');
@@ -124,6 +127,35 @@ export function opsAdminRouter(c: Container): Router {
     const body = UpdateFlagBody.parse(req.body);
     res.json({
       data: await c.flags.update(String(req.params.key), body, actor(req), clientContext(req)),
+    });
+  });
+
+  // ---- Integrations: provider credentials (write-only secrets) -----------------------------
+  router.get('/integrations', requirePermission('system.read'), async (_req, res) => {
+    noStore(res).json({ data: await c.integrationsAdmin.list() });
+  });
+  router.get('/integrations/:kind', requirePermission('system.read'), async (req, res) => {
+    noStore(res).json({ data: await c.integrationsAdmin.get(parseKind(String(req.params.kind))) });
+  });
+  router.put('/integrations/:kind', requirePermission('system.manage'), async (req, res) => {
+    const kind = parseKind(String(req.params.kind));
+    const body = UpdateIntegrationBody.parse(req.body);
+    noStore(res).json({
+      data: await c.integrationsAdmin.update(kind, body, actor(req), clientContext(req)),
+    });
+  });
+  router.post('/integrations/:kind/test', requirePermission('system.manage'), async (req, res) => {
+    const kind = parseKind(String(req.params.kind));
+    const body = TestIntegrationBody.parse(req.body ?? {});
+    noStore(res).json({
+      data: await c.integrationsAdmin.test(kind, body, actor(req), clientContext(req)),
+    });
+  });
+  router.post('/integrations/:kind/reset', requirePermission('system.manage'), async (req, res) => {
+    const kind = parseKind(String(req.params.kind));
+    const { reason } = RetryJobBody.parse(req.body);
+    noStore(res).json({
+      data: await c.integrationsAdmin.reset(kind, reason, actor(req), clientContext(req)),
     });
   });
 

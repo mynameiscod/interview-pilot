@@ -151,3 +151,4 @@ export function buildAiRuntime(opts: AiRuntimeOptions) {
 }
 
 export type AiRuntime = ReturnType<typeof buildAiRuntime>;
+export * from './integrations.js';

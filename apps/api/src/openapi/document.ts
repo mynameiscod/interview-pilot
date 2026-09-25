@@ -1,5 +1,9 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  IntegrationSummary,
+  IntegrationTestResult,
+  TestIntegrationBody,
+  UpdateIntegrationBody,
   ClientFlags,
   CostQuery,
   CostReport,
@@ -1349,6 +1353,31 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Switch a flag and set its rollout (system.manage; audited)',
     body: UpdateFlagBody,
     response: FeatureFlag,
+  });
+  opsAdmin('get', '/admin/integrations', {
+    summary:
+      'Provider credentials for email, payments, storage, SMS and the judge: source (admin/env/none), readiness, settings and secret state (last 4 only) (system.read)',
+    response: z.array(IntegrationSummary),
+  });
+  opsAdmin('get', '/admin/integrations/{kind}', {
+    summary: 'One integration (system.read)',
+    response: IntegrationSummary,
+  });
+  opsAdmin('put', '/admin/integrations/{kind}', {
+    summary:
+      'Configure an integration: provider, settings and write-only secrets (omitted keeps, null clears). Applied by every process at once (system.manage; audited without values)',
+    body: UpdateIntegrationBody,
+    response: IntegrationSummary,
+  });
+  opsAdmin('post', '/admin/integrations/{kind}/test', {
+    summary: 'Test the connection (email sends to `to`) and record the result (system.manage)',
+    body: TestIntegrationBody,
+    response: IntegrationTestResult,
+  });
+  opsAdmin('post', '/admin/integrations/{kind}/reset', {
+    summary: 'Remove the admin configuration; the environment file applies again (system.manage)',
+    body: RetryJobBody,
+    response: IntegrationSummary,
   });
   opsAdmin('get', '/admin/settings', {
     summary:

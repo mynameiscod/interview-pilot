@@ -4,7 +4,7 @@ import type { PaymentGateway } from './types.js';
 
 /** Payment settings validated by @cbi/config (shared by the API and the worker). */
 export interface PaymentSettings {
-  PAYMENT_PROVIDER: 'razorpay' | 'mock';
+  PAYMENT_PROVIDER: 'razorpay' | 'mock' | 'none';
   RAZORPAY_KEY_ID?: string;
   RAZORPAY_KEY_SECRET?: string;
   RAZORPAY_WEBHOOK_SECRET?: string;
@@ -13,7 +13,9 @@ export interface PaymentSettings {
 /** One mock per process, so orders created by the API are visible to its own reconciliation. */
 let sharedMock: ReturnType<typeof createMockGateway> | null = null;
 
-export function createPaymentGateway(env: PaymentSettings): PaymentGateway {
+/** Null for `none` (configured by an admin instead). */
+export function createPaymentGateway(env: PaymentSettings): PaymentGateway | null {
+  if (env.PAYMENT_PROVIDER === 'none') return null;
   if (env.PAYMENT_PROVIDER === 'razorpay') {
     return createRazorpayGateway({
       keyId: env.RAZORPAY_KEY_ID!,

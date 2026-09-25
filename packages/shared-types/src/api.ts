@@ -52,6 +52,9 @@ export const ErrorCode = z.enum([
   // Operations (Phase 11)
   /** Maintenance mode: new interviews cannot start right now. */
   'MAINTENANCE',
+  // Admin-managed integrations
+  /** A provider (email, payments, storage, SMS, judge) is not configured yet. */
+  'NOT_CONFIGURED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

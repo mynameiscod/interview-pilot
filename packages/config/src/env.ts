@@ -92,8 +92,11 @@ const aiRuntimeShape = {
 
 /** Object storage for uploaded documents (and media from Phase 8). */
 const storageShape = {
-  /** `local` writes under LOCAL_STORAGE_DIR (development only). */
-  STORAGE_PROVIDER: z.enum(['bunny', 'local']).default('local'),
+  /**
+   * `local` writes under LOCAL_STORAGE_DIR (development only). `none`: set up by an
+   * admin in System → Integrations (uploads answer 503 until then).
+   */
+  STORAGE_PROVIDER: z.enum(['bunny', 'local', 'none']).default('local'),
   LOCAL_STORAGE_DIR: z.string().default('.data/storage'),
   BUNNY_STORAGE_ZONE: optionalString,
   /** Region endpoint, e.g. storage.bunnycdn.com (Falkenstein) or sg.storage.bunnycdn.com. */
@@ -153,7 +156,7 @@ function emailIssues(env: EmailEnv, issue: (path: string, message: string) => vo
 /** Payments (Phase 6). The API creates and verifies orders; the worker reconciles and refunds. */
 const paymentShape = {
   /** `mock` is an in-memory gateway for development and tests (refused in staging/production). */
-  PAYMENT_PROVIDER: z.enum(['razorpay', 'mock']).default('mock'),
+  PAYMENT_PROVIDER: z.enum(['razorpay', 'mock', 'none']).default('mock'),
   /** Public key id (also given to the browser for Checkout). */
   RAZORPAY_KEY_ID: optionalString,
   RAZORPAY_KEY_SECRET: optionalString,
@@ -162,7 +165,7 @@ const paymentShape = {
 
 type PaymentEnv = {
   APP_ENV: AppEnv;
-  PAYMENT_PROVIDER: 'razorpay' | 'mock';
+  PAYMENT_PROVIDER: 'razorpay' | 'mock' | 'none';
   RAZORPAY_KEY_ID?: string;
   RAZORPAY_KEY_SECRET?: string;
   RAZORPAY_WEBHOOK_SECRET?: string;
@@ -189,7 +192,7 @@ function paymentIssues(env: PaymentEnv, issue: (path: string, message: string) =
 /** Code judge (Phase 9). Candidate code runs only on a separate judge host, never here. */
 const judgeShape = {
   /** `mock` decides results from markers in the code (development/test only; refused in staging/production). */
-  JUDGE_PROVIDER: z.enum(['codebegun', 'judge0', 'mock']).default('mock'),
+  JUDGE_PROVIDER: z.enum(['codebegun', 'judge0', 'mock', 'none']).default('mock'),
   JUDGE_BASE_URL: optionalString,
   /** Shared secret for HMAC-signed judge requests. */
   JUDGE_HMAC_SECRET: optionalString,
@@ -199,13 +202,13 @@ const judgeShape = {
 
 type JudgeEnv = {
   APP_ENV: AppEnv;
-  JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock';
+  JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock' | 'none';
   JUDGE_BASE_URL?: string;
   JUDGE_HMAC_SECRET?: string;
 };
 
 function judgeIssues(env: JudgeEnv, issue: (path: string, message: string) => void) {
-  if (env.JUDGE_PROVIDER !== 'mock') {
+  if (env.JUDGE_PROVIDER !== 'mock' && env.JUDGE_PROVIDER !== 'none') {
     if (!env.JUDGE_BASE_URL || !/^https?:\/\//.test(env.JUDGE_BASE_URL)) {
       issue(
         'JUDGE_BASE_URL',
@@ -230,7 +233,7 @@ type SharedEnv = {
   AI_SECRETS_KEY_ID: string;
   AI_SECRETS_PREVIOUS_KEYS?: string;
   AI_MOCK_MODE: boolean;
-  STORAGE_PROVIDER: 'bunny' | 'local';
+  STORAGE_PROVIDER: 'bunny' | 'local' | 'none';
   BUNNY_STORAGE_ZONE?: string;
   BUNNY_STORAGE_ACCESS_KEY?: string;
 };
@@ -312,7 +315,8 @@ const apiObjectSchema = baseEnvSchema.extend({
   GOOGLE_CLIENT_ID: optionalString,
 
   // --- Email --------------------------------------------------------------
-  EMAIL_PROVIDER: z.enum(['ses', 'smtp']),
+  /** `disabled`: set up by an admin in System → Integrations (sign-in codes need it). */
+  EMAIL_PROVIDER: z.enum(['ses', 'smtp', 'disabled']),
   ...emailFields,
 
   // --- SMS ----------------------------------------------------------------

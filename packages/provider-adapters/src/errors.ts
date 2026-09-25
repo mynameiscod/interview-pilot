@@ -13,3 +13,14 @@ export class ProviderError extends Error {
     this.name = 'ProviderError';
   }
 }
+
+/**
+ * The integration (email, payments, storage, SMS, judge) has no usable
+ * configuration yet: an admin sets it up in System → Integrations.
+ */
+export class NotConfiguredError extends ProviderError {
+  constructor(public readonly kind: string) {
+    super(kind, 'not configured', false);
+    this.name = 'NotConfiguredError';
+  }
+}

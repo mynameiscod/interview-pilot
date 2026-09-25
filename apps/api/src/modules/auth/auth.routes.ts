@@ -65,8 +65,8 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
     const body: { data: AuthProvidersResponse } = {
       data: {
         google: { enabled: c.google !== null },
-        email: { enabled: true },
-        mobile: { enabled: c.providers.sms !== null },
+        email: { enabled: c.integrations.ready('email') },
+        mobile: { enabled: c.integrations.ready('sms') },
       },
     };
     res.json(body);

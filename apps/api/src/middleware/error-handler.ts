@@ -1,4 +1,5 @@
 import { AiAbortedError, AiUnavailableError } from '@cbi/ai-core';
+import { NotConfiguredError } from '@cbi/provider-adapters';
 import type { ApiErrorBody } from '@cbi/shared-types';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
@@ -26,6 +27,20 @@ function toAppError(err: unknown): AppError {
       503,
       'AI_UNAVAILABLE',
       'The AI service is temporarily unavailable. Please try again in a moment.',
+    );
+  }
+  if (err instanceof NotConfiguredError) {
+    const what: Record<string, string> = {
+      email: 'Email',
+      payments: 'Payments',
+      storage: 'File storage',
+      sms: 'SMS',
+      judge: 'Code running',
+    };
+    return new AppError(
+      503,
+      'NOT_CONFIGURED',
+      `${what[err.kind] ?? 'This service'} is not set up yet. Please try again later.`,
     );
   }
   const httpErr = err as HttpLikeError;

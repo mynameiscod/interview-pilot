@@ -1,6 +1,7 @@
-import { ClientEventName, SettingKey } from '@cbi/shared-types';
+import { ClientEventName, IntegrationKind, SettingKey } from '@cbi/shared-types';
 import type {
   ClientEventName as ClientEventNameT,
+  IntegrationKind as IntegrationKindT,
   SettingKey as SettingKeyT,
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
@@ -169,3 +170,44 @@ shareLinkSchema.index({ userId: 1, sessionId: 1, createdAt: -1 });
 shareLinkSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
 
 export const ShareLinkModel = model<ShareLinkRecord>('ShareLink', shareLinkSchema);
+
+// ---- integrationConfigs (admin-managed provider credentials) ------------------------------------
+
+/** One encrypted secret (AES-256-GCM with the AI secrets master key; context-bound). */
+export interface StoredSecret {
+  ciphertext: string;
+  iv: string;
+  tag: string;
+  keyId: string;
+  last4: string;
+}
+
+export interface IntegrationConfigRecord {
+  _id: Types.ObjectId;
+  kind: IntegrationKindT;
+  provider: string;
+  settings: Record<string, unknown>;
+  secrets: Record<string, StoredSecret>;
+  updatedBy: Types.ObjectId | null;
+  lastTest: { ok: boolean; message: string; at: Date } | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const integrationConfigSchema = new Schema<IntegrationConfigRecord>(
+  {
+    kind: { type: String, enum: IntegrationKind.options, required: true },
+    provider: { type: String, required: true },
+    settings: { type: Schema.Types.Mixed, default: {} },
+    secrets: { type: Schema.Types.Mixed, default: {} },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    lastTest: { type: Schema.Types.Mixed, default: null },
+  },
+  { timestamps: true, collection: 'integrationConfigs', minimize: false },
+);
+integrationConfigSchema.index({ kind: 1 }, { unique: true });
+
+export const IntegrationConfigModel = model<IntegrationConfigRecord>(
+  'IntegrationConfig',
+  integrationConfigSchema,
+);
