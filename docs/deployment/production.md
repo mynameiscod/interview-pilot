@@ -204,7 +204,8 @@ cat > /tmp/email.json   # paste, then Ctrl+D:
   "settings": { "from": "CareerPilot Interview <no-reply@codebegun.com>",
                 "smtpHost": "smtp.example.com", "smtpPort": 587, "smtpUser": "apikey" },
   "secrets":  { "smtpPass": "…" } }
-docker compose -f docker-compose.production.yml --env-file /srv/cbi/state/compose.env   exec -T "api-$ACTIVE" node dist/scripts/configure-integration.js email < /tmp/email.json
+docker compose -f docker-compose.production.yml --env-file /srv/cbi/state/compose.env \
+  exec -T "api-$ACTIVE" node dist/scripts/configure-integration.js email < /tmp/email.json
 shred -u /tmp/email.json
 ```
 
