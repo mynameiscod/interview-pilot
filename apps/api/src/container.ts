@@ -28,6 +28,7 @@ import { createAccountService } from './modules/auth/account.service.js';
 import type { CookieSettings } from './modules/auth/cookies.js';
 import { createGoogleVerifier } from './modules/auth/google-verifier.js';
 import { createOtpService } from './modules/auth/otp.service.js';
+import { createPasswordService } from './modules/auth/password.service.js';
 import { createSessionService } from './modules/auth/session.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
@@ -162,6 +163,7 @@ export function buildContainer(opts: ContainerOptions) {
     resendCooldownSec: env.OTP_RESEND_COOLDOWN_SEC,
     maxPerDestinationPerHour: env.OTP_MAX_PER_DESTINATION_PER_HOUR,
   });
+  const passwords = createPasswordService({ redis, audit, hashSecret: env.OTP_HMAC_SECRET });
   const google = env.GOOGLE_CLIENT_ID
     ? createGoogleVerifier({ clientId: env.GOOGLE_CLIENT_ID, keySet: opts.overrides?.googleKeySet })
     : null;
@@ -265,6 +267,7 @@ export function buildContainer(opts: ContainerOptions) {
     accounts,
     sessions,
     otp,
+    passwords,
     google,
     adminUsers,
     ai,

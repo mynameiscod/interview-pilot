@@ -218,6 +218,9 @@ export function AdminLayout() {
               >
                 {user.email}
               </span>
+              <NavLink to="/account" className="btn btn-outline-secondary btn-sm">
+                {t('nav.account')}
+              </NavLink>
               <button
                 type="button"
                 className="btn btn-outline-secondary btn-sm"

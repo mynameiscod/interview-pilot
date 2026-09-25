@@ -30,6 +30,12 @@ export const routes: RouteObject[] = [
                 }),
               },
               {
+                path: 'account',
+                lazy: async () => ({
+                  Component: (await import('../features/account/AccountPage')).AccountPage,
+                }),
+              },
+              {
                 path: 'analytics',
                 element: <RequirePermission permission="analytics.read" />,
                 children: [

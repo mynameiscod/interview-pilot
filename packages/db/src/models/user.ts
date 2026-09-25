@@ -17,6 +17,12 @@ const userSchema = new Schema(
     lastLoginAt: { type: Date },
     onboardingCompletedAt: { type: Date },
     invitedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    /**
+     * Admins only: scrypt hash for password sign-in (never selected by default).
+     * Candidates sign in with OTP or Google and never have one.
+     */
+    passwordHash: { type: String, select: false },
+    passwordSetAt: { type: Date },
   },
   { timestamps: true, collection: 'users' },
 );

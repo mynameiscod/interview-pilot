@@ -35,6 +35,20 @@ export const OtpVerifyBody = z.object({
 });
 export type OtpVerifyBody = z.infer<typeof OtpVerifyBody>;
 
+/** Admin console: email + password sign-in (candidates use OTP or Google). */
+export const PasswordLoginBody = z.object({
+  email: z.string().trim().max(254),
+  password: z.string().min(1).max(200),
+});
+export type PasswordLoginBody = z.infer<typeof PasswordLoginBody>;
+
+export const ChangePasswordBody = z.object({
+  /** Required when a password is already set. */
+  currentPassword: z.string().max(200).optional(),
+  newPassword: z.string().min(12, 'Use at least 12 characters.').max(200),
+});
+export type ChangePasswordBody = z.infer<typeof ChangePasswordBody>;
+
 export const GoogleLoginBody = z.object({
   /** Google Identity Services ID token (JWT credential). */
   idToken: z.string().min(20).max(4096),

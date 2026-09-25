@@ -93,7 +93,9 @@
     "sessionEnded": "Your session has ended. Please sign in again.",
     "invalidEmail": "Enter a valid email address.",
     "invalidMobile": "Enter a valid mobile number.",
-    "notConfigured": "This service is not set up yet. Please try again later."
+    "notConfigured": "This service is not set up yet. Please try again later.",
+    "invalidCredentials": "The email or password is incorrect.",
+    "accountLocked": "Too many attempts. Please wait 15 minutes and try again."
   },
   "onboarding": {
     "title": "Tell us a little about you",

@@ -47,7 +47,8 @@
     "queues": "Queues",
     "flags": "Feature flags",
     "settings": "Settings",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "account": "Your account"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -80,7 +81,13 @@
     "resend": "Resend code",
     "resendIn": "Resend in {{seconds}}s",
     "codeResent": "A new code has been sent.",
-    "changeDestination": "Use a different email"
+    "changeDestination": "Use a different email",
+    "methodPassword": "Password",
+    "methodCode": "Email code",
+    "methodLabel": "Sign-in method",
+    "password": "Password",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…"
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
@@ -100,7 +107,9 @@
     "sessionEnded": "Your session has ended. Please sign in again.",
     "invalidEmail": "Enter a valid email address.",
     "invalidMobile": "Enter a valid mobile number.",
-    "notConfigured": "This service is not set up yet. A super admin can set it up in System → Integrations."
+    "notConfigured": "This service is not set up yet. A super admin can set it up in System → Integrations.",
+    "invalidCredentials": "The email or password is incorrect.",
+    "accountLocked": "Too many attempts. Wait 15 minutes, or sign in with an email code."
   },
   "forbidden": {
     "title": "You do not have access to this section",
@@ -1942,5 +1951,20 @@
         }
       }
     }
+  },
+  "account": {
+    "title": "Your account",
+    "passwordTitle": "Password sign-in",
+    "passwordSet": "You can sign in with your email and password, or with an email code.",
+    "passwordNotSet": "Set a password to sign in without waiting for an email code.",
+    "current": "Current password",
+    "new": "New password",
+    "confirm": "Repeat the new password",
+    "hint": "At least 12 characters. Use a passphrase you do not use anywhere else.",
+    "mismatch": "The passwords do not match.",
+    "tooShort": "Use at least 12 characters.",
+    "save": "Save password",
+    "saving": "Saving…",
+    "saved": "Password saved."
   }
 }
