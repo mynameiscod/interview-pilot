@@ -71,6 +71,13 @@ export const routes: RouteObject[] = [
                       Component: (await import('../features/system/SettingsPage')).SettingsPage,
                     }),
                   },
+                  {
+                    path: 'integrations',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/IntegrationsPage'))
+                        .IntegrationsPage,
+                    }),
+                  },
                 ],
               },
               {

@@ -1,6 +1,7 @@
 import type {
   FailedJob,
   FeatureFlag,
+  IntegrationSummary,
   QueueCounts,
   SettingEntry,
   SystemHealth,
@@ -22,6 +23,7 @@ export const systemKeys = {
   failed: (queue: string) => ['system', 'queues', queue, 'failed'] as const,
   flags: ['system', 'flags'] as const,
   settings: ['system', 'settings'] as const,
+  integrations: ['system', 'integrations'] as const,
 };
 
 export function useSystemHealth() {
@@ -69,5 +71,14 @@ export function useSettings() {
   return useQuery({
     queryKey: systemKeys.settings,
     queryFn: () => manager.api.get<SettingEntry[]>('/admin/settings'),
+  });
+}
+
+export function useIntegrations() {
+  const { manager } = useAdminAuth();
+  return useQuery({
+    queryKey: systemKeys.integrations,
+    queryFn: () => manager.api.get<IntegrationSummary[]>('/admin/integrations'),
+    staleTime: 0,
   });
 }

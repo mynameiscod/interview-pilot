@@ -43,6 +43,8 @@ export function paymentErrorMessage(t: TFunction, err: unknown): string {
     switch (err.code) {
       case 'PROVIDER_UNAVAILABLE':
         return t('payments.errors.providerUnavailable');
+      case 'NOT_CONFIGURED':
+        return t('payments.errors.notConfigured');
       case 'RATE_LIMITED':
         return t('payments.errors.rateLimited');
       case 'PAYMENT_VERIFICATION_FAILED':

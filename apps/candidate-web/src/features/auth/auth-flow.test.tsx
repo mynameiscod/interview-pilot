@@ -96,6 +96,47 @@ describe('sign-in flow', () => {
     expect(screen.queryByRole('button', { name: 'Mobile' })).not.toBeInTheDocument();
   });
 
+  it('shows sign-in as unavailable when email sign-in is not set up', async () => {
+    const api = fakeApi({
+      'GET /auth/providers': () =>
+        ok({ google: { enabled: false }, email: { enabled: false }, mobile: { enabled: false } }),
+    });
+    await renderRoute('/login', { api });
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-in is temporarily unavailable' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('We cannot send sign-in codes by email right now. Please try again later.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send code' })).not.toBeInTheDocument();
+  });
+
+  it('shows the unavailable state in Telugu', async () => {
+    const api = fakeApi({
+      'GET /auth/providers': () =>
+        ok({ google: { enabled: false }, email: { enabled: false }, mobile: { enabled: false } }),
+    });
+    await renderRoute('/login', { api, lng: 'te' });
+    expect(
+      await screen.findByRole('heading', { name: 'సైన్ ఇన్ తాత్కాలికంగా అందుబాటులో లేదు' }),
+    ).toBeInTheDocument();
+  });
+
+  it('switches to the unavailable state when a code request finds email not set up', async () => {
+    const api = fakeApi({
+      'POST /auth/otp/request': () => fail(503, 'NOT_CONFIGURED'),
+    });
+    await renderRoute('/login', { api });
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Email address'), 'asha@example.com');
+    await user.click(screen.getByRole('button', { name: 'Send code' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-in is temporarily unavailable' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Email address')).not.toBeInTheDocument();
+  });
+
   it('switches to mobile and sends the number as typed (the server normalizes it)', async () => {
     const api = fakeApi({
       'POST /auth/otp/request': () => ({

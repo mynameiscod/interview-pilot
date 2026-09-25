@@ -144,6 +144,13 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'system.read',
     group: 'system',
   },
+  {
+    to: '/system/integrations',
+    key: 'nav.integrations',
+    icon: 'bi-plug',
+    permission: 'system.read',
+    group: 'system',
+  },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];
 

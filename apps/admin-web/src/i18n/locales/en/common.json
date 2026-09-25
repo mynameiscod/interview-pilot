@@ -46,7 +46,8 @@
     "health": "System health",
     "queues": "Queues",
     "flags": "Feature flags",
-    "settings": "Settings"
+    "settings": "Settings",
+    "integrations": "Integrations"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -98,7 +99,8 @@
     "validation": "Please check the details and try again.",
     "sessionEnded": "Your session has ended. Please sign in again.",
     "invalidEmail": "Enter a valid email address.",
-    "invalidMobile": "Enter a valid mobile number."
+    "invalidMobile": "Enter a valid mobile number.",
+    "notConfigured": "This service is not set up yet. A super admin can set it up in System → Integrations."
   },
   "forbidden": {
     "title": "You do not have access to this section",
@@ -1774,6 +1776,169 @@
           "freeToPaidRate": "Enter a percentage from 0 to 100.",
           "grossMargin": "Enter a percentage from 0 to 100.",
           "maxFailureRate": "Enter a percentage from 0 to 100."
+        }
+      }
+    },
+    "integrations": {
+      "title": "Integrations",
+      "subtitle": "Credentials for email, payments, file storage, SMS and the code judge. Every change needs a reason and is recorded in the audit log.",
+      "explainTitle": "How these settings work",
+      "explain": {
+        "encrypted": "Keys and passwords are encrypted when saved and are never shown again; only their last 4 characters are displayed.",
+        "immediate": "Changes apply immediately on every server; no restart is needed.",
+        "override": "Settings saved here override the server file. “Use server file instead” removes them so the server file applies again."
+      },
+      "status": {
+        "ready": "Ready",
+        "notReady": "Not ready",
+        "notReadyMissing": "Not ready: missing {{missing}}",
+        "off": "Turned off"
+      },
+      "source": {
+        "label": "Source",
+        "admin": "Set here",
+        "env": "From server file",
+        "none": "Not set up"
+      },
+      "provider": "Provider",
+      "lastTest": "Last test",
+      "neverTested": "Not tested yet",
+      "testPassed": "Passed",
+      "testFailed": "Failed",
+      "testAt": "on {{time}}",
+      "updated": "Last changed",
+      "neverUpdated": "Never changed here",
+      "currentValues": "Saved values",
+      "serverFileValues": "Values from the server file are not shown here.",
+      "notSet": "Not set",
+      "secretSaved": "Saved (•••• {{last4}})",
+      "secretSavedNoHint": "Saved",
+      "secretTyped": "Typing a value replaces the saved one; leave it empty to keep it.",
+      "willClear": "Will be cleared",
+      "clear": "Clear",
+      "clearField": "Clear {{field}}",
+      "undoClear": "Keep",
+      "undoClearField": "Keep {{field}}",
+      "on": "On",
+      "off": "Off",
+      "edit": "Edit",
+      "editKind": "Edit {{name}}",
+      "editTitle": "Edit {{name}}",
+      "save": "Save {{name}}",
+      "saved": "{{name}} saved. The change applies immediately.",
+      "cancel": "Cancel",
+      "test": "Test connection",
+      "testKind": "Test {{name}} connection",
+      "testTo": "Send a test email to",
+      "testToHint": "We send a short test message to this address.",
+      "testToError": "Enter a valid email address.",
+      "runTest": "Send test email",
+      "testing": "Testing…",
+      "testOk": "Connection works: {{message}}",
+      "testNotOk": "Test failed: {{message}}",
+      "reset": "Use server file instead",
+      "resetKind": "Use server file instead for {{name}}",
+      "resetExplain": "This removes the {{name}} settings saved here, including keys and passwords. The server file applies again right away (or {{name}} stops working if the server file does not set it up).",
+      "confirmReset": "Remove and use server file",
+      "resetDone": "{{name}} now uses the server file.",
+      "errors": {
+        "required": "Required for {{provider}}.",
+        "secretRequired": "Required for {{provider}}; nothing is saved yet.",
+        "secretCleared": "Required for {{provider}}; enter a new value instead of clearing it.",
+        "port": "Enter a port from 1 to 65535.",
+        "url": "Enter an http(s) URL, for example https://judge.example.com.",
+        "host": "Enter a host name such as storage.bunnycdn.com.",
+        "hmacLength": "Use at least 32 characters.",
+        "reason": "Enter a reason of 3–300 characters."
+      },
+      "providerNames": {
+        "ses": "Amazon SES",
+        "smtp": "SMTP server",
+        "razorpay": "Razorpay",
+        "bunny": "Bunny Storage",
+        "msg91": "MSG91",
+        "codebegun": "CodeBegun judge",
+        "judge0": "Judge0",
+        "disabled": "Turned off"
+      },
+      "kinds": {
+        "email": {
+          "title": "Email",
+          "explain": "Sends sign-in codes, receipts and notifications. Without it, candidates cannot sign in by email.",
+          "fields": {
+            "from": "From address",
+            "sesRegion": "SES region",
+            "smtpHost": "SMTP host",
+            "smtpPort": "SMTP port",
+            "smtpSecure": "Use a secure (TLS) connection",
+            "smtpUser": "SMTP user name",
+            "sesAccessKeyId": "SES access key ID",
+            "sesSecretAccessKey": "SES secret access key",
+            "smtpPass": "SMTP password"
+          },
+          "hints": {
+            "from": "For example: CareerPilot Interview <no-reply@codebegun.com>",
+            "sesRegion": "For example ap-south-1.",
+            "smtpPort": "Usually 587, or 465 with a secure connection."
+          }
+        },
+        "payments": {
+          "title": "Payments",
+          "explain": "Takes payments for plans through Razorpay Checkout. Without it, candidates cannot buy plans.",
+          "fields": {
+            "keyId": "Key ID",
+            "keySecret": "Key secret",
+            "webhookSecret": "Webhook secret"
+          },
+          "hints": {
+            "keyId": "Public key id, starting with rzp_live_ or rzp_test_.",
+            "webhookSecret": "The secret you enter when creating the webhook in Razorpay."
+          },
+          "webhookTitle": "Razorpay webhook",
+          "webhookUrl": "Webhook URL to paste into Razorpay",
+          "webhookEvents": "Events to turn on"
+        },
+        "storage": {
+          "title": "File storage",
+          "explain": "Stores résumés, recordings and other uploaded files.",
+          "warning": "Changing the storage zone after candidates have uploaded files makes their existing files unreachable.",
+          "fields": {
+            "zone": "Storage zone",
+            "regionHost": "Region host",
+            "accessKey": "Access key"
+          },
+          "hints": {
+            "regionHost": "storage.bunnycdn.com, or a regional host such as sg.storage.bunnycdn.com.",
+            "accessKey": "The storage zone password from the Bunny dashboard."
+          }
+        },
+        "sms": {
+          "title": "SMS",
+          "explain": "Sends sign-in codes to mobile numbers.",
+          "fields": {
+            "templateId": "Template ID",
+            "otpVariable": "Code variable",
+            "authKey": "Auth key"
+          },
+          "hints": {
+            "templateId": "The DLT-approved template for sign-in codes.",
+            "otpVariable": "The template variable that holds the code. Default: otp."
+          }
+        },
+        "judge": {
+          "title": "Code judge",
+          "explain": "Runs candidates’ code in coding rounds.",
+          "note": "Without a judge, coding rounds record the code without running it.",
+          "fields": {
+            "baseUrl": "Judge URL",
+            "hmacSecret": "Signing secret",
+            "judge0AuthToken": "Judge0 auth token"
+          },
+          "hints": {
+            "baseUrl": "The http(s) address of the judge.",
+            "hmacSecret": "At least 32 characters. The judge’s verifying proxy must use the same secret.",
+            "judge0AuthToken": "Optional."
+          }
         }
       }
     }

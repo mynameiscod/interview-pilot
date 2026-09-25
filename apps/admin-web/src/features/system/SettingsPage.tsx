@@ -7,7 +7,6 @@ import {
   type SettingEntry,
   type SettingKey,
 } from '@cbi/shared-types';
-import { ApiClientError } from '@cbi/web-core';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +18,7 @@ import { formatRate, percentInputToRate, rateToPercentInput } from '../analytics
 import { formatDateTime, type Issue } from '../library/format';
 import { IssueList } from '../library/shared';
 import { FieldError } from '../payments/shared';
+import { serverIssues } from './format';
 import { systemKeys, useSettings } from './queries';
 
 type Values = Record<string, string | boolean>;
@@ -115,26 +115,6 @@ const SPECS: Spec[] = [
       ),
   },
 ];
-
-/** Problems from a VALIDATION_FAILED reply: `details` is the issue list or `{ issues }`. */
-function serverIssues(err: unknown): Issue[] {
-  if (!(err instanceof ApiClientError) || err.code !== 'VALIDATION_FAILED') return [];
-  const details = err.details as unknown;
-  const list = Array.isArray(details)
-    ? details
-    : (details as { issues?: unknown } | undefined)?.issues;
-  if (!Array.isArray(list)) return [];
-  return list.flatMap((raw) => {
-    const i = raw as { path?: unknown; message?: unknown };
-    if (typeof i?.message !== 'string') return [];
-    const path = Array.isArray(i.path)
-      ? i.path.join('.')
-      : typeof i.path === 'string'
-        ? i.path
-        : '';
-    return [{ path, message: i.message }];
-  });
-}
 
 function currentValue(spec: Spec, entry: SettingEntry | undefined): Record<string, unknown> {
   const parsed = spec.schema.safeParse(entry?.value);
