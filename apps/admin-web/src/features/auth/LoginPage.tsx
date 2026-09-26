@@ -13,7 +13,7 @@ import {
   type OtpRequested,
 } from '@cbi/web-core';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useAdminAuth } from '../../app/session';
@@ -24,6 +24,7 @@ export function LoginPage() {
   const { manager, completeSignIn } = useAdminAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const [method, setMethod] = useState<'password' | 'code'>('password');
   const [requested, setRequested] = useState<OtpRequested | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const api = manager.api;
@@ -45,6 +46,22 @@ export function LoginPage() {
   }
 
   const googleEnabled = Boolean(config.googleClientId) && providers.data?.google.enabled;
+
+  const methodSwitch = (
+    <div className="btn-group w-100 mb-4" role="group" aria-label={t('auth.methodLabel')}>
+      {(['password', 'code'] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          className={`btn ${method === m ? 'btn-primary' : 'btn-outline-primary'}`}
+          aria-pressed={method === m}
+          onClick={() => setMethod(m)}
+        >
+          {t(m === 'password' ? 'auth.methodPassword' : 'auth.methodCode')}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <main id="main" className="container py-5">
@@ -70,11 +87,26 @@ export function LoginPage() {
               />
             ) : (
               <>
-                <OtpRequestForm
-                  mobileEnabled={providers.data?.mobile.enabled ?? false}
-                  request={requestOtp}
-                  onRequested={setRequested}
-                />
+                {methodSwitch}
+                {method === 'password' ? (
+                  <PasswordForm
+                    signIn={async (email, password) =>
+                      finish(
+                        await api.post<SessionResponse>(
+                          '/admin/auth/password/login',
+                          { email, password },
+                          { noRefresh: true },
+                        ),
+                      )
+                    }
+                  />
+                ) : (
+                  <OtpRequestForm
+                    mobileEnabled={providers.data?.mobile.enabled ?? false}
+                    request={requestOtp}
+                    onRequested={setRequested}
+                  />
+                )}
                 {googleEnabled && (
                   <div className="mt-4">
                     <GoogleSignInButton
@@ -109,5 +141,70 @@ export function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function PasswordForm({ signIn }: { signIn: (email: string, password: string) => Promise<void> }) {
+  const { t } = useTranslation();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    try {
+      await signIn(email.trim(), password);
+    } catch (err) {
+      setError(errorMessage(t, err));
+      setPending(false);
+    }
+  }
+
+  return (
+    <form onSubmit={(e) => void submit(e)} noValidate>
+      <div className="mb-3">
+        <label htmlFor="admin-email" className="form-label">
+          {t('auth.emailLabel')}
+        </label>
+        <input
+          id="admin-email"
+          type="email"
+          className="form-control"
+          autoComplete="username"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+      </div>
+      <div className="mb-3">
+        <label htmlFor="admin-password" className="form-label">
+          {t('auth.password')}
+        </label>
+        <input
+          id="admin-password"
+          type="password"
+          className="form-control"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      {error && (
+        <div className="alert alert-danger" role="alert">
+          {error}
+        </div>
+      )}
+      <button
+        type="submit"
+        className="btn btn-primary w-100"
+        disabled={pending || !email.trim() || !password}
+      >
+        {pending ? t('auth.signingIn') : t('auth.signIn')}
+      </button>
+    </form>
   );
 }

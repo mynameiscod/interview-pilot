@@ -18,7 +18,7 @@ import {
   type PurchaseRecord,
   type ReconcileOutcome,
 } from '@cbi/db';
-import type { PaymentGateway } from '@cbi/provider-adapters';
+import { NotConfiguredError, type PaymentGateway } from '@cbi/provider-adapters';
 import {
   PAYMENT_POLICY,
   type AdminPurchase,
@@ -423,16 +423,20 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       } catch (err) {
         logger.error({ err, purchaseId }, 'payment order creation failed');
         await markPurchaseFailed({ purchaseId, source: 'ORDER' });
+        // Not set up yet (System → Integrations): say so rather than "try again shortly".
+        if (err instanceof NotConfiguredError) throw err;
         throw new AppError(
           503,
           'PROVIDER_UNAVAILABLE',
           'Payments are temporarily unavailable. Please try again shortly.',
         );
       }
+      // An order was created, so a real gateway is configured.
+      const providerName = gateway.name as 'razorpay' | 'mock';
       await PaymentModel.create({
         purchaseId: purchase!._id,
         userId,
-        provider: gateway.name,
+        provider: providerName,
         orderId: order.id,
         amountMinor: quote.totalMinor,
         currency: quote.currency,
@@ -443,7 +447,7 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         status: 'CREATED',
         totalMinor: quote.totalMinor,
         currency: quote.currency,
-        provider: { name: gateway.name, keyId: gateway.publicKeyId, orderId: order.id },
+        provider: { name: providerName, keyId: gateway.publicKeyId, orderId: order.id },
       };
     },
 

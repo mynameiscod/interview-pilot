@@ -23,11 +23,12 @@ import { createBullJobQueues, type JobQueues } from './lib/jobs.js';
 import { createRateLimiters } from './middleware/rate-limit.js';
 import { createAdminUserService } from './modules/admin/admin-users.service.js';
 import { createAiAdminService } from './modules/ai/ai-admin.service.js';
-import { buildAiRuntime } from '@cbi/ai-runtime';
+import { buildAiRuntime, buildIntegrations } from '@cbi/ai-runtime';
 import { createAccountService } from './modules/auth/account.service.js';
 import type { CookieSettings } from './modules/auth/cookies.js';
 import { createGoogleVerifier } from './modules/auth/google-verifier.js';
 import { createOtpService } from './modules/auth/otp.service.js';
+import { createPasswordService } from './modules/auth/password.service.js';
 import { createSessionService } from './modules/auth/session.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
@@ -43,6 +44,7 @@ import { codingQuestionText, createCodingService } from './modules/coding/coding
 import { createCampaignService } from './modules/campaigns/campaigns.service.js';
 import { createReviewService } from './modules/review/review.service.js';
 import { createQueueAdmin, type QueueAdmin } from './lib/queue-admin.js';
+import { createIntegrationsAdminService } from './modules/ops/integrations.service.js';
 import { createAnalyticsService } from './modules/ops/analytics.service.js';
 import { createFlagService, createSettingsService } from './modules/ops/ops.service.js';
 import { createProofService } from './modules/ops/proof.service.js';
@@ -98,9 +100,36 @@ type LiveAnswer = ReturnType<typeof createLiveInterviewService>['answer'];
 
 export function buildContainer(opts: ContainerOptions) {
   const { env, logger, redis } = opts;
-  // The API always has email (sign-in codes); environment validation guarantees a provider.
-  const email = opts.overrides?.email ?? createEmailProvider(env)!;
-  const sms = opts.overrides?.sms !== undefined ? opts.overrides.sms : buildSmsProvider(env, email);
+  const ai = buildAiRuntime({
+    env,
+    logger,
+    redis,
+    adapters: opts.overrides?.aiAdapters,
+    usage: opts.overrides?.aiUsage,
+  });
+  // Providers from the environment file (or tests); an admin configuration in
+  // System → Integrations replaces them at runtime.
+  const envEmail = opts.overrides?.email ?? createEmailProvider(env);
+  const integrations = buildIntegrations({
+    redis,
+    logger,
+    secrets: ai.secrets,
+    refreshMs: 60_000,
+    fallbacks: {
+      email: envEmail,
+      sms:
+        opts.overrides?.sms !== undefined
+          ? opts.overrides.sms
+          : envEmail
+            ? buildSmsProvider(env, envEmail)
+            : null,
+      storage: opts.overrides?.storage ?? createStorage(env),
+      payments: opts.overrides?.payments?.gateway ?? createPaymentGateway(env),
+      judge: opts.overrides?.judge ?? createJudge(env),
+    },
+  });
+  const email = integrations.email;
+  const sms = integrations.sms;
 
   const tokens = createAccessTokenIssuer({
     secret: env.JWT_ACCESS_SECRET,
@@ -123,6 +152,8 @@ export function buildContainer(opts: ContainerOptions) {
     redis,
     email,
     sms,
+    emailEnabled: () => integrations.ready('email'),
+    smsEnabled: () => integrations.ready('sms'),
     accounts,
     audit,
     logger,
@@ -132,6 +163,7 @@ export function buildContainer(opts: ContainerOptions) {
     resendCooldownSec: env.OTP_RESEND_COOLDOWN_SEC,
     maxPerDestinationPerHour: env.OTP_MAX_PER_DESTINATION_PER_HOUR,
   });
+  const passwords = createPasswordService({ redis, audit, hashSecret: env.OTP_HMAC_SECRET });
   const google = env.GOOGLE_CLIENT_ID
     ? createGoogleVerifier({ clientId: env.GOOGLE_CLIENT_ID, keySet: opts.overrides?.googleKeySet })
     : null;
@@ -144,15 +176,8 @@ export function buildContainer(opts: ContainerOptions) {
     logger,
     adminUrl: env.PUBLIC_ADMIN_URL,
   });
-  const ai = buildAiRuntime({
-    env,
-    logger,
-    redis,
-    adapters: opts.overrides?.aiAdapters,
-    usage: opts.overrides?.aiUsage,
-  });
   const aiAdmin = createAiAdminService({ ai, audit, logger });
-  const storage = opts.overrides?.storage ?? createStorage(env);
+  const storage = integrations.storage;
   const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
   const inputs = createInputsService({ storage, jobs, audit, logger });
   const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
@@ -171,7 +196,7 @@ export function buildContainer(opts: ContainerOptions) {
     // A separate key per purpose, derived from the server secret.
     signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
   });
-  const judge = opts.overrides?.judge ?? createJudge(env);
+  const judge = integrations.judge;
   // `live` is created below; submitting code answers through it.
   let liveRef: { answer: LiveAnswer } | null = null;
   const coding = createCodingService({
@@ -217,7 +242,12 @@ export function buildContainer(opts: ContainerOptions) {
     env: env.APP_ENV,
   });
   const proof = createProofService({ flags, audit });
-  const paymentGateway = opts.overrides?.payments?.gateway ?? createPaymentGateway(env);
+  const paymentGateway = integrations.payments;
+  const integrationsAdmin = createIntegrationsAdminService({
+    integrations,
+    secrets: ai.secrets,
+    audit,
+  });
   const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
   // Mock Checkout controls exist only with the mock gateway (refused outside development/test).
   const paymentMock = opts.overrides?.payments
@@ -237,6 +267,7 @@ export function buildContainer(opts: ContainerOptions) {
     accounts,
     sessions,
     otp,
+    passwords,
     google,
     adminUsers,
     ai,
@@ -265,9 +296,12 @@ export function buildContainer(opts: ContainerOptions) {
     payments,
     paymentMock,
     cookies,
+    integrations,
+    integrationsAdmin,
+    /** Startup log only; the live state is in integrations.status(). */
     providers: {
       email: email.name,
-      sms: sms?.name ?? null,
+      sms: sms.name,
       aiMock: ai.mockEnabled,
       storage: storage.name,
       payments: paymentGateway.name,

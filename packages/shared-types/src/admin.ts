@@ -82,5 +82,7 @@ export type AuditLogPage = z.infer<typeof AuditLogPage>;
 
 export const AdminMeResponse = MeResponse.extend({
   permissions: z.array(Permission),
+  /** Whether this admin can sign in with a password (set on the server or in the console). */
+  hasPassword: z.boolean().optional(),
 });
 export type AdminMeResponse = z.infer<typeof AdminMeResponse>;

@@ -26,6 +26,9 @@ export interface OtpServiceOptions {
   email: EmailProvider;
   /** Null when SMS is disabled. */
   sms: OtpSmsProvider | null;
+  /** Live checks (admin-managed integrations); default: whether the provider exists. */
+  emailEnabled?: () => boolean;
+  smsEnabled?: () => boolean;
   accounts: AccountService;
   audit: AuditService;
   logger: Logger;
@@ -84,8 +87,15 @@ export function createOtpService(opts: OtpServiceOptions) {
       ctx: ClientContext;
     }): Promise<OtpRequestResponse> {
       const { audience, purpose, channel, ctx } = input;
-      if (channel === 'MOBILE' && !opts.sms) {
+      if (channel === 'MOBILE' && !(opts.smsEnabled ? opts.smsEnabled() : opts.sms)) {
         throw new AppError(503, 'FEATURE_DISABLED', 'Mobile sign-in is not available yet.');
+      }
+      if (channel === 'EMAIL' && opts.emailEnabled && !opts.emailEnabled()) {
+        throw new AppError(
+          503,
+          'NOT_CONFIGURED',
+          'Email sign-in is not set up yet. Please try again later.',
+        );
       }
       const destination = normalize(channel, input.rawDestination);
       const limits = await enforceSendLimits(channel, destination);

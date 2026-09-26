@@ -102,6 +102,33 @@ describe('loadEnv', () => {
     ).toThrow(/non-HTTPS origins/);
   });
 
+  it('boots in production with providers left to System → Integrations', () => {
+    const adminManaged = {
+      ...deployed,
+      EMAIL_PROVIDER: 'disabled',
+      SMS_PROVIDER: 'disabled',
+      STORAGE_PROVIDER: 'none',
+      PAYMENT_PROVIDER: 'none',
+      JUDGE_PROVIDER: 'none',
+      BUNNY_STORAGE_ZONE: '',
+      BUNNY_STORAGE_ACCESS_KEY: '',
+      RAZORPAY_KEY_ID: '',
+      RAZORPAY_KEY_SECRET: '',
+      RAZORPAY_WEBHOOK_SECRET: '',
+      JUDGE_BASE_URL: '',
+      JUDGE_HMAC_SECRET: '',
+    };
+    expect(loadEnv(apiEnvSchema, adminManaged).PAYMENT_PROVIDER).toBe('none');
+    expect(loadEnv(workerEnvSchema, adminManaged).STORAGE_PROVIDER).toBe('none');
+    // Mocks and local storage stay refused.
+    expect(() => loadEnv(apiEnvSchema, { ...adminManaged, STORAGE_PROVIDER: 'local' })).toThrow(
+      /STORAGE_PROVIDER/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...adminManaged, JUDGE_PROVIDER: 'mock' })).toThrow(
+      /JUDGE_PROVIDER/,
+    );
+  });
+
   it('requires a trusted proxy hop when deployed (per-client rate limits behind NGINX)', () => {
     expect(() => loadEnv(apiEnvSchema, { ...deployed, TRUST_PROXY_HOPS: '0' })).toThrow(
       /TRUST_PROXY_HOPS/,

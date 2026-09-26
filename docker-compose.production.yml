@@ -10,6 +10,8 @@
 #   IMAGE_REGISTRY    e.g. ghcr.io/codebegun/interview-pilot
 #   IMAGE_TAG         default tag; API_BLUE_TAG / API_GREEN_TAG / WORKER_TAG override it
 #   WORKER_REPLICAS   number of worker containers (default 2)
+#   *_CPUS / *_MEM    resource limits per service (defaults below fit a KVM 8); a host
+#                     overrides them in ${CBI_HOME}/sizing.env (see infrastructure/env/sizing-*.env)
 #
 # Runtime secrets never live in this file or in images:
 #   ${CBI_HOME}/.env.${CBI_ENV}   API + worker (template: infrastructure/env/production.env.example)
@@ -80,10 +82,10 @@ x-api: &api
   deploy:
     resources:
       limits:
-        cpus: '3'
-        memory: 4g
+        cpus: '${API_CPUS:-3}'
+        memory: ${API_MEM:-4g}
       reservations:
-        memory: 1g
+        memory: ${API_MEM_RESERVED:-1g}
   logging: *logging
 
 services:
@@ -130,8 +132,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 1g
+          cpus: '${NGINX_CPUS:-2}'
+          memory: ${NGINX_MEM:-1g}
     logging: *logging
 
   certbot:
@@ -223,10 +225,10 @@ services:
       replicas: ${WORKER_REPLICAS:-2}
       resources:
         limits:
-          cpus: '2'
-          memory: 3g
+          cpus: '${WORKER_CPUS:-2}'
+          memory: ${WORKER_MEM:-3g}
         reservations:
-          memory: 512m
+          memory: ${WORKER_MEM_RESERVED:-512m}
     logging: *logging
 
   # ------------------------------------------------------------ MongoDB -----
@@ -237,6 +239,9 @@ services:
     env_file:
       - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
         required: true
+    environment:
+      # WiredTiger cache: about half of the container's memory limit.
+      MONGO_WT_CACHE_GB: ${MONGO_WT_CACHE_GB:-6}
     # The entrypoint starts as root only to install the keyfile with the ownership mongod
     # requires (bind-mounted secrets keep host ownership), then drops to the mongodb user.
     entrypoint:
@@ -283,10 +288,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '3'
-          memory: 10g
+          cpus: '${MONGO_CPUS:-3}'
+          memory: ${MONGO_MEM:-10g}
         reservations:
-          memory: 4g
+          memory: ${MONGO_MEM_RESERVED:-4g}
     logging: *logging
 
   # Idempotent one-shot: initiates the replica set and creates/updates the app and
@@ -327,10 +332,13 @@ services:
     env_file:
       - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
         required: true
+    environment:
+      # BullMQ needs noeviction; keep maxmemory below the container limit.
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-2gb}
     command:
       - sh
       - -c
-      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD"
+      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD" --maxmemory "$${REDIS_MAXMEMORY:-2gb}"
     user: 'redis'
     <<: *hardening
     read_only: true
@@ -355,8 +363,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1'
-          memory: 3g
+          cpus: '${REDIS_CPUS:-1}'
+          memory: ${REDIS_MEM:-3g}
     logging: *logging
 
 networks:

@@ -30,6 +30,12 @@ export const routes: RouteObject[] = [
                 }),
               },
               {
+                path: 'account',
+                lazy: async () => ({
+                  Component: (await import('../features/account/AccountPage')).AccountPage,
+                }),
+              },
+              {
                 path: 'analytics',
                 element: <RequirePermission permission="analytics.read" />,
                 children: [
@@ -69,6 +75,13 @@ export const routes: RouteObject[] = [
                     path: 'settings',
                     lazy: async () => ({
                       Component: (await import('../features/system/SettingsPage')).SettingsPage,
+                    }),
+                  },
+                  {
+                    path: 'integrations',
+                    lazy: async () => ({
+                      Component: (await import('../features/system/IntegrationsPage'))
+                        .IntegrationsPage,
                     }),
                   },
                 ],

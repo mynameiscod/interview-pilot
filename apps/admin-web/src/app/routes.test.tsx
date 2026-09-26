@@ -88,6 +88,7 @@ describe('admin sign-in', () => {
     });
     const router = await renderAt('/login', api);
     const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Email code' }));
     await user.type(await screen.findByLabelText('Work email'), 'root@codebegun.com');
     await user.click(screen.getByRole('button', { name: 'Send code' }));
     expect(
@@ -101,6 +102,44 @@ describe('admin sign-in', () => {
       await screen.findByText('Signed in as root@codebegun.com (Super admin).'),
     ).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
+  });
+});
+
+describe('admin password sign-in', () => {
+  it('signs in with email and password (the default method)', async () => {
+    const calls: unknown[] = [];
+    const api = fakeApi({
+      'POST /admin/auth/password/login': (body) => {
+        calls.push(body);
+        return ok(makeSession());
+      },
+      'GET /admin/me': () => ok(adminMe(['SUPER_ADMIN'])),
+    });
+    const router = await renderAt('/login', api);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Work email'), 'root@codebegun.com');
+    await user.type(screen.getByLabelText('Password'), 'Blue-Tiger-Runs-42');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(
+      await screen.findByText('Signed in as root@codebegun.com (Super admin).'),
+    ).toBeInTheDocument();
+    expect(calls).toEqual([{ email: 'root@codebegun.com', password: 'Blue-Tiger-Runs-42' }]);
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('shows a wrong-password message', async () => {
+    const api = fakeApi({
+      'POST /admin/auth/password/login': () => ({
+        status: 401,
+        body: { error: { code: 'INVALID_CREDENTIALS', message: 'x', requestId: 'r' } },
+      }),
+    });
+    await renderAt('/login', api);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText('Work email'), 'root@codebegun.com');
+    await user.type(screen.getByLabelText('Password'), 'nope-nope-nope');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('The email or password is incorrect.')).toBeInTheDocument();
   });
 });
 

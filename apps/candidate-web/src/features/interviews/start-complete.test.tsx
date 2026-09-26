@@ -117,7 +117,7 @@ describe('complete screen', () => {
     });
     await renderRoute('/app/interviews/int1/complete', { api });
 
-    const list = await screen.findByRole('list');
+    const list = await within(await screen.findByRole('main')).findByRole('list');
     const step = async (name: string) => (await within(list).findByText(name)).closest('li');
     expect(await step('Reviewing your answers')).toHaveTextContent('(done)');
     expect(await step('Scoring each skill')).toHaveTextContent('(in progress)');
@@ -153,7 +153,9 @@ describe('complete screen', () => {
     });
     await renderRoute('/app/interviews/int1/complete', { api });
 
-    expect(await screen.findByRole('list')).toHaveTextContent('Scoring each skill');
+    expect(await within(await screen.findByRole('main')).findByRole('list')).toHaveTextContent(
+      'Scoring each skill',
+    );
     const view = await screen.findByRole('link', { name: 'View your report' }, { timeout: 15_000 });
     expect(view).toHaveAttribute('href', '/app/reports/int1');
     expect(screen.getByRole('link', { name: 'Rate your interview' })).toHaveAttribute(
@@ -176,7 +178,9 @@ describe('complete screen', () => {
       'This is taking longer than usual — our team has been notified; your answers are saved.',
     );
     expect(
-      within(screen.getByRole('list')).getByText('Scoring each skill').closest('li'),
+      within(within(screen.getByRole('main')).getByRole('list'))
+        .getByText('Scoring each skill')
+        .closest('li'),
     ).toHaveTextContent('(delayed)');
     expect(screen.queryByRole('button', { name: /try again|retry/i })).not.toBeInTheDocument();
   });

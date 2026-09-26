@@ -1,5 +1,6 @@
-import type { SessionResponse } from '@cbi/shared-types';
+import type { OtpChannel, SessionResponse } from '@cbi/shared-types';
 import {
+  ApiClientError,
   errorMessage,
   GoogleSignInButton,
   OtpCodeForm,
@@ -24,6 +25,8 @@ export function LoginPage() {
   const providers = useAuthProviders();
   const [requested, setRequested] = useState<OtpRequested | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  // Set when a code request finds email sign-in not set up (the providers list may be stale).
+  const [emailNotConfigured, setEmailNotConfigured] = useState(false);
   useTrackOnce('signup_started');
 
   const next = safeNextPath(params.get('next'));
@@ -36,6 +39,18 @@ export function LoginPage() {
   }
 
   const googleEnabled = Boolean(config.VITE_GOOGLE_CLIENT_ID) && providers.data?.google.enabled;
+  const emailUnavailable = emailNotConfigured || providers.data?.email.enabled === false;
+
+  async function requestOtp(channel: OtpChannel, destination: string) {
+    try {
+      return await api.requestOtp(channel, destination);
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'NOT_CONFIGURED' && channel === 'EMAIL') {
+        setEmailNotConfigured(true);
+      }
+      throw err;
+    }
+  }
 
   return (
     <div className="container py-5">
@@ -54,11 +69,24 @@ export function LoginPage() {
               />
             ) : (
               <>
-                <OtpRequestForm
-                  mobileEnabled={providers.data?.mobile.enabled ?? false}
-                  request={api.requestOtp}
-                  onRequested={setRequested}
-                />
+                {emailUnavailable ? (
+                  <div className="alert alert-warning mb-0" role="status">
+                    <h2 className="h6 alert-heading">
+                      <i className="bi bi-exclamation-triangle me-2" aria-hidden="true" />
+                      {t('auth.emailUnavailableTitle')}
+                    </h2>
+                    <p className="mb-0">{t('auth.emailUnavailableBody')}</p>
+                    {googleEnabled && (
+                      <p className="mb-0 mt-2">{t('auth.emailUnavailableGoogle')}</p>
+                    )}
+                  </div>
+                ) : (
+                  <OtpRequestForm
+                    mobileEnabled={providers.data?.mobile.enabled ?? false}
+                    request={requestOtp}
+                    onRequested={setRequested}
+                  />
+                )}
                 {googleEnabled && (
                   <>
                     <div className="d-flex align-items-center gap-2 my-4" aria-hidden="true">

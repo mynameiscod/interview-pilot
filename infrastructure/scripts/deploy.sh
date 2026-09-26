@@ -106,7 +106,10 @@ done
 mkdir -p "$NGINX_STATE_DIR" "$WWW_DIR" "$CBI_HOME/letsencrypt" "$CBI_HOME/certbot-www"
 [ -f "$NGINX_STATE_DIR/staging-allowlist.conf" ] || : >"$NGINX_STATE_DIR/staging-allowlist.conf"
 [ -f "$NGINX_STATE_DIR/htpasswd" ] || : >"$NGINX_STATE_DIR/htpasswd"
-[ -f "$CBI_HOME/letsencrypt/live/cbi/fullchain.pem" ] ||
+# The certificate directory is readable only by root and NGINX (it holds the private key),
+# so look from a short-lived container rather than as the deploy user.
+docker run --rm --entrypoint test -v "$CBI_HOME/letsencrypt:/le:ro" \
+  "${CERTBOT_IMAGE:-certbot/certbot:v4.1.1}" -f /le/live/cbi/fullchain.pem ||
   die "no TLS certificate yet: run infrastructure/scripts/certs.sh issue --env $CBI_ENV first"
 
 OLD_COLOR="$ACTIVE_COLOR"

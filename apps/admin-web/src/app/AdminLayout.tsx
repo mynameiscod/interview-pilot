@@ -144,6 +144,13 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'system.read',
     group: 'system',
   },
+  {
+    to: '/system/integrations',
+    key: 'nav.integrations',
+    icon: 'bi-plug',
+    permission: 'system.read',
+    group: 'system',
+  },
   { to: '/audit', key: 'nav.audit', icon: 'bi-journal-text', permission: 'audit.read' },
 ];
 
@@ -211,6 +218,9 @@ export function AdminLayout() {
               >
                 {user.email}
               </span>
+              <NavLink to="/account" className="btn btn-outline-secondary btn-sm">
+                {t('nav.account')}
+              </NavLink>
               <button
                 type="button"
                 className="btn btn-outline-secondary btn-sm"

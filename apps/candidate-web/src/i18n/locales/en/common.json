@@ -2,11 +2,14 @@
   "app": {
     "productName": "CareerPilot Interview",
     "endorsement": "by CodeBegun",
-    "homeLink": "CareerPilot Interview home"
+    "homeLink": "CareerPilot Interview home",
+    "tagline": "AI interview practice by CodeBegun"
   },
   "a11y": {
     "skipToContent": "Skip to main content",
-    "primaryNavigation": "Primary"
+    "primaryNavigation": "Primary",
+    "toggleNavigation": "Show or hide navigation",
+    "appNavigation": "Your practice space"
   },
   "language": {
     "label": "Language",
@@ -22,7 +25,8 @@
     "history": "History",
     "pricing": "Pricing",
     "buyCredits": "Buy credits",
-    "purchases": "Purchases"
+    "purchases": "Purchases",
+    "accountMenu": "Account menu"
   },
   "landing": {
     "hero": {
@@ -70,7 +74,10 @@
     "resend": "Resend code",
     "resendIn": "Resend in {{seconds}}s",
     "codeResent": "A new code has been sent.",
-    "changeDestination": "Use a different email or number"
+    "changeDestination": "Use a different email or number",
+    "emailUnavailableTitle": "Sign-in is temporarily unavailable",
+    "emailUnavailableBody": "We cannot send sign-in codes by email right now. Please try again later.",
+    "emailUnavailableGoogle": "You can still sign in with Google below."
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
@@ -89,7 +96,10 @@
     "validation": "Please check the details and try again.",
     "sessionEnded": "Your session has ended. Please sign in again.",
     "invalidEmail": "Enter a valid email address.",
-    "invalidMobile": "Enter a valid mobile number."
+    "invalidMobile": "Enter a valid mobile number.",
+    "notConfigured": "This service is not set up yet. Please try again later.",
+    "invalidCredentials": "The email or password is incorrect.",
+    "accountLocked": "Too many attempts. Please wait 15 minutes and try again."
   },
   "onboarding": {
     "title": "Tell us a little about you",
@@ -122,8 +132,8 @@
     }
   },
   "dashboard": {
-    "greeting": "Welcome, {{name}}",
-    "subtitle": "Your interview practice space.",
+    "greeting": "Hi {{name}}",
+    "subtitle": "Your personalised interview practice space.",
     "profileLink": "Review your profile",
     "startTitle": "Practise for your next interview",
     "startBody": "Add your resume and the job description, or just pick a role. We will plan a realistic interview for it.",
@@ -138,7 +148,33 @@
     "resumeNamed": "Resume {{title}}",
     "start": "Start",
     "viewReport": "View report",
-    "viewReportNamed": "View report for {{title}}"
+    "viewReportNamed": "View report for {{title}}",
+    "eyebrow": "Welcome back",
+    "tagline": "Practise with AI. Get real feedback. Be interview ready.",
+    "features": {
+      "roleSpecific": "Role-specific questions",
+      "realistic": "Realistic interview experience",
+      "feedback": "Detailed AI feedback"
+    },
+    "coverageTitle": "Your interview can cover",
+    "slogan": {
+      "practise": "Practise.",
+      "improve": "Improve.",
+      "hired": "Get hired."
+    },
+    "recentAll": "View history",
+    "minutes_one": "{{count}} min",
+    "minutes_other": "{{count}} mins",
+    "practiseTitle": "What you can practise",
+    "practiseCta": "Start practising",
+    "areas": {
+      "TECHNICAL": "Core concepts for your role",
+      "PROBLEM_SOLVING": "Thinking through open problems",
+      "CODING": "Write code in a real editor",
+      "BEHAVIORAL": "Teamwork, leadership, situations"
+    },
+    "tipLabel": "Tip",
+    "tip": "Add the job description as well as your resume. The questions then follow what the role actually asks for."
   },
   "profile": {
     "title": "Profile",
@@ -528,7 +564,8 @@
     "reserved_one": "{{count}} held by an interview in progress",
     "reserved_other": "{{count}} held by interviews in progress",
     "note": "Each interview uses 1 credit. If you end very early, the credit is returned.",
-    "purchasesLink": "Purchase history"
+    "purchasesLink": "Purchase history",
+    "viewPricing": "View pricing"
   },
   "start": {
     "title": "Ready to begin?",
@@ -932,7 +969,8 @@
       "rateLimited": "Too many attempts. Please wait a minute and try again.",
       "verificationFailed": "We could not verify this payment. If money was deducted, it will be confirmed or refunded automatically.",
       "planNotFound": "This plan is not available.",
-      "notPurchasable": "This plan cannot be bought."
+      "notPurchasable": "This plan cannot be bought.",
+      "notConfigured": "Online payments are not available right now. Please try again later."
     }
   },
   "checkout": {

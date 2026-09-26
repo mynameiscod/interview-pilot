@@ -274,7 +274,7 @@ export function createMockJudge() {
 // ---- Factory -----------------------------------------------------------------------------------
 
 export interface JudgeSettings {
-  JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock';
+  JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock' | 'none';
   JUDGE_BASE_URL?: string;
   JUDGE_HMAC_SECRET?: string;
   JUDGE0_AUTH_TOKEN?: string;
@@ -283,8 +283,10 @@ export interface JudgeSettings {
 let sharedMock: ReturnType<typeof createMockJudge> | null = null;
 
 /** The judge from environment settings (the mock is refused outside development/test by env validation). */
-export function createJudge(env: JudgeSettings): JudgeAdapter {
+export function createJudge(env: JudgeSettings): JudgeAdapter | null {
   switch (env.JUDGE_PROVIDER) {
+    case 'none':
+      return null;
     case 'codebegun':
       return createCodeBegunJudge({
         baseUrl: env.JUDGE_BASE_URL!,

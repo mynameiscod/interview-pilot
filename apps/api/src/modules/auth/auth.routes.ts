@@ -1,4 +1,6 @@
 import {
+  ChangePasswordBody,
+  PasswordLoginBody,
   GoogleLoginBody,
   OtpRequestBody,
   OtpVerifyBody,
@@ -65,8 +67,8 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
     const body: { data: AuthProvidersResponse } = {
       data: {
         google: { enabled: c.google !== null },
-        email: { enabled: true },
-        mobile: { enabled: c.providers.sms !== null },
+        email: { enabled: c.integrations.ready('email') },
+        mobile: { enabled: c.integrations.ready('sms') },
       },
     };
     res.json(body);
@@ -100,6 +102,21 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
     );
     await respondWithSession(req, res, user, `otp_${verified.channel.toLowerCase()}`, created);
   });
+
+  if (audience === 'admin') {
+    // Admin console only: email + password (set on the server or in the console).
+    router.post('/password/login', limiters.otpVerify, async (req, res) => {
+      const body = PasswordLoginBody.parse(req.body);
+      const user = await c.passwords.login(body.email, body.password, clientContext(req));
+      await respondWithSession(req, res, user, 'password', false);
+    });
+    router.post('/password', signedIn, limiters.auth, async (req, res) => {
+      const body = ChangePasswordBody.parse(req.body);
+      res.json({
+        data: await c.passwords.change(requireAuth(req).userId, body, clientContext(req)),
+      });
+    });
+  }
 
   router.post('/google', limiters.auth, async (req, res) => {
     if (!c.google) throw new AppError(503, 'FEATURE_DISABLED', 'Google sign-in is not available.');

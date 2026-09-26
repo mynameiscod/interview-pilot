@@ -32,7 +32,11 @@ export function adminRouter(c: Container): Router {
     const auth = requireAuth(req);
     const me = await c.accounts.loadMe(auth.userId);
     const body: { data: AdminMeResponse } = {
-      data: { ...me, permissions: [...permissionsFor(auth.adminRoles)] },
+      data: {
+        ...me,
+        permissions: [...permissionsFor(auth.adminRoles)],
+        hasPassword: await c.passwords.hasPassword(auth.userId),
+      },
     };
     res.set('Cache-Control', 'no-store').json(body);
   });

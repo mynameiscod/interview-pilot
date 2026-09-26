@@ -28,6 +28,12 @@ export function errorMessage(t: TFunction, err: unknown): string {
       return t('errors.providerUnavailable');
     case 'FEATURE_DISABLED':
       return t('errors.featureDisabled');
+    case 'NOT_CONFIGURED':
+      return t('errors.notConfigured');
+    case 'INVALID_CREDENTIALS':
+      return t('errors.invalidCredentials');
+    case 'ACCOUNT_LOCKED':
+      return t('errors.accountLocked');
     case 'IDENTITY_IN_USE':
       return t('errors.identityInUse');
     case 'ACCOUNT_SUSPENDED':

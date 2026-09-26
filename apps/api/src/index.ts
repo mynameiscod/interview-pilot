@@ -57,6 +57,17 @@ async function main(): Promise<void> {
   logger.info({ created: await ensureProblemBank() }, 'coding problems checked');
   logger.info(await ensureOpsDefaults(), 'feature flags and settings checked');
   const stopAiListener = await container.ai.listenForChanges();
+  await container.integrations.start();
+  const stopIntegrationsListener = await container.integrations.listenForChanges();
+  logger.info(
+    Object.fromEntries(
+      (['email', 'payments', 'storage', 'sms', 'judge'] as const).map((k) => [
+        k,
+        container.integrations.status(k),
+      ]),
+    ),
+    'integrations',
+  );
   const app = createApp({
     container,
     logger,
@@ -84,6 +95,7 @@ async function main(): Promise<void> {
     void realtime.close().then(async () => {
       try {
         await stopAiListener();
+        await stopIntegrationsListener();
         await container.jobs.close();
         await container.queueAdmin.close();
         await Promise.allSettled([disconnectMongo(), redis.quit(), queueRedis.quit()]);

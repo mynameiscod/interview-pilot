@@ -53,6 +53,8 @@ export interface EvaluationDeps {
   ai: AiRuntime;
   storage: StorageProvider;
   email: EmailProvider | null;
+  /** Live check (admin-managed integrations); default: whether `email` is set. */
+  emailEnabled?: () => boolean;
   logger: Logger;
   candidateUrl: string;
   /** Code judge for solutions left unsubmitted (null: they are recorded as not run). */
@@ -488,7 +490,7 @@ export async function renderRevisionPdf(
 
 /** 8. "Your report is ready" email, when email is configured and the address is verified. */
 async function notify(deps: EvaluationDeps, s: Session) {
-  if (!deps.email) {
+  if (!deps.email || (deps.emailEnabled && !deps.emailEnabled())) {
     deps.logger.info({ sessionId: String(s._id) }, 'email disabled; report-ready notice skipped');
     return;
   }

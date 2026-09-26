@@ -100,7 +100,7 @@ export async function signUpCandidate(page: Page, opts: { email?: string; name?:
   await page.goto(`${URLS.candidate}/login`);
   await completeOtpSignIn(page, email);
   await completeOnboarding(page, name);
-  await expect(page.getByRole('heading', { name: `Welcome, ${name}` })).toBeVisible();
+  await expect(page.getByRole('heading', { name: `Hi ${name}` })).toBeVisible();
   return { email, name };
 }
 
@@ -110,6 +110,8 @@ export async function signInAdmin(page: Page, roles: AdminRole[]) {
   await createAdmin(email, roles);
   await page.goto(`${URLS.admin}/login`);
   await expect(page.getByRole('heading', { name: 'Sign in to the admin console' })).toBeVisible();
+  // The admin login opens on the password form; these admins have no password.
+  await page.getByRole('button', { name: 'Email code' }).click();
   await completeOtpSignIn(page, email);
   await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
   return { email };

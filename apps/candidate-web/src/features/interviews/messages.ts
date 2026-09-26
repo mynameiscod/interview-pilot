@@ -37,6 +37,9 @@ export function inputErrorMessage(t: TFunction, err: unknown): string {
       case 'AI_UNAVAILABLE':
       case 'SERVICE_UNAVAILABLE':
         return t('inputs.serviceUnavailable');
+      case 'NOT_CONFIGURED':
+        // A provider (e.g. file storage) is not set up on the server yet.
+        return t('errors.notConfigured');
       case 'CAMPAIGN_CLOSED':
         return t('campaign.errors.closed');
       case 'MAINTENANCE':

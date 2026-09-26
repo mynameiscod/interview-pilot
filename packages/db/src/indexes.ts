@@ -12,6 +12,7 @@ import {
   AnalyticsDailyModel,
   AnalyticsEventModel,
   FeatureFlagModel,
+  IntegrationConfigModel,
   ShareLinkModel,
   SystemSettingModel,
 } from './models/ops.js';
@@ -95,6 +96,7 @@ const MODELS = [
   FeatureFlagModel,
   SystemSettingModel,
   ShareLinkModel,
+  IntegrationConfigModel,
 ];
 
 /**

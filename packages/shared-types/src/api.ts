@@ -52,6 +52,14 @@ export const ErrorCode = z.enum([
   // Operations (Phase 11)
   /** Maintenance mode: new interviews cannot start right now. */
   'MAINTENANCE',
+  // Admin-managed integrations
+  /** A provider (email, payments, storage, SMS, judge) is not configured yet. */
+  'NOT_CONFIGURED',
+  // Admin password sign-in
+  /** Email or password is incorrect (the same answer for unknown accounts). */
+  'INVALID_CREDENTIALS',
+  /** Too many wrong passwords: password sign-in is paused for a while. */
+  'ACCOUNT_LOCKED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { buildAiRuntime } from '@cbi/ai-runtime';
+import { buildAiRuntime, buildIntegrations } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
 import {
@@ -42,7 +42,22 @@ async function main(): Promise<void> {
 
   const ai = buildAiRuntime({ env, logger, redis });
   const stopListening = await ai.listenForChanges();
-  const storage = createStorage(env);
+  // Same resolution as the API: System → Integrations first, then the environment file.
+  const integrations = buildIntegrations({
+    redis,
+    logger,
+    secrets: ai.secrets,
+    refreshMs: 60_000,
+    fallbacks: {
+      email: createEmailProvider(env),
+      storage: createStorage(env),
+      payments: createPaymentGateway(env),
+      judge: createJudge(env),
+    },
+  });
+  await integrations.start();
+  const stopIntegrations = await integrations.listenForChanges();
+  const storage = integrations.storage;
 
   const runtime = await startWorkers({
     workerId,
@@ -53,7 +68,7 @@ async function main(): Promise<void> {
     media: { storage, intervalMs: env.WORKER_MEDIA_SWEEP_INTERVAL_MS },
     analyticsRollupIntervalMs: env.WORKER_ANALYTICS_ROLLUP_INTERVAL_MS,
     payments: {
-      gateway: createPaymentGateway(env),
+      gateway: integrations.payments,
       intervalMs: env.WORKER_PAYMENT_RECONCILE_INTERVAL_MS,
     },
     queueConnection,
@@ -74,10 +89,11 @@ async function main(): Promise<void> {
       deps: {
         ai,
         storage,
-        email: createEmailProvider(env),
+        email: integrations.email,
+        emailEnabled: () => integrations.ready('email'),
         logger,
         candidateUrl: env.PUBLIC_CANDIDATE_URL,
-        judge: createJudge(env),
+        judge: integrations.judge,
       },
     },
   });
@@ -104,6 +120,7 @@ async function main(): Promise<void> {
     try {
       await runtime.close();
       await stopListening();
+      await stopIntegrations();
       await Promise.allSettled([disconnectMongo(), redis.quit(), queueConnection.quit()]);
       health.close();
       logger.info('shutdown complete');

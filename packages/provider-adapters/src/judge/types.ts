@@ -36,7 +36,7 @@ export interface JudgeResult {
 export type JudgeStatus = 'QUEUED' | 'RUNNING' | 'DONE';
 
 export interface JudgeAdapter {
-  readonly name: 'codebegun' | 'judge0' | 'mock';
+  readonly name: 'codebegun' | 'judge0' | 'mock' | 'none';
   listLanguages(): Promise<CodingLanguage[]>;
   submit(request: JudgeRequest): Promise<{ token: string }>;
   status(token: string): Promise<JudgeStatus>;

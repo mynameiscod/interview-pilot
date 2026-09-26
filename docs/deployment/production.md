@@ -133,13 +133,18 @@ Create A (and AAAA if used) records for the three hostnames pointing at the VPS.
 As `ops` (`sudo -e`):
 
 1. `/srv/cbi/.env.datastores`: generate every password with `openssl rand -hex 32`.
-2. `/srv/cbi/.env.production`: fill in every `REPLACE_WITH_*` value. `deploy.sh` refuses to run while any remain. `MONGODB_URI` and `REDIS_URL` must use the passwords from step 1. You need:
-   - live Razorpay keys and the webhook secret (webhook URL `https://api.interview.codebegun.com/api/v1/payments/webhooks/razorpay`)
-   - SES or SMTP credentials, and MSG91 with a DLT-approved template (or `SMS_PROVIDER=disabled`)
-   - the Bunny storage zone for uploads
-   - judge host details
-   - the Google client id (optional)
-   - a new `AI_SECRETS_MASTER_KEY` (`openssl rand -base64 32`)
+2. `/srv/cbi/.env.production`: fill in every `REPLACE_WITH_*` value. `deploy.sh` refuses to run while any remain. What's left in the file:
+   - `MONGODB_URI` and `REDIS_URL`, using the passwords from step 1;
+   - `JWT_ACCESS_SECRET` and `OTP_HMAC_SECRET` (`openssl rand -base64 48`, different values);
+   - a new `AI_SECRETS_MASTER_KEY` (`openssl rand -base64 32`);
+   - the Google client id (optional).
+
+   **Provider credentials are set in the admin site, not in this file.** Email (SES or SMTP), SMS (MSG91), storage (Bunny), payments (Razorpay) and the code judge are configured after the first deploy in **System → Integrations** (SUPER_ADMIN). There they are encrypted with `AI_SECRETS_MASTER_KEY`, applied to every process without a restart, and can be tested and rotated. The template leaves these providers as `disabled`/`none`, and until they're set up the features they power answer "not set up yet". You can still configure a provider in this file; an admin configuration overrides it.
+
+   Razorpay webhook URL: `https://api.interview.codebegun.com/api/v1/payments/webhooks/razorpay`.
+
+   **Order matters for the first super admin:** they sign in with an email code, so configure **Email** before anyone can sign in, using the bootstrap script in §3.7. Everything else is configured in the admin site.
+
 3. `/srv/cbi/.env.backup` and `/srv/cbi/backup/age-recipients.txt`. See [runbook-backup-restore.md](runbook-backup-restore.md#1-one-time-setup).
 4. Staging only: `sudo htpasswd -cB /srv/cbi/nginx/htpasswd <user>`, then add office/VPN networks to `/srv/cbi/nginx/staging-allowlist.conf`, one `<cidr> 1;` per line.
 
@@ -191,7 +196,22 @@ docker compose -f docker-compose.production.yml --env-file /srv/cbi/state/compos
   exec "api-$ACTIVE" node dist/scripts/seed-super-admin.js --email ops@codebegun.com
 ```
 
-That person signs in at `https://admin.interview.codebegun.com` with an email OTP and invites the other admins from **Admins**. The seed is audited as `admin.super_admin_seeded`.
+Then configure **email** from the server shell, so the sign-in code can be delivered. The script reads JSON on stdin, so secrets never land in shell history. It stores the configuration exactly as the admin site does (encrypted, audited, applied at once):
+
+```bash
+cat > /tmp/email.json   # paste, then Ctrl+D:
+{ "provider": "smtp",
+  "settings": { "from": "CareerPilot Interview <no-reply@codebegun.com>",
+                "smtpHost": "smtp.example.com", "smtpPort": 587, "smtpUser": "apikey" },
+  "secrets":  { "smtpPass": "…" } }
+docker compose -f docker-compose.production.yml --env-file /srv/cbi/state/compose.env \
+  exec -T "api-$ACTIVE" node dist/scripts/configure-integration.js email < /tmp/email.json
+shred -u /tmp/email.json
+```
+
+For Amazon SES use `"provider": "ses"` with `sesRegion` in settings, and `sesAccessKeyId` and `sesSecretAccessKey` in secrets.
+
+That person signs in at `https://admin.interview.codebegun.com` with an email OTP and invites the other admins from **Admins**. In **System → Integrations** they test email, then set up storage, payments, SMS and the judge. The seed is audited as `admin.super_admin_seeded`.
 
 ### 3.8 Smoke checks
 

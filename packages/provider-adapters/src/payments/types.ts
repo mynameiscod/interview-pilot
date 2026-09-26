@@ -34,7 +34,7 @@ export type GatewayWebhookEvent =
   | { kind: 'ignored'; eventId: string; type: string };
 
 export interface PaymentGateway {
-  readonly name: 'razorpay' | 'mock';
+  readonly name: 'razorpay' | 'mock' | 'none';
   /** Public key id the browser uses to open Checkout. */
   readonly publicKeyId: string;
   createOrder(input: {
