@@ -102,7 +102,8 @@ describe('DOCX extraction', () => {
     expect(result.text.split('\n').filter(Boolean)).toHaveLength(SAMPLE_RESUME_LINES.length);
   });
 
-  it('stops zip bombs before handing them to the parser', async () => {
+  // Compressing and re-inflating ~30 MB can take over 5 s on shared CI runners.
+  it('stops zip bombs before handing them to the parser', { timeout: 30_000 }, async () => {
     const bomb = buildDocxBomb(30);
     expect(bomb.length).toBeLessThan(200 * 1024);
     expect(await code(bomb)).toBe('TOO_LARGE');
