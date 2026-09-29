@@ -112,6 +112,28 @@ describe('complete screen', () => {
     expect(screen.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/app');
   });
 
+  it('links a finished drill to its result and notes it was free', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () =>
+        ok(
+          makeInterview({
+            kind: 'DRILL',
+            drill: { competencyKey: 'sql', competencyName: 'SQL', sourceSessionId: 'int0' },
+            state: 'REPORT_READY',
+            credit: 'FREE',
+          }),
+        ),
+    });
+    await renderRoute('/app/interviews/int1/complete', { api });
+    expect(await screen.findByText('This drill was free. No credit was used.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See your drill result' })).toHaveAttribute(
+      'href',
+      '/app/drills/int1',
+    );
+    expect(screen.queryByRole('link', { name: /Rate/ })).not.toBeInTheDocument();
+  });
+
   it('shows the evaluation stages as a checklist while the report is prepared', async () => {
     const api = fakeApi({
       ...signedIn,

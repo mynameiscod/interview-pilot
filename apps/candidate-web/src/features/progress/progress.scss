@@ -1,0 +1,124 @@
+// Progress hub, drills and certificates. Colours come from the design tokens
+// (var(--cb-*)) and Bootstrap's RGB variables, used only for light tints.
+
+.cb-trend-chart {
+  position: relative;
+  height: 14rem;
+
+  @media (min-width: 992px) {
+    height: 16rem;
+  }
+}
+
+// Decorative sparkline; the scores are in the visually hidden table.
+.cb-sparkline {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 6rem;
+  height: 1.75rem;
+  overflow: visible;
+
+  polyline {
+    fill: none;
+    stroke: var(--cb-secondary-strong);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  circle {
+    fill: var(--cb-primary);
+  }
+
+  &--empty {
+    border-bottom: 2px dashed var(--cb-border);
+  }
+}
+
+.cb-streak-flame {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  color: var(--cb-secondary-strong);
+  background-color: rgba(var(--bs-secondary-rgb), 0.14);
+}
+
+.cb-plan-done {
+  text-decoration: line-through;
+  color: var(--cb-text-secondary);
+}
+
+.cb-badge-tile {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  border-radius: 0.8rem;
+  padding: 0.75rem;
+  background-color: var(--cb-surface-muted);
+
+  &--locked {
+    background-color: var(--cb-surface);
+    border: 1px dashed var(--cb-border);
+  }
+}
+
+.cb-icon-tile--muted {
+  color: var(--cb-text-secondary);
+  background-color: var(--cb-surface-muted);
+}
+
+// Practice-area tiles are links to a drill or a new interview.
+.cb-area-tile--link {
+  color: var(--cb-text-primary);
+  text-decoration: none;
+  border: 1px solid transparent;
+
+  &:hover {
+    border-color: var(--cb-secondary);
+  }
+}
+
+.cb-hub-step-number {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  font-weight: 700;
+  border: 2px solid var(--cb-secondary);
+}
+
+.cb-drill-score {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--cb-primary);
+}
+
+.cb-feedback-item {
+  border-left: 3px solid var(--cb-border);
+  padding-left: 0.75rem;
+
+  &--positive {
+    border-left-color: var(--cb-success);
+  }
+
+  &--negative {
+    border-left-color: var(--cb-danger);
+  }
+}
+
+// The printable certificate check page.
+.cb-certificate {
+  border: 2px solid var(--cb-primary);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background-color: var(--cb-surface);
+}

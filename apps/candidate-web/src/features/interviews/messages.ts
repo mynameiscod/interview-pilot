@@ -87,10 +87,15 @@ export const reportVisible = (interview: {
 export function interviewPath(
   interview: Pick<InterviewSummary, 'id' | 'state'> & {
     startedAt?: string | null;
+    kind?: InterviewSummary['kind'];
     campaign?: Pick<NonNullable<InterviewSummary['campaign']>, 'reportVisible'> | null;
   },
 ): string {
   const base = `/app/interviews/${interview.id}`;
+  // A finished drill has a result page, not a report.
+  if (interview.kind === 'DRILL' && interview.state === 'REPORT_READY') {
+    return `/app/drills/${interview.id}`;
+  }
   if (interview.state === 'READY') return `${base}/setup`;
   if (interview.state === 'READY_TO_START') return `${base}/start`;
   if (isLive(interview.state)) return `${base}/room`;
@@ -104,6 +109,7 @@ export function interviewPath(
 export function startErrorMessage(t: TFunction, err: unknown): string {
   if (err instanceof ApiClientError) {
     if (err.code === 'INSUFFICIENT_CREDITS') return t('start.errors.noCredits');
+    if (err.code === 'DRILL_LIMIT_REACHED') return t('drill.start.errors.limit');
     if (err.code === 'CONFLICT') return t('start.errors.inProgress');
     if (err.code === 'INVALID_STATE') return t('start.errors.invalidState');
   }

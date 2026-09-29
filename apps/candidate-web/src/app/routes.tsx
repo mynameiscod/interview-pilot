@@ -111,6 +111,19 @@ export const routes: RouteObject[] = [
                 }),
               },
               {
+                // Practice drills: pick a mode for one skill, then the drill's quick result.
+                path: 'drills/new',
+                lazy: async () => ({
+                  Component: (await import('../features/progress/DrillStartPage')).DrillStartPage,
+                }),
+              },
+              {
+                path: 'drills/:id',
+                lazy: async () => ({
+                  Component: (await import('../features/progress/DrillResultPage')).DrillResultPage,
+                }),
+              },
+              {
                 path: 'history',
                 lazy: async () => ({
                   Component: (await import('../features/reports/HistoryPage')).HistoryPage,
@@ -181,6 +194,21 @@ export const routes: RouteObject[] = [
         path: 'proof/:token',
         lazy: async () => ({
           Component: (await import('../features/proof/ProofPage')).ProofPage,
+        }),
+      },
+      {
+        // Readiness certificate checks: public, the link printed on each certificate.
+        path: 'verify/:code',
+        lazy: async () => ({
+          Component: (await import('../features/progress/VerifyCertificatePage'))
+            .VerifyCertificatePage,
+        }),
+      },
+      {
+        // One-click unsubscribe from practice emails (signed token, no sign-in).
+        path: 'unsubscribe',
+        lazy: async () => ({
+          Component: (await import('../features/progress/UnsubscribePage')).UnsubscribePage,
         }),
       },
       {

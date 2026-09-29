@@ -133,6 +133,15 @@ function ProofSummary({ proof }: { proof: ProofView }) {
           </p>
         )}
 
+        {proof.certificate && (
+          <p className="d-flex gap-2 align-items-center mb-0">
+            <i className="bi bi-patch-check text-secondary" aria-hidden="true" />
+            <Link to={proof.certificate.verifyPath}>
+              {t('certificate.proofLink', { code: proof.certificate.code })}
+            </Link>
+          </p>
+        )}
+
         <div className="alert alert-info d-flex gap-2 mb-0" role="note">
           <i className="bi bi-robot" aria-hidden="true" />
           <div>

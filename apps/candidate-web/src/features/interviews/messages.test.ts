@@ -2,7 +2,7 @@ import { ApiClientError } from '@cbi/web-core';
 import { describe, expect, it } from 'vitest';
 import { initI18n } from '../../i18n';
 import { paymentErrorMessage } from '../payments/payment-format';
-import { inputErrorMessage, startErrorMessage } from './messages';
+import { inputErrorMessage, interviewPath, startErrorMessage } from './messages';
 
 const notConfigured = () =>
   new ApiClientError(
@@ -40,6 +40,21 @@ describe('NOT_CONFIGURED messages', () => {
     const te = await initI18n({ detect: false, lng: 'te' });
     expect(paymentErrorMessage(te.t, notConfigured())).toBe(
       'ఆన్‌లైన్ చెల్లింపులు ప్రస్తుతం అందుబాటులో లేవు. దయచేసి తర్వాత మళ్లీ ప్రయత్నించండి.',
+    );
+  });
+});
+
+describe('drills', () => {
+  it('link a finished drill to its result and explain the daily limit', async () => {
+    expect(interviewPath({ id: 'd1', state: 'REPORT_READY', kind: 'DRILL' })).toBe(
+      '/app/drills/d1',
+    );
+    expect(interviewPath({ id: 'i1', state: 'REPORT_READY', kind: 'INTERVIEW' })).toBe(
+      '/app/reports/i1',
+    );
+    const en = await initI18n({ detect: false, lng: 'en' });
+    expect(startErrorMessage(en.t, new ApiClientError('DRILL_LIMIT_REACHED', 'limit', 402))).toBe(
+      "You have used today's free drills. More are free tomorrow.",
     );
   });
 });
