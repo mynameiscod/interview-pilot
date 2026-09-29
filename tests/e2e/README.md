@@ -85,6 +85,14 @@ and keeps traces and screenshots of failures; the HTML report is written to
 | `admin.spec.ts`            | Analytics KPI tiles; System health dependencies; a finance admin has no System section            |
 | `accessibility.spec.ts`    | axe (WCAG 2.1 A/AA) on landing, sign-in, pricing, report, admin dashboard: no serious/critical    |
 | `login-next.spec.ts`       | Sign-in returns to `?next=` (known app bug, `test.fixme`)                                         |
+| `voice-interview.spec.ts`  | Voice setup → device check → consent → start → record an answer → review transcript → submit      |
+| `video-interview.spec.ts`  | Video setup → camera check → recording consent → self-view, indicator, first segment uploaded     |
+
+The voice and video specs use Chromium's fake capture devices: the Chromium projects launch
+with `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` (a test-pattern camera
+and a tone on the microphone, permission prompts accepted) and grant `microphone` and `camera`.
+The mock STT transcribes such audio to a labelled placeholder and the mock TTS plays a chime.
+WebKit has no fake devices, so those specs skip it.
 
 Tests marked `test.fixme` document known application defects (see the comments in the spec);
 remove the marker once the app is fixed.

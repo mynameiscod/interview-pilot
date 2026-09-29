@@ -84,6 +84,7 @@ Scoring is unchanged. It is based on the transcript text only: no voice-prosody 
 - `apps/api/src/modules/voice/voice.test.ts`: the question-audio cache shared by replicas (one synthesis, a failed holder, an expired wait, Redis down).
 - `apps/candidate-web/src/features/room/voice-hooks.test.ts`: the answer limit finishes the recording once, with fake timers.
 - `apps/api/src/modules/voice/voice.integration.test.ts`: the mocked voice end-to-end test. It covers the device check and consent gate, spoken questions and caching, a spoken answer becoming the server transcript, and degrade-to-text for STT and TTS.
+- `tests/e2e/specs/voice-interview.spec.ts` and `video-interview.spec.ts`: the flows in Chromium with fake capture devices (device check, consent, recording an answer, reviewing and submitting it; for video, recording starting and its first segment uploaded).
 - **Mock speech (development/test only):**
   - The mock STT transcribes a clip made by `mockSpeech(text)` to `text`. `mockSpeechFailure()` simulates an outage. A real microphone recording gives a labelled placeholder.
   - The mock TTS plays a short chime followed by silence.
