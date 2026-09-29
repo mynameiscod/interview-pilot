@@ -608,6 +608,68 @@ describe('admin payments', () => {
     await support.call('get', `/purchases/${created.purchaseId}/receipt`).expect(200);
   });
 
+  it('keeps the buyer state for the invoice and issues downloadable credit notes for refunds', async () => {
+    const c = await candidate();
+    expect((await c.call('get', '/payments/checkout-profile').expect(200)).body.data).toEqual({
+      billingState: null,
+    });
+    await c
+      .call('post', '/payments/orders')
+      .send({ planCode: 'SPRINT', billingState: '99' })
+      .expect(400);
+    const first = CheckoutOrder.parse(
+      (
+        await c
+          .call('post', '/payments/orders')
+          .send({ planCode: 'SPRINT', couponCode: null, billingState: '36' })
+          .expect(201)
+      ).body.data,
+    );
+    expect((await c.call('get', '/payments/checkout-profile').expect(200)).body.data).toEqual({
+      billingState: '36',
+    });
+    // The next order uses the saved state.
+    const created = await order(c);
+    const purchases = await PurchaseModel.find({ userId: c.userId }).lean();
+    expect(purchases.map((p) => p.buyerState)).toEqual(['36', '36']);
+    expect(first.purchaseId).not.toBe(created.purchaseId);
+
+    const { checkout } = t.payments.pay(created.provider!.orderId);
+    await c.call('post', '/payments/verify').send(checkout).expect(200);
+    const finance = await adminAs(['FINANCE_ADMIN']);
+    await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Customer request', amountMinor: 5_000, withdrawCredits: 0 })
+      .expect(200);
+    const summary = PurchaseSummary.parse(
+      (await c.call('get', `/payments/purchases/${created.purchaseId}`).expect(200)).body.data,
+    );
+    expect(summary.creditNotes).toEqual([
+      {
+        key: expect.any(String),
+        number: expect.stringMatching(/^CN\/\d{2}-\d{2}\/000001$/),
+        amountMinor: 5_000,
+        processedAt: expect.any(String),
+      },
+    ]);
+    const [note] = summary.creditNotes;
+    const path = `/purchases/${created.purchaseId}/credit-notes/${note!.key}`;
+    const res = await c.call('get', `/payments${path}`).expect(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toMatch(/credit-note-CN-\d{2}-\d{2}-000001\.pdf/);
+    const other = await candidate('ravi@example.com');
+    await other.call('get', `/payments${path}`).expect(404);
+    await c
+      .call('get', `/payments/purchases/${created.purchaseId}/credit-notes/unknown`)
+      .expect(404);
+    const support = await adminAs(['SUPPORT_ADMIN']);
+    await support.call('get', path).expect(200);
+    const admin = AdminPurchase.parse(
+      (await support.call('get', `/purchases/${created.purchaseId}`).expect(200)).body.data,
+    );
+    expect(admin.creditNotes[0]!.number).toBe(note!.number);
+  });
+
   it('reconciles a purchase whose browser and webhook never reported back', async () => {
     const c = await candidate();
     const created = await order(c);

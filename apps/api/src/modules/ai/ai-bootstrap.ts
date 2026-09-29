@@ -14,13 +14,15 @@ interface BootstrapDeps {
 
 /**
  * Runs at API start (idempotent, safe with several replicas):
- * 1. seeds missing providers, models and routes (never changes existing ones);
+ * 1. seeds missing providers, models and routes (never changes existing ones;
+ *    only adds a catalog price for a unit a model has never been priced in);
  * 2. imports AI_BOOTSTRAP_* keys into providers that have no key yet;
  * 3. re-encrypts stored keys that use an older master key (rotation).
  */
 export async function bootstrapAi({ env, ai, audit, logger }: BootstrapDeps) {
   const seeded = await ensureAiCatalog({ mockMode: ai.mockEnabled });
-  let changed = seeded.providersCreated + seeded.modelsCreated + seeded.routesCreated > 0;
+  let changed =
+    seeded.providersCreated + seeded.modelsCreated + seeded.routesCreated + seeded.pricesAdded > 0;
 
   const bootstrapKeys: [AiProviderKey, string | undefined][] = [
     ['openai', env.AI_BOOTSTRAP_OPENAI_API_KEY],

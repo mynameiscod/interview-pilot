@@ -227,6 +227,30 @@ describe('realtime room', () => {
     expect(err.message).toBe('UNAUTHENTICATED');
   });
 
+  it('rejects the token of a session signed out since it was issued', async () => {
+    const c = await candidate();
+    const ok = socketFor(c.accessToken);
+    await new Promise<void>((resolve, reject) => {
+      ok.once('connect', () => resolve());
+      ok.once('connect_error', reject);
+    });
+    // The device signs itself out (its session id is the one in the token).
+    const [current] = (
+      await request(t.app)
+        .get('/api/v1/auth/sessions')
+        .set('Authorization', `Bearer ${c.accessToken}`)
+        .expect(200)
+    ).body.data;
+    await request(t.app)
+      .delete(`/api/v1/auth/sessions/${current.id}`)
+      .set('Origin', TEST_ORIGIN)
+      .set('Authorization', `Bearer ${c.accessToken}`)
+      .expect(204);
+    const socket = socketFor(c.accessToken);
+    const err = await new Promise<Error>((resolve) => socket.once('connect_error', resolve));
+    expect(err.message).toBe('UNAUTHENTICATED');
+  });
+
   it('asks questions, records answers once and moves on', async () => {
     const c = await candidate();
     const id = await readyInterview(c.userId);

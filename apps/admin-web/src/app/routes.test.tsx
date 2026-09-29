@@ -28,6 +28,7 @@ const summary = (overrides: Partial<AdminUserSummary> = {}): AdminUserSummary =>
   emailVerified: true,
   lastLoginAt: null,
   createdAt: new Date().toISOString(),
+  mfaEnabled: false,
   ...overrides,
 });
 

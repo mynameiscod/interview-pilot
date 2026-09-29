@@ -14,13 +14,18 @@ import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
 import type { AccountService } from '../auth/account.service.js';
 import { adminInviteEmail } from '../auth/messages.js';
+import type { MfaService } from '../auth/mfa.service.js';
+import type { RevokedSessions } from '../auth/revoked-sessions.js';
 import type { SessionService } from '../auth/session.service.js';
 import type { UserStateCache } from '../auth/user-state.js';
+import { clearAdminMfa } from './mfa-reset.js';
 
 interface Deps {
   accounts: AccountService;
   sessions: SessionService;
   userState: UserStateCache;
+  mfa: Pick<MfaService, 'verifyOwnCode'>;
+  revokedSessions: RevokedSessions;
   audit: AuditService;
   email: EmailProvider;
   logger: Logger;
@@ -35,6 +40,8 @@ interface UserLike {
   status: string;
   lastLoginAt?: Date | null;
   createdAt: Date;
+  /** Selected only where the 2FA state is shown (`+mfa`). */
+  mfa?: { enabledAt?: Date | null } | null;
 }
 
 function toSummary(user: UserLike, displayName: string | null): AdminUserSummary {
@@ -47,6 +54,7 @@ function toSummary(user: UserLike, displayName: string | null): AdminUserSummary
     emailVerified: Boolean(user.emailVerifiedAt),
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
+    mfaEnabled: Boolean(user.mfa?.enabledAt),
   };
 }
 
@@ -73,6 +81,7 @@ export function createAdminUserService(deps: Deps) {
   return {
     async list(): Promise<AdminUserSummary[]> {
       const users = await UserModel.find({ 'adminRoles.0': { $exists: true } })
+        .select('+mfa')
         .sort({ createdAt: 1 })
         .lean();
       const profiles = await UserProfileModel.find(
@@ -143,7 +152,7 @@ export function createAdminUserService(deps: Deps) {
     ): Promise<AdminUserSummary> {
       if (!mongoose.isValidObjectId(targetId)) throw AppError.notFound('Admin not found');
       const user = await transaction(async (session) => {
-        const target = await UserModel.findById(targetId, null, { session });
+        const target = await UserModel.findById(targetId, null, { session }).select('+mfa');
         if (!target || target.adminRoles.length === 0) throw AppError.notFound('Admin not found');
         const before = [...target.adminRoles] as AdminRole[];
         const losingSuper = before.includes('SUPER_ADMIN') && !input.roles.includes('SUPER_ADMIN');
@@ -201,6 +210,54 @@ export function createAdminUserService(deps: Deps) {
         );
       });
       await deps.userState.invalidate(targetId);
+    },
+
+    /**
+     * Resets another admin's two-factor authentication (lost authenticator
+     * and recovery codes), confirmed with the acting super admin's own
+     * current code. The admin is signed out everywhere and sets up a new
+     * authenticator at their next sign-in. Audited as `admin.mfa_reset`.
+     */
+    async resetMfa(
+      targetId: string,
+      input: { code: string; reason: string },
+      actorId: string,
+      ctx: ClientContext,
+    ): Promise<AdminUserSummary> {
+      if (!mongoose.isValidObjectId(targetId)) throw AppError.notFound('Admin not found');
+      if (targetId === actorId) {
+        throw AppError.conflict(
+          'Use your account page to change your own two-factor authentication.',
+        );
+      }
+      const existing = await UserModel.findById(targetId).select('+mfa').lean();
+      if (!existing || existing.adminRoles.length === 0) throw AppError.notFound('Admin not found');
+      const noMfa = () =>
+        AppError.conflict('This admin does not have two-factor authentication on.');
+      // Checked before the actor's code is used, so a refused request does not spend it.
+      if (!(existing as UserLike).mfa?.enabledAt) throw noMfa();
+      await deps.mfa.verifyOwnCode(actorId, input.code);
+      const families = await transaction(async (session) => {
+        const revoked = await clearAdminMfa(targetId, session);
+        if (revoked === null) throw noMfa();
+        await deps.audit.record(
+          {
+            actorType: 'ADMIN',
+            actorId,
+            action: 'admin.mfa_reset',
+            resourceType: 'user',
+            resourceId: targetId,
+            details: { reason: input.reason, via: 'console', sessionsEnded: revoked.length },
+          },
+          ctx,
+          session,
+        );
+        return revoked;
+      });
+      await deps.revokedSessions.revoke(families);
+      await deps.userState.invalidate(targetId);
+      const user = (await UserModel.findById(targetId).select('+mfa').lean())!;
+      return toSummary(user, await displayNameOf(user._id));
     },
   };
 }

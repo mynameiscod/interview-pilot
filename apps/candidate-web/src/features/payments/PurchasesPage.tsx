@@ -8,28 +8,27 @@ import { downloadPdf } from '../reports/reports-api';
 import { formatMoney, STATUS_BADGE } from './payment-format';
 import { usePurchases } from './payments-api';
 
-/** Downloads the receipt PDF of a paid purchase (a GST invoice when the seller is registered). */
-function ReceiptButton({
-  purchase,
-  date,
+/** Downloads one PDF of a purchase: its receipt, or the credit note of a refund. */
+function DownloadButton({
+  path,
+  fileName,
+  label,
+  ariaLabel,
   onError,
 }: {
-  purchase: PurchaseSummary;
-  date: string;
+  path: string;
+  fileName: string;
+  label: string;
+  ariaLabel: string;
   onError: () => void;
 }) {
-  const { t } = useTranslation();
   const { manager } = useCandidateAuth();
   const [busy, setBusy] = useState(false);
 
   async function download() {
     setBusy(true);
     try {
-      await downloadPdf(
-        manager,
-        `/payments/purchases/${encodeURIComponent(purchase.id)}/receipt`,
-        `receipt-${purchase.id}.pdf`,
-      );
+      await downloadPdf(manager, path, fileName);
     } catch {
       onError();
     } finally {
@@ -42,12 +41,54 @@ function ReceiptButton({
       type="button"
       className="btn btn-link btn-sm p-0 me-3"
       disabled={busy}
-      aria-label={t('purchases.receiptNamed', { name: purchase.plan.name, date })}
+      aria-label={ariaLabel}
       onClick={() => void download()}
     >
       <i className="bi bi-file-earmark-arrow-down me-1" aria-hidden="true" />
-      {t('purchases.receipt')}
+      {label}
     </button>
+  );
+}
+
+/**
+ * The receipt of a paid purchase (a GST invoice when the seller is
+ * registered) and a credit note per processed refund.
+ */
+function PurchaseDocuments({
+  purchase,
+  date,
+  onError,
+}: {
+  purchase: PurchaseSummary;
+  date: string;
+  onError: (kind: 'receipt' | 'creditNote') => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const base = `/payments/purchases/${encodeURIComponent(purchase.id)}`;
+  return (
+    <>
+      <DownloadButton
+        path={`${base}/receipt`}
+        fileName={`receipt-${purchase.id}.pdf`}
+        label={t('purchases.receipt')}
+        ariaLabel={t('purchases.receiptNamed', { name: purchase.plan.name, date })}
+        onError={() => onError('receipt')}
+      />
+      {purchase.creditNotes.map((note) => (
+        <DownloadButton
+          key={note.key}
+          path={`${base}/credit-notes/${encodeURIComponent(note.key)}`}
+          fileName={`credit-note-${(note.number ?? note.key).replaceAll('/', '-')}.pdf`}
+          label={t('purchases.creditNote')}
+          ariaLabel={t('purchases.creditNoteNamed', {
+            name: purchase.plan.name,
+            date,
+            amount: formatMoney(i18n.resolvedLanguage, note.amountMinor, purchase.currency),
+          })}
+          onError={() => onError('creditNote')}
+        />
+      ))}
+    </>
   );
 }
 
@@ -56,7 +97,7 @@ export function PurchasesPage() {
   const { t, i18n } = useTranslation();
   const purchases = usePurchases();
   const items = purchases.data ?? [];
-  const [receiptFailed, setReceiptFailed] = useState(false);
+  const [downloadFailed, setDownloadFailed] = useState<'receipt' | 'creditNote' | null>(null);
 
   return (
     <div className="container py-5">
@@ -87,9 +128,9 @@ export function PurchasesPage() {
           </Link>
         </section>
       )}
-      {receiptFailed && (
+      {downloadFailed && (
         <div className="alert alert-danger" role="alert">
-          {t('purchases.receiptError')}
+          {t(downloadFailed === 'receipt' ? 'purchases.receiptError' : 'purchases.creditNoteError')}
         </div>
       )}
       {items.length > 0 && (
@@ -146,10 +187,10 @@ export function PurchasesPage() {
                       </td>
                       <td className="text-end text-nowrap">
                         {item.receiptAvailable && (
-                          <ReceiptButton
+                          <PurchaseDocuments
                             purchase={item}
                             date={date}
-                            onError={() => setReceiptFailed(true)}
+                            onError={setDownloadFailed}
                           />
                         )}
                         <Link

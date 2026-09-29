@@ -5,6 +5,7 @@ import {
   CouponUnavailableError,
   couponUsesHeld,
   ensureCouponCounter,
+  issueCreditNoteNumber,
   issueInvoiceNumber,
   lotUsage,
   markPurchaseFailed,
@@ -29,6 +30,7 @@ import {
 } from '@cbi/db';
 import { NotConfiguredError, type PaymentGateway } from '@cbi/provider-adapters';
 import {
+  GstStateCode,
   PAYMENT_POLICY,
   proratedRefundMinor,
   type AdminPurchase,
@@ -36,8 +38,10 @@ import {
   type AdminRefundResult,
   type BillingSetting,
   type CheckoutOrder,
+  type CheckoutProfile,
   type CouponRejection,
   type CouponSummary,
+  type CreateOrderBody,
   type CreatePlanVersionBody,
   type PlanSummary,
   type PublicPlan,
@@ -54,7 +58,7 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
-import { renderReceiptPdf } from './receipt-pdf.js';
+import { renderCreditNotePdf, renderReceiptPdf } from './receipt-pdf.js';
 
 /** Razorpay's smallest chargeable amount (₹1). Discounted totals below it are raised to it. */
 export const MIN_CHARGE_MINOR = 100;
@@ -96,9 +100,20 @@ export const couponSummary = (c: CouponRecord): CouponSummary => ({
 /** A receipt exists for anything that was paid, including purchases refunded since. */
 const receiptAvailable = (p: PurchaseRecord) => p.status === 'PAID' || p.status === 'REFUNDED';
 
+/** Processed refunds, each with its credit note (numbered unless processed before they existed). */
+const creditNotes = (payment: Pick<PaymentRecord, 'refunds'> | null) =>
+  (payment?.refunds ?? [])
+    .filter((r) => r.status === 'processed')
+    .map((r) => ({
+      key: r.key,
+      number: r.creditNoteNumber ?? null,
+      amountMinor: r.amountMinor,
+      processedAt: r.processedAt ? iso(r.processedAt) : null,
+    }));
+
 export const purchaseSummary = (
   p: PurchaseRecord,
-  payment: Pick<PaymentRecord, 'refundedMinor'> | null = null,
+  payment: Pick<PaymentRecord, 'refundedMinor' | 'refunds'> | null = null,
 ): PurchaseSummary => ({
   id: String(p._id),
   status: p.status,
@@ -117,6 +132,7 @@ export const purchaseSummary = (
   refundedMinor: payment?.refundedMinor ?? (p.status === 'REFUNDED' ? p.amountMinor : 0),
   invoiceNumber: p.invoiceNumber ?? null,
   receiptAvailable: receiptAvailable(p),
+  creditNotes: creditNotes(payment),
   createdAt: iso(p.createdAt),
   updatedAt: iso(p.updatedAt),
 });
@@ -200,7 +216,10 @@ export interface PaymentsServiceDeps {
   logger: Logger;
   /** The seller details printed on receipts (System → Settings → Billing). */
   billing: () => Promise<BillingSetting>;
-  /** Optional font covering non-Latin names on receipts. */
+  /**
+   * RECEIPT_FONT_PATH: one font used for all receipt text instead of the
+   * embedded Noto / Hind Guntur fonts (which cover English, Hindi and Telugu).
+   */
   receiptFontPath?: string | null;
 }
 
@@ -257,6 +276,13 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       coupon: body.couponCode ? { code: body.couponCode, applied, rejection } : null,
     };
     return { plan, coupon: applied ? coupon : null, quote };
+  }
+
+  /** The buyer details kept for invoices. */
+  async function checkoutProfile(userId: string): Promise<CheckoutProfile> {
+    const profile = await UserProfileModel.findOne({ userId }, { billingState: 1 }).lean();
+    const parsed = GstStateCode.safeParse(profile?.billingState);
+    return { billingState: parsed.success ? parsed.data : null };
   }
 
   async function ownPurchase(userId: string, id: string) {
@@ -411,7 +437,11 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
      * Prices the order on the server and opens a gateway order for it. A
      * coupon that cannot be applied fails the request (the quote shows why).
      */
-    async createOrder(userId: string, body: QuoteBody, ctx: ClientContext): Promise<CheckoutOrder> {
+    async createOrder(
+      userId: string,
+      body: CreateOrderBody,
+      ctx: ClientContext,
+    ): Promise<CheckoutOrder> {
       const { plan, coupon, quote } = await price(userId, body);
       if (quote.coupon && !quote.coupon.applied) {
         throw AppError.validation('This coupon cannot be applied.', {
@@ -419,6 +449,19 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         });
       }
       const now = new Date();
+      // The place of supply on the invoice: given now (and kept for next time), or saved before.
+      let buyerState: string | null;
+      if (body.billingState !== undefined) {
+        buyerState = body.billingState;
+        await UserProfileModel.updateOne(
+          { userId },
+          body.billingState === null
+            ? { $unset: { billingState: 1 } }
+            : { $set: { billingState: body.billingState } },
+        );
+      } else {
+        buyerState = (await checkoutProfile(userId)).billingState;
+      }
       if (coupon) await ensureCouponCounter(coupon._id, userId);
       // The purchase and its coupon use are created together: the limits are
       // checked by the writes that take the use, so concurrent orders cannot
@@ -444,6 +487,7 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
                 discountMinor: quote.discountMinor,
                 amountMinor: quote.totalMinor,
                 currency: quote.currency,
+                buyerState,
                 statusHistory: [{ status: 'CREATED', at: now, source: 'ORDER' }],
               },
             ],
@@ -603,7 +647,7 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         .lean<PurchaseRecord[]>();
       const payments = await PaymentModel.find(
         { purchaseId: { $in: rows.map((r) => r._id) } },
-        { purchaseId: 1, refundedMinor: 1 },
+        { purchaseId: 1, refundedMinor: 1, refunds: 1 },
       ).lean();
       const refundedBy = new Map(payments.map((p) => [String(p.purchaseId), p]));
       return rows.map((r) => purchaseSummary(r, refundedBy.get(String(r._id)) ?? null));
@@ -613,7 +657,10 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       const purchase = await ownPurchase(userId, id);
       return purchaseSummary(
         purchase,
-        await PaymentModel.findOne({ purchaseId: purchase._id }, { refundedMinor: 1 }).lean(),
+        await PaymentModel.findOne(
+          { purchaseId: purchase._id },
+          { refundedMinor: 1, refunds: 1 },
+        ).lean(),
       );
     },
 
@@ -621,6 +668,13 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
     async receipt(userId: string, id: string) {
       return receiptFor(await ownPurchase(userId, id), deps);
     },
+
+    /** The credit note PDF of one processed refund of the caller's purchase. */
+    async creditNote(userId: string, id: string, key: string) {
+      return creditNoteFor(await ownPurchase(userId, id), key, deps);
+    },
+
+    checkoutProfile,
 
     /** The order's gateway id for a purchase the user owns (mock checkout in development). */
     async orderIdFor(userId: string, id: string): Promise<string> {
@@ -820,6 +874,14 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       ).lean<PurchaseRecord>();
       if (!purchase) throw AppError.notFound('Purchase not found');
       return receiptFor(purchase, deps);
+    },
+
+    async adminCreditNote(id: string, key: string) {
+      const purchase = await PurchaseModel.findById(
+        objectId(id, 'Purchase'),
+      ).lean<PurchaseRecord>();
+      if (!purchase) throw AppError.notFound('Purchase not found');
+      return creditNoteFor(purchase, key, deps);
     },
 
     /** What refunding a purchase involves: amounts, and how its credits were used. */
@@ -1066,6 +1128,7 @@ async function receiptFor(
       buyer: {
         name: profile?.displayName ?? null,
         email: (user as { primaryEmail?: string | null } | null)?.primaryEmail ?? null,
+        state: purchase.buyerState ?? null,
       },
       plan: purchase.plan,
       couponCode: purchase.couponCode,
@@ -1080,6 +1143,54 @@ async function receiptFor(
     { fontPath: deps.receiptFontPath ?? null },
   );
   return { body, fileName: `receipt-${invoiceNumber.replaceAll('/', '-')}.pdf` };
+}
+
+/**
+ * The credit note of a processed refund (`key`), against the purchase's
+ * invoice. Refunds processed before credit notes existed are numbered now.
+ */
+async function creditNoteFor(
+  purchase: PurchaseRecord,
+  key: string,
+  deps: Pick<PaymentsServiceDeps, 'billing' | 'receiptFontPath'>,
+): Promise<{ body: Buffer; fileName: string }> {
+  const payment = await PaymentModel.findOne({ purchaseId: purchase._id }).lean<PaymentRecord>();
+  const entry = payment?.refunds?.find((r) => r.key === key && r.status === 'processed');
+  if (!payment || !entry) throw AppError.notFound('Credit note not found');
+  const issued = await issueCreditNoteNumber(purchase._id, key, entry.processedAt ?? new Date());
+  if (!issued) throw AppError.notFound('Credit note not found');
+  const invoiceNumber =
+    purchase.invoiceNumber ?? (await issueInvoiceNumber(purchase._id, new Date()));
+  if (!invoiceNumber) throw AppError.notFound('Credit note not found');
+  const [fresh, user, profile, seller] = await Promise.all([
+    PurchaseModel.findById(purchase._id, { invoiceIssuedAt: 1 }).lean(),
+    UserModel.findById(purchase.userId, { primaryEmail: 1 }).lean(),
+    UserProfileModel.findOne({ userId: purchase.userId }, { displayName: 1 }).lean(),
+    deps.billing(),
+  ]);
+  const body = await renderCreditNotePdf(
+    {
+      creditNoteNumber: issued.number,
+      issuedAt: issued.issuedAt,
+      invoice: {
+        number: invoiceNumber,
+        issuedAt: fresh?.invoiceIssuedAt ?? purchase.creditsIssuedAt ?? purchase.createdAt,
+      },
+      seller,
+      buyer: {
+        name: profile?.displayName ?? null,
+        email: (user as { primaryEmail?: string | null } | null)?.primaryEmail ?? null,
+        state: purchase.buyerState ?? null,
+      },
+      plan: purchase.plan,
+      amountMinor: entry.amountMinor,
+      currency: purchase.currency,
+      refundId: entry.id,
+      purchaseId: String(purchase._id),
+    },
+    { fontPath: deps.receiptFontPath ?? null },
+  );
+  return { body, fileName: `credit-note-${issued.number.replaceAll('/', '-')}.pdf` };
 }
 
 async function decorate(rows: PurchaseRecord[]): Promise<AdminPurchase[]> {

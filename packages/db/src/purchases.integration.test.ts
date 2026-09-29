@@ -12,6 +12,7 @@ import {
   grantFreeCredits,
   inTransaction,
   InsufficientCreditsError,
+  issueCreditNoteNumber,
   issueInvoiceNumber,
   lotUsage,
   markPurchaseFailed,
@@ -517,15 +518,40 @@ describe('markPurchaseRefunded', () => {
     expect(before.available).toBe(3); // 2 purchased + the free credit
     expect(after.available).toBe(1);
     expect(after.reserved).toBe(1);
-    expect((await PaymentModel.findOne({ purchaseId }).lean())!).toMatchObject({
+    const payment = (await PaymentModel.findOne({ purchaseId }).lean())!;
+    expect(payment).toMatchObject({
       status: 'REFUNDED',
       refund: { id: 'rfnd_1', status: 'processed' },
     });
+    // The processed refund has a credit note from its own series.
+    expect(payment.refunds[0]!.creditNoteNumber).toMatch(/^CN\/\d{2}-\d{2}\/000001$/);
     // The projection rebuilt from the ledger agrees.
     const projected = (await CreditAccountModel.findOne({ userId }).lean())!;
     await recomputeCreditAccount(userId);
     const rebuilt = (await CreditAccountModel.findOne({ userId }).lean())!;
     expect(rebuilt.balance).toBe(projected.balance);
     expect(rebuilt.reserved).toBe(projected.reserved);
+  });
+
+  it('numbers credit notes once, including refunds processed before credit notes existed', async () => {
+    const { purchaseId } = await createPurchase();
+    await markPurchasePaid({ purchaseId, source: 'VERIFY', now: NOW });
+    await markPurchaseRefunded({ purchaseId, refundId: 'rfnd_1', source: 'WEBHOOK', now: NOW });
+    const [entry] = (await PaymentModel.findOne({ purchaseId }).lean())!.refunds;
+    // An older refund: processed without a credit note.
+    await PaymentModel.updateOne(
+      { purchaseId },
+      { $set: { 'refunds.0.creditNoteNumber': null, 'refunds.0.creditNoteIssuedAt': null } },
+    );
+    const [a, b] = await Promise.all([
+      issueCreditNoteNumber(purchaseId, entry!.key, NOW),
+      issueCreditNoteNumber(purchaseId, entry!.key, NOW),
+    ]);
+    expect(a!.number).toBe(b!.number);
+    expect(a!.number).toMatch(/^CN\/26-27\/000002$/);
+    expect((await PaymentModel.findOne({ purchaseId }).lean())!.refunds[0]!.creditNoteNumber).toBe(
+      a!.number,
+    );
+    expect(await issueCreditNoteNumber(purchaseId, 'no-such-refund', NOW)).toBeNull();
   });
 });

@@ -369,7 +369,11 @@ async function recommendations(deps: EvaluationDeps, s: Session) {
   );
   const recs = result
     ? { ...result.data, promptVersion: result.promptVersion, fallback: false }
-    : { ...fallbackRecommendations(score.dimensions), promptVersion: null, fallback: true };
+    : {
+        ...fallbackRecommendations(score.dimensions, language),
+        promptVersion: null,
+        fallback: true,
+      };
   await InterviewSessionModel.updateOne(
     { _id: s._id },
     { $set: { 'processing.draft.recommendations': recs } },

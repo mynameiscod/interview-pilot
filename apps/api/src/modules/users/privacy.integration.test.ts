@@ -1,4 +1,4 @@
-import { totpCode } from '@cbi/auth-core';
+import { generateTotpSecret, totpCode } from '@cbi/auth-core';
 import {
   AuditLogModel,
   JobTargetModel,
@@ -6,10 +6,17 @@ import {
   UserModel,
   UserProfileModel,
 } from '@cbi/db';
-import { CandidateDetail, DataExportBundle, MfaChallenge, type AdminRole } from '@cbi/shared-types';
+import {
+  AdminUserSummary,
+  CandidateDetail,
+  DataExportBundle,
+  MfaChallenge,
+  type AdminRole,
+} from '@cbi/shared-types';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildTestApp, TEST_ORIGIN } from '../../test-support/harness.js';
+import { resetAdminMfaFromCli } from '../admin/mfa-reset.js';
 import {
   extractCode,
   refresh,
@@ -122,9 +129,14 @@ describe('signed-in devices', () => {
     const list = (await as(b.accessToken).get('/auth/sessions').expect(200)).body.data;
     expect(list).toHaveLength(2);
     const other = list.find((s: { current: boolean }) => !s.current);
+    await as(a.accessToken).get('/users/me').expect(200);
     await as(b.accessToken).delete(`/auth/sessions/${other.id}`).expect(204);
     await refresh(a.agent).expect(401);
+    // Its access token is refused at once, not only when it expires.
+    const res = await as(a.accessToken).get('/users/me').expect(401);
+    expect(res.body.error.message).toBe('Your session has ended. Please sign in again.');
     await refresh(b.agent).expect(200);
+    await as(b.accessToken).get('/users/me').expect(200);
   });
 
   it('ends a session at its absolute lifetime however often it refreshes', async () => {
@@ -142,7 +154,8 @@ describe('admin two-factor authentication', () => {
     await seedAdmin('root@codebegun.com', ['SUPER_ADMIN']);
     const agent = request.agent(t.app);
     const otp = async () => {
-      await redis.del(...(await redis.keys('cbi:otp:cooldown:*')));
+      const cooldowns = await redis.keys('cbi:otp:cooldown:*');
+      if (cooldowns.length) await redis.del(...cooldowns);
       const req = await agent
         .post('/api/v1/admin/auth/otp/request')
         .set('Origin', TEST_ORIGIN)
@@ -190,6 +203,94 @@ describe('admin two-factor authentication', () => {
       .set('Origin', TEST_ORIGIN)
       .send({ mfaToken: verify.mfaToken, recoveryCode: recovery })
       .expect(401);
+  });
+});
+
+describe('operator 2FA reset', () => {
+  /** Gives an admin a known authenticator secret (as if they had just set it up). */
+  async function knownSecret(userId: string) {
+    const secret = generateTotpSecret();
+    await UserModel.updateOne(
+      { _id: userId },
+      {
+        $set: {
+          mfa: {
+            secret: t.container.ai.secrets.encrypt(secret, `adminMfa:${userId}`),
+            enabledAt: new Date(),
+            lastStep: null,
+            recoveryCodeHashes: [],
+          },
+        },
+      },
+    );
+    return secret;
+  }
+
+  it('lets a super admin reset another admin’s 2FA with their own code, signing them out', async () => {
+    const rootId = await seedAdmin('root@codebegun.com', ['SUPER_ADMIN']);
+    const raviId = await seedAdmin('ravi@codebegun.com', ['SUPER_ADMIN']);
+    const opsId = await seedAdmin('ops@codebegun.com', ['OPERATIONS_ADMIN']);
+    const root = await signInWithEmail(t.app, t.email.sent, 'root@codebegun.com', 'admin');
+    await redis.flushdb();
+    // Ravi signs in (setting up 2FA, as super admins must).
+    const ravi = await signInWithEmail(t.app, t.email.sent, 'ravi@codebegun.com', 'admin');
+    await redis.flushdb();
+    const ops = await signInWithEmail(t.app, t.email.sent, 'ops@codebegun.com', 'admin');
+    const secret = await knownSecret(rootId);
+    const reset = (token: string, id: string, code: string) =>
+      as(token).post(`/admin/users/${id}/reset-mfa`).send({ code, reason: 'Lost phone' });
+
+    await reset(ops.accessToken, raviId, '123456').expect(403);
+    const wrong = await reset(root.accessToken, raviId, '000000').expect(400);
+    expect(wrong.body.error.code).toBe('MFA_INVALID');
+    await reset(root.accessToken, rootId, totpCode(secret)).expect(409);
+    // An admin without 2FA has nothing to reset (checked before the code is used).
+    await reset(root.accessToken, opsId, totpCode(secret)).expect(409);
+    await as(ravi.accessToken).get('/admin/me').expect(200);
+
+    const res = await reset(root.accessToken, raviId, totpCode(secret)).expect(200);
+    expect(AdminUserSummary.parse(res.body.data)).toMatchObject({ id: raviId, mfaEnabled: false });
+    // Ravi is signed out everywhere and sets up a new authenticator next time.
+    await as(ravi.accessToken).get('/admin/me').expect(401);
+    await refresh(ravi.agent, 'admin').expect(401);
+    const entry = await AuditLogModel.findOne({ action: 'admin.mfa_reset' }).lean();
+    expect(String(entry!.actorId)).toBe(rootId);
+    expect(entry).toMatchObject({
+      resourceId: raviId,
+      details: { reason: 'Lost phone', via: 'console' },
+    });
+    const list = (await as(root.accessToken).get('/admin/users').expect(200)).body.data;
+    expect(list.find((u: { id: string }) => u.id === rootId).mfaEnabled).toBe(true);
+  });
+
+  it('resets from the CLI for an active super admin operator only, audited', async () => {
+    const rootId = await seedAdmin('root@codebegun.com', ['SUPER_ADMIN']);
+    const raviId = await seedAdmin('ravi@codebegun.com', ['CONTENT_ADMIN']);
+    await seedAdmin('ops@codebegun.com', ['OPERATIONS_ADMIN']);
+    const input = (operatorEmail: string, targetEmail = 'ravi@codebegun.com') => ({
+      targetEmail,
+      operatorEmail,
+      reason: 'Lost phone and codes',
+    });
+    expect(await resetAdminMfaFromCli(input('ops@codebegun.com'))).toMatchObject({ ok: false });
+    expect(await resetAdminMfaFromCli(input('root@codebegun.com'))).toEqual({
+      ok: false,
+      error: 'ravi@codebegun.com does not have two-factor authentication on.',
+    });
+    expect(
+      await resetAdminMfaFromCli(input('root@codebegun.com', 'nobody@codebegun.com')),
+    ).toMatchObject({ ok: false });
+    await knownSecret(raviId);
+    const done = await resetAdminMfaFromCli(input('root@codebegun.com'));
+    expect(done).toMatchObject({ ok: true, targetId: raviId });
+    const user = await UserModel.findById(raviId).select('+mfa').lean();
+    expect((user as { mfa?: unknown }).mfa).toBeUndefined();
+    expect(
+      await AuditLogModel.findOne({ action: 'admin.mfa_reset', resourceId: raviId }).lean(),
+    ).toMatchObject({
+      actorType: 'SYSTEM',
+      details: { via: 'cli', operatorId: rootId, reason: 'Lost phone and codes' },
+    });
   });
 });
 

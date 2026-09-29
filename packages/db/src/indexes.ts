@@ -1,3 +1,4 @@
+import type { Types } from 'mongoose';
 import {
   AiModelModel,
   AiProviderModel,
@@ -12,6 +13,7 @@ import {
   AuditLogModel,
 } from './models/audit-log.js';
 import {
+  ACTIVE_CAMPAIGN_EXPORT_STATUSES,
   CampaignApplicationModel,
   CampaignExportModel,
   CampaignModel,
@@ -133,6 +135,8 @@ export interface EnsureIndexesOptions {
  * autoIndex, which is disabled in production.
  */
 export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<void> {
+  // Data written before the unique index existed must not stop it being built.
+  await failDuplicateActiveExports();
   for (const model of MODELS) await model.createIndexes();
   await ensureAuditLogRetention(opts.auditLogRetentionDays ?? AUDIT_LOG_RETENTION_DAYS_DEFAULT);
 }
@@ -175,10 +179,53 @@ export async function ensureAuditLogRetention(days: number): Promise<TtlIndexPla
   if (plan.op === 'create') {
     await collection.createIndex(AUDIT_LOG_TTL_KEY, { expireAfterSeconds: seconds });
   } else if (plan.op === 'collMod') {
-    await collection.db.command({
+    // The native database handle (a Mongoose collection has no `db`).
+    await AuditLogModel.db.db!.command({
       collMod: collection.collectionName,
       index: { name: plan.name, expireAfterSeconds: seconds },
     });
   }
   return plan;
+}
+
+interface ActiveExport {
+  _id: Types.ObjectId | string;
+  campaignId: Types.ObjectId | string;
+  createdAt: Date;
+}
+
+/**
+ * Of several queued or running exports of one campaign, every one but the
+ * newest: the partial unique index allows only one per campaign.
+ */
+export function supersededActiveExports<T extends ActiveExport>(active: readonly T[]): T[] {
+  const newest = new Map<string, T>();
+  for (const e of active) {
+    const key = String(e.campaignId);
+    const kept = newest.get(key);
+    if (!kept || e.createdAt > kept.createdAt) newest.set(key, e);
+  }
+  return active.filter((e) => newest.get(String(e.campaignId)) !== e);
+}
+
+/** Marks superseded duplicate active exports FAILED so the unique index can be built. */
+async function failDuplicateActiveExports(): Promise<void> {
+  const active = await CampaignExportModel.find(
+    { status: { $in: ACTIVE_CAMPAIGN_EXPORT_STATUSES } },
+    { campaignId: 1, createdAt: 1 },
+  ).lean<(ActiveExport & { _id: Types.ObjectId })[]>();
+  const superseded = supersededActiveExports(active);
+  if (superseded.length === 0) return;
+  const at = new Date();
+  await CampaignExportModel.updateMany(
+    { _id: { $in: superseded.map((e) => e._id) } },
+    {
+      $set: {
+        status: 'FAILED',
+        error: 'Superseded by a newer export.',
+        completedAt: at,
+        expiresAt: at,
+      },
+    },
+  );
 }

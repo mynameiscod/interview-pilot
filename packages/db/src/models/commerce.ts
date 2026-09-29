@@ -209,6 +209,11 @@ export interface PurchaseRecord {
   /** `CPI/26-27/000042`, assigned once when the purchase is paid. */
   invoiceNumber: string | null;
   invoiceIssuedAt: Date | null;
+  /**
+   * The buyer's GST state code (place of supply) at order time, from the
+   * checkout profile; null when not given (the invoice charges IGST).
+   */
+  buyerState: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -254,6 +259,7 @@ const purchaseSchema = new Schema<PurchaseRecord>(
     creditLotId: { type: Schema.Types.ObjectId, default: null },
     invoiceNumber: { type: String, default: null },
     invoiceIssuedAt: { type: Date, default: null },
+    buyerState: { type: String, default: null },
   },
   { timestamps: true, collection: 'purchases' },
 );
@@ -288,6 +294,9 @@ export interface RefundEntryRecord {
   actorId: Types.ObjectId | null;
   requestedAt: Date;
   processedAt: Date | null;
+  /** `CN/26-27/000007`, issued when the refund is processed (older refunds: at first download). */
+  creditNoteNumber?: string | null;
+  creditNoteIssuedAt?: Date | null;
 }
 
 export interface PaymentRecord {
@@ -366,6 +375,8 @@ const paymentSchema = new Schema<PaymentRecord>(
             actorId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
             requestedAt: { type: Date, required: true },
             processedAt: { type: Date, default: null },
+            creditNoteNumber: { type: String, default: null },
+            creditNoteIssuedAt: { type: Date, default: null },
           },
           { _id: false },
         ),
@@ -387,13 +398,24 @@ paymentSchema.index(
   },
 );
 paymentSchema.index({ purchaseId: 1 });
+paymentSchema.index(
+  { 'refunds.creditNoteNumber': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { 'refunds.creditNoteNumber': { $type: 'string' } },
+    name: 'unique_credit_note_number',
+  },
+);
 paymentSchema.index({ status: 1, updatedAt: 1 });
 
 export const PaymentModel = model<PaymentRecord>('Payment', paymentSchema);
 
 // ---- invoiceCounters ---------------------------------------------------------------------------
 
-/** One consecutive invoice sequence per financial year (`_id` = `fy:2026`). */
+/**
+ * One consecutive sequence per financial year: invoices (`_id` = `fy:2026`)
+ * and credit notes (`cn:2026`).
+ */
 export interface InvoiceCounterRecord {
   _id: string;
   seq: number;

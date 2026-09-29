@@ -161,6 +161,9 @@ export interface CampaignExportRecord {
   updatedAt: Date;
 }
 
+/** Statuses of an export still being built; a campaign has at most one such export. */
+export const ACTIVE_CAMPAIGN_EXPORT_STATUSES: CampaignExportStatusT[] = ['QUEUED', 'RUNNING'];
+
 /** A queued or running export not finished by then is marked FAILED by the worker's sweep. */
 export const CAMPAIGN_EXPORT_STUCK_AFTER_MS = 6 * 3600_000;
 
@@ -190,6 +193,16 @@ const campaignExportSchema = new Schema<CampaignExportRecord>(
   { timestamps: true, collection: 'campaignExports' },
 );
 campaignExportSchema.index({ campaignId: 1, createdAt: -1 });
+// At most one queued or running export per campaign: two simultaneous requests
+// cannot both create one (the loser returns the winner's export).
+campaignExportSchema.index(
+  { campaignId: 1 },
+  {
+    name: 'campaignId_active_unique',
+    unique: true,
+    partialFilterExpression: { status: { $in: ACTIVE_CAMPAIGN_EXPORT_STATUSES } },
+  },
+);
 // The sweep: files past retention, and exports stuck in the queue.
 campaignExportSchema.index({ status: 1, expiresAt: 1 });
 campaignExportSchema.index(

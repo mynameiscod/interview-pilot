@@ -33,6 +33,7 @@ const PARAM_FIELDS: {
 const TOKEN_UNITS: ReadonlySet<PricingUnit> = new Set([
   'PER_1M_INPUT_TOKENS',
   'PER_1M_CACHED_INPUT_TOKENS',
+  'PER_1M_CACHE_WRITE_INPUT_TOKENS',
   'PER_1M_OUTPUT_TOKENS',
 ]);
 
@@ -185,6 +186,13 @@ function ModelRow({ model, canManage }: { model: AiModelSummary; canManage: bool
           {priceOf('PER_1M_CACHED_INPUT_TOKENS') && (
             <div className="cb-text-secondary">
               {t('ai.models.cachedPrice', { price: money('PER_1M_CACHED_INPUT_TOKENS') })}
+            </div>
+          )}
+          {priceOf('PER_1M_CACHE_WRITE_INPUT_TOKENS') && (
+            <div className="cb-text-secondary">
+              {t('ai.models.cacheWritePrice', {
+                price: money('PER_1M_CACHE_WRITE_INPUT_TOKENS'),
+              })}
             </div>
           )}
           {model.currentPricing

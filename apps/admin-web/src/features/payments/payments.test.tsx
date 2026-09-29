@@ -310,6 +310,37 @@ describe('purchases', () => {
     expect(screen.getByText('CPI/26-27/000042')).toBeInTheDocument();
   });
 
+  it('offers the credit note of each processed refund', async () => {
+    await renderAt('/purchases/pur1', ['SUPPORT_ADMIN'], {
+      'GET /admin/purchases/pur1': () =>
+        ok(
+          purchase({
+            refundedMinor: 30_000,
+            creditNotes: [
+              {
+                key: 'r1',
+                number: 'CN/26-27/000003',
+                amountMinor: 10_000,
+                processedAt: new Date().toISOString(),
+              },
+              {
+                key: 'r2',
+                number: null,
+                amountMinor: 20_000,
+                processedAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        ),
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Credit note CN/26-27/000003 (₹100.00)' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Credit note (numbered on download) (₹200.00)' }),
+    ).toBeInTheDocument();
+  });
+
   it('explains a refund the provider cannot process right now', async () => {
     await renderAt('/purchases/pur1', ['FINANCE_ADMIN'], {
       'GET /admin/purchases/pur1': () => ok(purchase()),

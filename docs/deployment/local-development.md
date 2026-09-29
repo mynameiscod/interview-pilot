@@ -42,6 +42,14 @@ pnpm --filter @cbi/api admin:seed --email you@codebegun.com
 
 In a deployed container: `docker compose exec api node dist/scripts/seed-super-admin.js --email you@codebegun.com`. Further admins are invited from **Admin users** in the console.
 
+If an admin loses both their authenticator and their recovery codes, a super admin resets their 2FA from **Admin users → Reset 2FA** (confirmed with the super admin's own code), or with the CLI (audited, see [authentication](../security/authentication.md#admin-two-factor-authentication-totp)):
+
+```bash
+pnpm --filter @cbi/api admin:reset-mfa --email them@codebegun.com --operator you@codebegun.com --reason "Lost phone"
+# in a deployed container:
+docker compose exec api node dist/scripts/reset-admin-mfa.js --email them@codebegun.com --operator you@codebegun.com --reason "Lost phone"
+```
+
 ### AI providers locally
 
 With `AI_MOCK_MODE=true` (the `.env.example` default), every AI feature is served by the deterministic `mock` provider. Its replies start with `[mock]`, and it sits last in each route. To try a real model, add its API key in the admin console under **AI providers → Providers & keys** (or set `AI_BOOTSTRAP_ANTHROPIC_API_KEY` etc. before first start), then press **Test** on the model. Real calls are billed by the provider. Usage and cost show under **AI usage & cost**. The example `AI_SECRETS_MASTER_KEY` is refused in staging and production. Details: [AI provider layer](../ai/provider-layer.md).

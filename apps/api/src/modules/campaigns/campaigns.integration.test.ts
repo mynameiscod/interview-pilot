@@ -725,7 +725,9 @@ describe('results and exports', () => {
     expect(rows).toHaveLength(2);
     expect(rows[1]).toContain(r);
 
-    const audit = await AuditLogModel.find({ action: 'campaign.results_exported' }).lean();
+    const audit = await AuditLogModel.find({ action: 'campaign.results_exported' })
+      .sort({ at: 1, _id: 1 })
+      .lean();
     expect(audit.map((e) => e.details)).toEqual([
       expect.objectContaining({ format: 'csv', rows: 3 }),
       expect.objectContaining({ format: 'csv', rows: 1 }),
@@ -800,6 +802,28 @@ describe('results and exports', () => {
     const actions = (await AuditLogModel.find({ resourceId: id }).lean()).map((a) => a.action);
     expect(actions.filter((a) => a === 'campaign.results_exported')).toHaveLength(1);
     expect(actions.filter((a) => a === 'campaign.export_downloaded')).toHaveLength(1);
+  });
+
+  it('creates one export for simultaneous requests', async () => {
+    const { ops, id } = await scored();
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => ops('post', `/campaigns/${id}/exports`).expect(202)),
+    );
+    const ids = new Set(responses.map((r) => CampaignExport.parse(r.body.data).id));
+    expect(ids.size).toBe(1);
+    expect(await CampaignExportModel.countDocuments({ campaignId: id })).toBe(1);
+    expect(t.jobs.jobs.filter((j) => j.kind === 'campaignPackage')).toHaveLength(1);
+    // The database itself refuses a second active export.
+    await expect(
+      CampaignExportModel.create({
+        campaignId: id,
+        requestedBy: (await CampaignExportModel.findOne({ campaignId: id }).lean())!.requestedBy,
+        status: 'RUNNING',
+        progress: { done: 0, total: 1 },
+        fileName: 'x.zip',
+        expiresAt: new Date(Date.now() + HOUR),
+      }),
+    ).rejects.toMatchObject({ code: 11000 });
   });
 
   it('marks the export failed when it cannot be queued', async () => {

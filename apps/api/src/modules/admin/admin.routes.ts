@@ -5,6 +5,7 @@ import {
   InviteAdminBody,
   SuspendCandidateBody,
   permissionsFor,
+  ResetAdminMfaBody,
   RevokeAdminAccessBody,
   UpdateAdminRolesBody,
   type AdminMeResponse,
@@ -63,6 +64,18 @@ export function adminRouter(c: Container): Router {
       clientContext(req),
     );
     res.json({ data: result });
+  });
+
+  router.post('/users/:id/reset-mfa', requirePermission('admin_users.manage'), async (req, res) => {
+    const body = ResetAdminMfaBody.parse(req.body);
+    res.json({
+      data: await c.adminUsers.resetMfa(
+        String(req.params.id),
+        body,
+        requireAuth(req).userId,
+        clientContext(req),
+      ),
+    });
   });
 
   router.post(

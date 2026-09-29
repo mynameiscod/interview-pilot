@@ -176,6 +176,8 @@ const speechParams = (timeoutMs: number): AiModelParams => ({
 /**
  * Seeded models. Prices are the providers' first-party list prices at the
  * time of writing (USD) and are editable (effective-dated) in Admin. Claude
+ * prompt-cache writes (5-minute TTL) cost 1.25× input and reads 0.05–0.1×.
+ * OpenAI and Gemini bill no separate cache-write price. Claude
  * models first; one OpenAI and one Gemini model are seeded as cross-provider
  * fallbacks so a single-provider outage does not exhaust a route. They are
  * skipped (no_credentials) until an admin stores that provider's key.
@@ -197,6 +199,7 @@ const MODELS: CatalogModel[] = [
     prices: {
       PER_1M_INPUT_TOKENS: 4_000_000,
       PER_1M_CACHED_INPUT_TOKENS: 200_000,
+      PER_1M_CACHE_WRITE_INPUT_TOKENS: 5_000_000,
       PER_1M_OUTPUT_TOKENS: 20_000_000,
     },
   },
@@ -215,6 +218,7 @@ const MODELS: CatalogModel[] = [
     prices: {
       PER_1M_INPUT_TOKENS: 2_000_000,
       PER_1M_CACHED_INPUT_TOKENS: 200_000,
+      PER_1M_CACHE_WRITE_INPUT_TOKENS: 2_500_000,
       PER_1M_OUTPUT_TOKENS: 10_000_000,
     },
   },
@@ -233,6 +237,7 @@ const MODELS: CatalogModel[] = [
     prices: {
       PER_1M_INPUT_TOKENS: 1_000_000,
       PER_1M_CACHED_INPUT_TOKENS: 100_000,
+      PER_1M_CACHE_WRITE_INPUT_TOKENS: 1_250_000,
       PER_1M_OUTPUT_TOKENS: 5_000_000,
     },
   },
@@ -348,6 +353,8 @@ export interface EnsureAiCatalogResult {
   providersCreated: number;
   modelsCreated: number;
   routesCreated: number;
+  /** Catalog prices added to existing models for units they had never been priced in. */
+  pricesAdded: number;
 }
 
 /**
@@ -360,7 +367,12 @@ export async function ensureAiCatalog(opts: {
   now?: Date;
 }): Promise<EnsureAiCatalogResult> {
   const now = opts.now ?? new Date();
-  const result: EnsureAiCatalogResult = { providersCreated: 0, modelsCreated: 0, routesCreated: 0 };
+  const result: EnsureAiCatalogResult = {
+    providersCreated: 0,
+    modelsCreated: 0,
+    routesCreated: 0,
+    pricesAdded: 0,
+  };
   const providers = [
     ...PROVIDERS,
     ...(opts.mockMode ? [{ key: 'mock' as const, displayName: 'Mock (development only)' }] : []),
@@ -449,8 +461,34 @@ export async function ensureAiCatalog(opts: {
       { upsert: true },
     );
     result.modelsCreated += res.upsertedCount;
-    const doc = await AiModelModel.findOne({ providerId, modelId: m.modelId }, { _id: 1 }).lean();
+    const doc = await AiModelModel.findOne(
+      { providerId, modelId: m.modelId },
+      { _id: 1, pricing: 1 },
+    ).lean();
     modelIds.set(m.modelId, doc!._id);
+    // A unit the catalog prices but the model has never had a price for (e.g. cache
+    // writes, added later) gets one from now on. Units that were ever priced are the
+    // admin's; history is never re-priced (usage keeps its snapshot).
+    const priced = new Set((doc!.pricing ?? []).map((p) => p.unit));
+    const missing = Object.entries(m.prices).filter(([unit]) => !priced.has(unit as PricingUnit));
+    if (res.upsertedCount === 0 && missing.length > 0) {
+      await AiModelModel.updateOne(
+        { _id: doc!._id },
+        {
+          $push: {
+            pricing: {
+              $each: missing.map(([unit, micros]) => ({
+                unit,
+                pricePerUnitMicros: micros,
+                currency: 'USD',
+                effectiveFrom: now,
+              })),
+            },
+          },
+        },
+      );
+      result.pricesAdded += missing.length;
+    }
   }
 
   const chainIds = [...DEFAULT_CHAIN, ...(opts.mockMode ? [MOCK_CATALOG_MODEL_ID] : [])]

@@ -116,7 +116,14 @@ describe('Anthropic adapter', () => {
       text: '{"score":80,"rationale":"clear"}',
       servedModel: 'claude-opus-5',
       finishReason: 'stop',
-      usage: { inputTokens: 550, cachedInputTokens: 400, outputTokens: 30, requests: 1 },
+      // Uncached + cache reads + cache writes; reads and writes also reported apart.
+      usage: {
+        inputTokens: 550,
+        cachedInputTokens: 400,
+        cacheWriteInputTokens: 50,
+        outputTokens: 30,
+        requests: 1,
+      },
     });
   });
 
@@ -203,7 +210,13 @@ describe('Anthropic adapter', () => {
           text: 'Tell me more.',
           servedModel: 'claude-opus-5-5',
           finishReason: 'stop',
-          usage: { inputTokens: 100, cachedInputTokens: 90, outputTokens: 7, requests: 1 },
+          usage: {
+            inputTokens: 100,
+            cachedInputTokens: 90,
+            cacheWriteInputTokens: 0,
+            outputTokens: 7,
+            requests: 1,
+          },
         },
       },
     ]);

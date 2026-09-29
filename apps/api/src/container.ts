@@ -34,6 +34,7 @@ import { createMfaService } from './modules/auth/mfa.service.js';
 import { createCandidateAdminService } from './modules/admin/candidates.service.js';
 import { createPrivacyService } from './modules/users/privacy.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
+import { createRevokedSessions } from './modules/auth/revoked-sessions.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
 import { createResumeToolsService } from './modules/resume-tools/resume-tools.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
@@ -157,10 +158,12 @@ export function buildContainer(opts: ContainerOptions) {
   });
   const audit = createAuditService({ hashSecret: env.OTP_HMAC_SECRET, logger });
   const userState = createUserStateCache(redis);
+  const revokedSessions = createRevokedSessions(redis, env.JWT_ACCESS_TTL_SEC, logger);
   const accounts = createAccountService();
   const sessions = createSessionService({
     tokens,
     userState,
+    revoked: revokedSessions,
     audit,
     hashSecret: env.OTP_HMAC_SECRET,
     refreshTtlMs: {
@@ -191,10 +194,20 @@ export function buildContainer(opts: ContainerOptions) {
   const google = env.GOOGLE_CLIENT_ID
     ? createGoogleVerifier({ clientId: env.GOOGLE_CLIENT_ID, keySet: opts.overrides?.googleKeySet })
     : null;
+  const mfa = createMfaService({
+    redis,
+    secrets: ai.secrets,
+    audit,
+    hashSecret: env.OTP_HMAC_SECRET,
+    issuer: env.ADMIN_MFA_ISSUER,
+    policy: env.ADMIN_MFA_REQUIRED,
+  });
   const adminUsers = createAdminUserService({
     accounts,
     sessions,
     userState,
+    mfa,
+    revokedSessions,
     audit,
     email,
     logger,
@@ -260,14 +273,6 @@ export function buildContainer(opts: ContainerOptions) {
     retentionDays: env.MEDIA_RETENTION_DAYS_DEFAULT,
     // A separate key per purpose, derived from the server secret.
     signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
-  });
-  const mfa = createMfaService({
-    redis,
-    secrets: ai.secrets,
-    audit,
-    hashSecret: env.OTP_HMAC_SECRET,
-    issuer: env.ADMIN_MFA_ISSUER,
-    policy: env.ADMIN_MFA_REQUIRED,
   });
   const privacy = createPrivacyService({
     audit,
@@ -375,6 +380,7 @@ export function buildContainer(opts: ContainerOptions) {
     tokens,
     audit,
     userState,
+    revokedSessions,
     accounts,
     sessions,
     otp,

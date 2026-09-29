@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { ReportContent } from '@cbi/shared-types';
 import PDFDocument from 'pdfkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fontsAvailable, pdfSafe, renderReportPdf, scriptRuns } from './pdf.js';
+import { fontsAvailable } from '@cbi/pdf-fonts';
+import { renderReportPdf, reportLanguage } from './pdf.js';
+import { REPORT_DISCLAIMER } from './report-content.js';
+import { pdfMessages } from './report-messages.js';
 
 const HINDI = 'आपने अच्छा उत्तर दिया।';
 // "శ్రీ" and "ప్రశ్నలు" crash fontkit with Noto Sans Telugu (why Hind Guntur is used).
@@ -77,45 +80,6 @@ const content = ReportContent.parse({
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('scriptRuns', () => {
-  it('splits mixed English, Hindi and Telugu into script runs', () => {
-    expect(scriptRuns(`Score: ${HINDI} then ${TELUGU}!`)).toEqual([
-      { script: 'latin', text: 'Score: ' },
-      { script: 'devanagari', text: `${HINDI} ` },
-      { script: 'latin', text: 'then ' },
-      { script: 'telugu', text: `${TELUGU}!` },
-    ]);
-  });
-
-  it('keeps marks, joiners, digits and punctuation with the current run', () => {
-    const zwj = String.fromCodePoint(0x200d);
-    const acute = String.fromCodePoint(0x0301);
-    // Leading neutrals join the first script that follows.
-    const hindi = `- 2 क्ष${zwj}त्र, 3.`;
-    expect(scriptRuns(hindi)).toEqual([{ script: 'devanagari', text: hindi }]);
-    expect(scriptRuns(`cafe${acute} (x)`)).toEqual([{ script: 'latin', text: `cafe${acute} (x)` }]);
-    // Only the Devanagari font has the danda (Telugu text uses it too) and NBSP is Latin.
-    const danda = String.fromCodePoint(0x0964);
-    const nbsp = String.fromCodePoint(0xa0);
-    expect(scriptRuns(`${TELUGU}${danda}${nbsp}`)).toEqual([
-      { script: 'telugu', text: TELUGU },
-      { script: 'devanagari', text: danda },
-      { script: 'latin', text: nbsp },
-    ]);
-    expect(scriptRuns('12 - 3')).toEqual([{ script: 'latin', text: '12 - 3' }]);
-    expect(scriptRuns('')).toEqual([]);
-  });
-
-  it('never loses characters', () => {
-    const text = `A ${HINDI} & ${TELUGU} @ 5 ${String.fromCodePoint(0xa8f2)}`;
-    expect(
-      scriptRuns(text)
-        .map((r) => r.text)
-        .join(''),
-    ).toBe(text);
-  });
-});
-
 describe('renderReportPdf', () => {
   it.skipIf(!fontsAvailable())('embeds the fonts and keeps Hindi and Telugu text', async () => {
     const text = vi.spyOn(PDFDocument.prototype, 'text');
@@ -144,6 +108,32 @@ describe('renderReportPdf', () => {
     expect(raw).not.toContain('Noto');
   });
 
+  it.skipIf(!fontsAvailable())('writes headings and labels in the report language', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    await renderReportPdf(
+      { ...content, disclaimer: REPORT_DISCLAIMER },
+      { compress: false, language: 'te' },
+    );
+    const written = text.mock.calls.map((c) => String(c[0])).join('');
+    const te = pdfMessages('te');
+    expect(written).toContain(te.title);
+    expect(written).toContain(te.overall);
+    expect(written).toContain(te.bands.READY_WITH_GAPS);
+    expect(written).toContain(te.next24h);
+    // The stored English disclaimer is printed in the report language.
+    expect(written).toContain(te.disclaimer);
+    expect(written).not.toContain('Interview readiness report');
+    expect(written).not.toContain(REPORT_DISCLAIMER);
+  });
+
+  it('takes the language from the session, or from the summary’s script when automatic', () => {
+    expect(reportLanguage(content)).toBe('hi');
+    const auto = (summary: string) =>
+      reportLanguage({ ...content, header: { ...content.header, language: 'auto' }, summary });
+    expect(auto(TELUGU)).toBe('te');
+    expect(auto('Good answers overall.')).toBe('en');
+  });
+
   it('falls back to the standard fonts and pdfSafe without the font files', async () => {
     const text = vi.spyOn(PDFDocument.prototype, 'text');
     const empty = mkdtempSync(join(tmpdir(), 'no-fonts-'));
@@ -156,6 +146,8 @@ describe('renderReportPdf', () => {
     const written = text.mock.calls.map((c) => String(c[0])).join('');
     expect(written).not.toContain(HINDI);
     expect(written).toContain('Good answers overall. ??');
+    // The standard fonts cannot print Hindi headings: they are in English.
+    expect(written).toContain('Interview readiness report');
   });
 });
 
@@ -224,13 +216,5 @@ describe('coaching sections', () => {
     expect(written).toContain('Most often missing: result');
     expect(written).toContain('Pace: 180 words per minute (target 120-160)');
     expect(written).toContain('never affects your scores');
-  });
-});
-
-describe('pdfSafe', () => {
-  it('maps typographic punctuation and replaces non-Latin-1 text with "?"', () => {
-    expect(pdfSafe('“Hi” – ok…')).toBe('"Hi" - ok...');
-    expect(pdfSafe('नमस्ते')).toBe('??????');
-    expect(pdfSafe('తె')).toBe('??');
   });
 });

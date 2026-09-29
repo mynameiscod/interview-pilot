@@ -83,6 +83,8 @@ export const AI_FEATURE_CAPABILITY: Readonly<Record<AiFeature, AiCapability>> = 
 export const PricingUnit = z.enum([
   'PER_1M_INPUT_TOKENS',
   'PER_1M_CACHED_INPUT_TOKENS',
+  /** Prompt cache writes (Anthropic `cache_creation_input_tokens`, 5-minute TTL). */
+  'PER_1M_CACHE_WRITE_INPUT_TOKENS',
   'PER_1M_OUTPUT_TOKENS',
   'PER_MINUTE',
   'PER_AUDIO_MINUTE',

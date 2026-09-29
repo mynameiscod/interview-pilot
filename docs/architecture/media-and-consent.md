@@ -72,9 +72,10 @@ worker every 15 min → closes recordings nobody finalized; deletes expired ones
 MP4 gets `-movflags +faststart` (the index up front); the WebM muxer writes duration and cues. Either way the result is seekable. It's stored as `recording.webm` or `recording.mp4` next to the segments and marked `READY`.
 
 - A failed build is retried (3 attempts), then marked `FAILED`. The parts keep playing.
-- ffmpeg is installed in the worker image (`infrastructure/docker/node-service.Dockerfile`). Where it's missing (`MEDIA_FFMPEG_PATH` not found), the build is marked `UNAVAILABLE` and the recording plays part by part; a run stops after the first such recording.
+- ffmpeg is installed in the worker image (`infrastructure/docker/node-service.Dockerfile`). Where it's missing (`MEDIA_FFMPEG_PATH` not found), the build is marked `UNAVAILABLE` and the recording plays part by part; a run stops after the first such recording. While any recording is `UNAVAILABLE`, the worker runs `ffmpeg -version` at most every 10 minutes; once it answers (installed since, or the path fixed), those recordings go back to `PENDING` with fresh attempts and are built like new ones.
 - A late segment re-finalizes the recording and sets `PENDING` again. A build that was running then can't mark it `READY` (the claim time must still match), and the next run rebuilds.
-- The output file is read into memory once for the upload (`StorageProvider.put` takes a buffer); segments are appended to disk one by one.
+- The output file is uploaded from disk as a stream (`StorageProvider.putFile`), never held in memory whole; segments (≤ 8 MB each) are appended to disk one by one.
+- **Rebuild file.** Admins with `media.manage` can queue the file to be built again (`POST /admin/media/:id/rebuild-file`, audited as `media.file_rebuild_requested`) when it is `READY`, `FAILED` or `UNAVAILABLE`: it goes back to `PENDING` with fresh attempts and plays part by part until rebuilt. A queued or running build answers `409`. The old file's key is kept on the record, so a delete meanwhile still removes it; the rebuild overwrites it.
 
 **Playback.** `GET /interviews/:id/media/playback-url` returns signed links valid for **30 minutes**: `/api/v1/media/play/:id?exp&sig` for the joined file (`source: FILE`), or one link per part with `&part=n` (`source: PARTS`) until the file is ready. Each link is an HMAC over the asset, the target (`file` or `part-n`) and the expiry, under a key derived from the server secret. The links need no auth header, so a `<video>` element can use them directly.
 
@@ -83,7 +84,7 @@ MP4 gets `-movflags +faststart` (the index up front); the WebM muxer writes dura
 - **Expiry.** When a link fails mid-watch (it expired, or the file replaced the parts) the candidate's player asks for new links once and continues from the same moment; a second failure within 10 seconds shows a message instead of looping.
 - **Parts in the player.** While playing parts, the candidate sees "Part n of m" with previous and next buttons, and the next part starts when one ends.
 - Candidates can watch and delete their own recording.
-- Admins with `media.read` can watch it. Every link issued to an admin is audited as `media.playback`. The admin player uses `url` (the file, or the first part).
+- Admins with `media.read` can watch it. Every link issued to an admin is audited as `media.playback`. The admin player plays the file, or the parts in order with the same "Part n of m" navigation as the candidate's; the recording page also shows the file's state.
 - Switching to text ends the recording for good.
 
 **Retention and deletion.**
@@ -98,7 +99,7 @@ A delete runs in this order, so no object is left unreferenced:
 
 1. Mark the asset `DELETING`. From then on segment uploads are refused: a segment is only attached to an asset whose deletion status is `NONE`. An upload whose object was stored just before is refused at the attach step, deletes its own object, and, if that fails, records the key on the asset.
 2. Read the keys (segments, manifest, joined file) and delete them.
-3. Mark it `DELETED`, keeping the deleted keys and a `sweepAfter` time (30 minutes later).
+3. Mark it `DELETED`, adding the deleted keys to those already recorded (a key an upload noted during the delete is kept) and a `sweepAfter` time (30 minutes later).
 
 - The sweep deletes those keys **once more** after `sweepAfter`. That catches an object written by an upload or a file build that was already in flight when the delete began.
 - A storage failure leaves the asset `DELETING`: not playable, no uploads. The sweep resumes it after 5 minutes.

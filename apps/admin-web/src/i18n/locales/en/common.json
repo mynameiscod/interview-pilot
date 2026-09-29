@@ -148,6 +148,12 @@
     "revoke": "Revoke access",
     "revokeExplain": "{{email}} will lose admin access and be signed out of the admin console. Their candidate account is not affected.",
     "confirmRevoke": "Revoke admin access",
+    "mfaOn": "2FA on",
+    "resetMfa": "Reset 2FA",
+    "resetMfaExplain": "Use this when {{email}} has lost both their authenticator and their recovery codes. Their two-factor authentication is removed and they are signed out everywhere; at their next sign-in they set up a new authenticator. Confirm who they are first (for example on a call).",
+    "yourCode": "Your 6-digit authenticator code",
+    "yourCodeHint": "From your own authenticator app, to confirm it is you.",
+    "confirmResetMfa": "Reset two-factor authentication",
     "reason": "Reason (recorded in the audit log)",
     "cancel": "Cancel",
     "you": "You"
@@ -252,6 +258,7 @@
       "inputPrice": "Input {{price}} / 1M tokens",
       "outputPrice": "Output {{price}} / 1M tokens",
       "cachedPrice": "Cached input {{price}} / 1M tokens",
+      "cacheWritePrice": "Cache writes {{price}} / 1M tokens",
       "upcoming_one": "{{count}} scheduled price change",
       "upcoming_other": "{{count}} scheduled price changes",
       "otherPrice": "{{price}} {{unit}}",
@@ -340,7 +347,8 @@
     },
     "units": {
       "PER_1M_INPUT_TOKENS": "per 1M input tokens",
-      "PER_1M_CACHED_INPUT_TOKENS": "per 1M cached input tokens",
+      "PER_1M_CACHED_INPUT_TOKENS": "per 1M cached input tokens (cache reads)",
+      "PER_1M_CACHE_WRITE_INPUT_TOKENS": "per 1M cache write tokens",
       "PER_1M_OUTPUT_TOKENS": "per 1M output tokens",
       "PER_MINUTE": "per minute",
       "PER_AUDIO_MINUTE": "per audio minute",
@@ -1025,6 +1033,9 @@
       "invoiceNumber": "Invoice number",
       "receipt": "Download receipt",
       "receiptError": "The receipt could not be downloaded. Try again.",
+      "creditNote": "Credit note {{number}} ({{amount}})",
+      "creditNoteUnnumbered": "(numbered on download)",
+      "creditNoteError": "The credit note could not be downloaded. Try again.",
       "refunds": "Refunds",
       "refundLine": "{{amount}} · {{at}}",
       "refundCredits_one": "{{count}} credit withdrawn",
@@ -1210,7 +1221,29 @@
       "videoLabel": "Interview recording",
       "expires": "This link expires at {{at}}. Close and watch again for a new one.",
       "deleted": "This recording was deleted and can no longer be watched.",
-      "nothingStored": "Nothing playable was stored for this recording."
+      "nothingStored": "Nothing playable was stored for this recording.",
+      "part": "Part {{current}} of {{total}}",
+      "partsNote": "The camera restarted during the interview, so the recording is in parts. The next part plays when one ends.",
+      "previousPart": "Previous part",
+      "nextPart": "Next part"
+    },
+    "file": {
+      "label": "Seekable file",
+      "status": {
+        "NONE": "Not started (still recording)",
+        "PENDING": "Waiting to be built",
+        "PROCESSING": "Being built",
+        "READY": "Ready",
+        "FAILED": "Could not be built; plays part by part",
+        "UNAVAILABLE": "Not built (the worker had no ffmpeg); plays part by part"
+      },
+      "parts_one": "{{count}} recorded part",
+      "parts_other": "{{count}} recorded parts",
+      "heading": "Seekable file",
+      "hintReady": "Build the joined file again from the stored parts, for example if it does not play. Until it is rebuilt the recording plays part by part. The request is recorded in the audit log.",
+      "hintMissing": "Try building the joined file again, for example after ffmpeg was installed on the worker. Until then the recording plays part by part. The request is recorded in the audit log.",
+      "rebuild": "Rebuild file",
+      "queued": "The file was queued to be rebuilt. It plays part by part until then."
     },
     "purge": {
       "heading": "Delete recording",
@@ -1907,7 +1940,7 @@
       },
       "billing": {
         "title": "Billing",
-        "explain": "The seller details printed on purchase receipts. With a GSTIN, receipts are GST tax invoices (prices include GST); without one they are plain receipts.",
+        "explain": "The seller details printed on purchase receipts and credit notes. With a GSTIN, receipts are GST tax invoices (prices include GST): CGST and SGST when the buyer's state (chosen at checkout) is the GSTIN's state, IGST otherwise or when the buyer did not give one. Without a GSTIN they are plain receipts.",
         "save": "Save billing settings",
         "fields": {
           "legalName": "Legal name",
@@ -2192,7 +2225,9 @@
     "verifyIntro": "Open your authenticator app and enter the 6-digit code for CareerPilot Interview Admin.",
     "enrollIntro": "Two-factor authentication is required for your account. Add it to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password or similar), then enter the code it shows.",
     "enrollStep1": "Open your authenticator app and choose to add an account.",
-    "enrollStep2": "Choose to enter a setup key, and type or paste the key below (time-based).",
+    "enrollStep2": "Scan the QR code below, or choose to enter a setup key and type or paste the key (time-based).",
+    "qrLabel": "QR code to add CareerPilot Interview Admin to your authenticator app",
+    "cannotScan": "Cannot scan? Enter this key instead.",
     "enrollStep3": "Enter the 6-digit code the app shows.",
     "secretLabel": "Setup key",
     "copySecret": "Copy key",

@@ -3,7 +3,7 @@ import { permissionsFor } from '@cbi/shared-types';
 import { AuthProvider, createSessionManager } from '@cbi/web-core';
 import { fail, fakeApi, makeSession, makeUser, ok } from '@cbi/web-core/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -199,6 +199,57 @@ describe('recordings', () => {
     expect(callsTo(api, 'POST /admin/media/med1/playback')).toBe(2);
   });
 
+  it('plays a recording in parts with navigation until the file is built', async () => {
+    const link = (n: number) => `/api/v1/media/play/med1?exp=1767000000&part=${n}&sig=s${n}`;
+    const playback = {
+      url: link(0),
+      expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
+      mimeType: 'video/webm',
+      source: 'PARTS',
+      parts: [link(0), link(1), link(2)],
+    };
+    await renderAt('/recordings/med1', ['OPERATIONS_ADMIN'], {
+      ...detailHandlers(mediaAsset({ parts: 3, playbackFile: 'UNAVAILABLE' })),
+      'POST /admin/media/med1/playback': () => ok(playback),
+    });
+    expect(
+      await screen.findByText('Not built (the worker had no ffmpeg); plays part by part'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('3 recorded parts')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Watch' }));
+    const video = await screen.findByLabelText('Interview recording');
+    const base = config.apiUrl.replace(/\/+$/, '');
+    expect(video).toHaveAttribute('src', `${base}${link(0)}`);
+    expect(screen.getByText('Part 1 of 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous part' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Next part' }));
+    expect(video).toHaveAttribute('src', `${base}${link(1)}`);
+    expect(screen.getByText('Part 2 of 3')).toBeInTheDocument();
+    // The end of a part moves on to the next one.
+    fireEvent.ended(video);
+    expect(video).toHaveAttribute('src', `${base}${link(2)}`);
+    expect(screen.getByRole('button', { name: 'Next part' })).toBeDisabled();
+  });
+
+  it('rebuilds the seekable file on request', async () => {
+    const { api } = await renderAt('/recordings/med1', ['OPERATIONS_ADMIN'], {
+      ...detailHandlers(mediaAsset({ playbackFile: 'FAILED' })),
+      'POST /admin/media/med1/rebuild-file': () => ok(mediaAsset({ playbackFile: 'PENDING' })),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Rebuild file' }));
+    expect(
+      await screen.findByText(
+        'The file was queued to be rebuilt. It plays part by part until then.',
+      ),
+    ).toBeInTheDocument();
+    expect(callsTo(api, 'POST /admin/media/med1/rebuild-file')).toBe(1);
+    expect(screen.getByText('Waiting to be built')).toBeInTheDocument();
+    // Queued: nothing to rebuild until it finishes.
+    expect(screen.queryByRole('button', { name: 'Rebuild file' })).not.toBeInTheDocument();
+  });
+
   it('requires a reason and confirmation before deleting a recording', async () => {
     const deleted = mediaAsset({
       deletion: { status: 'DELETED', at: new Date().toISOString(), reason: 'Candidate request' },
@@ -246,6 +297,7 @@ describe('recordings', () => {
   it('hides deletion from admins without media.manage', async () => {
     await renderAt('/recordings/med1', ['OPERATIONS_ADMIN'], detailHandlers(), ['media.manage']);
     expect(await screen.findByRole('button', { name: 'Watch' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rebuild file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete recording' })).not.toBeInTheDocument();
   });
 

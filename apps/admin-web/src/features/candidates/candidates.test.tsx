@@ -195,6 +195,10 @@ describe('admin two-factor sign-in', () => {
     await user.type(screen.getByLabelText('Password'), 'Blue-Tiger-Runs-42');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByTestId('mfa-secret')).toHaveTextContent('JBSW Y3DP EHPK 3PXP');
+    // The otpauth link is also shown as a QR code to scan.
+    const qr = screen.getByRole('img', { name: /QR code to add CareerPilot Interview Admin/ });
+    expect(qr.tagName.toLowerCase()).toBe('svg');
+    expect(qr.querySelector('path')!.getAttribute('d')).toMatch(/^M\d+ \d+h1v1h-1z/);
     await user.type(screen.getByLabelText('6-digit code'), '654321');
     await user.click(screen.getByRole('button', { name: 'Turn on and sign in' }));
     expect(await screen.findByText('abcd-efgh-jk')).toBeInTheDocument();

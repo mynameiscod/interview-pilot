@@ -13,6 +13,7 @@ import {
   AiRouteModel,
   AiUsageModel,
   AuditLogModel,
+  ensureAiCatalog,
   PromptTemplateModel,
   UserModel,
   UserProfileModel,
@@ -102,6 +103,7 @@ describe('catalog bootstrap', () => {
     const opus = await AiModelModel.findOne({ modelId: 'claude-opus-5-5' }).lean();
     expect(opus!.pricing.map((p) => [p.unit, p.pricePerUnitMicros]).sort()).toEqual([
       ['PER_1M_CACHED_INPUT_TOKENS', 200_000],
+      ['PER_1M_CACHE_WRITE_INPUT_TOKENS', 5_000_000],
       ['PER_1M_INPUT_TOKENS', 4_000_000],
       ['PER_1M_OUTPUT_TOKENS', 20_000_000],
     ]);
@@ -122,10 +124,52 @@ describe('catalog bootstrap', () => {
       audit: t.container.audit,
       logger: t.container.logger,
     });
-    expect(again).toMatchObject({ providersCreated: 0, modelsCreated: 0, routesCreated: 0 });
+    expect(again).toMatchObject({
+      providersCreated: 0,
+      modelsCreated: 0,
+      routesCreated: 0,
+      pricesAdded: 0,
+    });
     expect((await AiModelModel.findOne({ modelId: 'claude-opus-5-5' }).lean())!.displayName).toBe(
       'Renamed',
     );
+  });
+
+  it('adds cache-write prices to models seeded before they existed, from now on', async () => {
+    // A deployment seeded before cache-write prices, where an admin changed the input price.
+    const old = new Date('2026-01-01T00:00:00Z');
+    await AiModelModel.updateOne(
+      { modelId: 'claude-sonnet-5-5' },
+      {
+        $set: {
+          pricing: [
+            {
+              unit: 'PER_1M_INPUT_TOKENS',
+              pricePerUnitMicros: 3_000_000,
+              currency: 'USD',
+              effectiveFrom: old,
+            },
+            {
+              unit: 'PER_1M_OUTPUT_TOKENS',
+              pricePerUnitMicros: 10_000_000,
+              currency: 'USD',
+              effectiveFrom: old,
+            },
+          ],
+        },
+      },
+    );
+    const before = new Date();
+    const seeded = await ensureAiCatalog({ mockMode: true });
+    // Cached reads and cache writes were never priced for it: both are added.
+    expect(seeded.pricesAdded).toBe(2);
+    const sonnet = (await AiModelModel.findOne({ modelId: 'claude-sonnet-5-5' }).lean())!;
+    const write = sonnet.pricing.find((p) => p.unit === 'PER_1M_CACHE_WRITE_INPUT_TOKENS')!;
+    expect(write.pricePerUnitMicros).toBe(2_500_000);
+    expect(write.effectiveFrom.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    // The admin's input price is kept.
+    expect(sonnet.pricing.filter((p) => p.unit === 'PER_1M_INPUT_TOKENS')).toHaveLength(1);
+    expect((await ensureAiCatalog({ mockMode: true })).pricesAdded).toBe(0);
   });
 
   it('imports bootstrap keys only into providers without one', async () => {
@@ -300,6 +344,28 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     });
   });
 
+  it('meters prompt cache reads and writes at their own prices', async () => {
+    await withAnthropicKey();
+    anthropic.queue.push({
+      ...opusReply('Cached answer'),
+      // 1,000 uncached + 8,000 read from the cache + 2,000 written to it.
+      usage: {
+        inputTokens: 11_000,
+        cachedInputTokens: 8_000,
+        cacheWriteInputTokens: 2_000,
+        outputTokens: 0,
+        requests: 1,
+      },
+    });
+    const served = await t.container.ai.router.run('interview.question', {
+      messages: [{ role: 'user', content: 'Q' }],
+    });
+    // 1,000 × $4 + 8,000 × $0.20 + 2,000 × $5 (per 1M) = 15,600 micro-USD.
+    expect(served.costMicros).toBe(15_600);
+    const row = (await AiUsageModel.findOne({ outcome: 'SUCCESS' }).lean())!;
+    expect(row.units).toMatchObject({ cachedInputTokens: 8_000, cacheWriteInputTokens: 2_000 });
+  });
+
   it('meters cost with the price snapshot in force and falls back on provider failure', async () => {
     const root = await withAnthropicKey();
     anthropic.queue.push(opusReply('Opus answer'));
@@ -312,7 +378,7 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     const row = await AiUsageModel.findOne({ outcome: 'SUCCESS' }).lean();
     expect(
       row!.priceSnapshot!.entries.map((e) => e.pricePerUnitMicros).sort((a, b) => a - b),
-    ).toEqual([200_000, 4_000_000, 20_000_000]);
+    ).toEqual([200_000, 4_000_000, 5_000_000, 20_000_000]);
 
     // Opus overloaded twice (1 retry), Sonnet overloaded twice, OpenAI and
     // Gemini have no keys, the mock serves.
@@ -445,7 +511,7 @@ describe('models and pricing', () => {
       })
       .expect(201);
     const updated = AiModelSummary.parse(res.body.data);
-    expect(updated.pricing).toHaveLength(4);
+    expect(updated.pricing).toHaveLength(5);
     // Not in force yet.
     expect(
       updated.currentPricing.find((p) => p.unit === 'PER_1M_OUTPUT_TOKENS')!.pricePerUnitMicros,

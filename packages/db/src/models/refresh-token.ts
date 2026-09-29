@@ -25,6 +25,7 @@ const refreshTokenSchema = new Schema(
         'ROLE_CHANGE',
         'DEVICE_REVOKED',
         'ACCOUNT_DELETION',
+        'MFA_RESET',
       ],
     },
     expiresAt: { type: Date, required: true },

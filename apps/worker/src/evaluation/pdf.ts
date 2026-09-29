@@ -1,156 +1,32 @@
-import { DELIVERY_TARGETS, STAR_PARTS, type ReportContent } from '@cbi/shared-types';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  defaultFontDir,
+  fontsAvailable,
+  pdfSafe,
+  registerScriptFonts,
+  STANDARD_FONTS,
+  writeScriptText,
+  type Style,
+} from '@cbi/pdf-fonts';
+import {
+  DELIVERY_TARGETS,
+  INTEGRITY_NOTE,
+  STAR_PARTS,
+  type ReportContent,
+} from '@cbi/shared-types';
 import PDFDocument from 'pdfkit';
+import { outputLanguage, type OutputLanguage } from './language.js';
+import { REPORT_DISCLAIMER } from './report-content.js';
+import { fill, pdfMessages } from './report-messages.js';
 
-export const BAND_LABELS: Record<ReportContent['overall']['band'], string> = {
-  READY: 'Interview-ready',
-  READY_WITH_GAPS: 'Interview-ready with gaps',
-  DEVELOPING: 'Developing',
-  NOT_YET: 'Not yet ready',
-  INSUFFICIENT_EVIDENCE: 'Not enough evidence to score',
-};
-
-const REPLACEMENTS: Record<string, string> = {
-  '‘': "'",
-  '’': "'",
-  '“': '"',
-  '”': '"',
-  '–': '-',
-  '—': '-',
-  '…': '...',
-  '•': '-',
-  '→': '->',
-};
-
-/**
- * Fallback for when the embedded Noto fonts are missing: the standard PDF
- * fonts only cover Latin-1, so typographic punctuation is mapped to plain
- * equivalents and anything else (Hindi, Telugu, ...) becomes "?".
- */
-export function pdfSafe(text: string): string {
-  return [...text]
-    .map((ch) => {
-      if (REPLACEMENTS[ch]) return REPLACEMENTS[ch];
-      const code = ch.codePointAt(0)!;
-      if (code === 9 || code === 10 || code === 13) return ch;
-      return code >= 32 && code <= 255 && !(code >= 127 && code < 160) ? ch : '?';
-    })
-    .join('');
-}
-
-// ---- Embedded fonts ----------------------------------------------------------------------
-
-export type Script = 'latin' | 'devanagari' | 'telugu';
-export type Style = 'regular' | 'bold' | 'italic';
-
-/** Files under apps/worker/assets/fonts (infrastructure/scripts/fetch-fonts.mjs restores them). */
-const FONT_FILES: Record<Script, Partial<Record<Style, string>>> = {
-  latin: {
-    regular: 'NotoSans-Regular.ttf',
-    bold: 'NotoSans-Bold.ttf',
-    italic: 'NotoSans-Italic.ttf',
-  },
-  devanagari: { regular: 'NotoSansDevanagari-Regular.ttf', bold: 'NotoSansDevanagari-Bold.ttf' },
-  // Not Noto Sans Telugu: fontkit (pdfkit's shaper) throws on its GPOS for common
-  // conjuncts such as "శ్రీ". Hind Guntur shapes every consonant cluster cleanly.
-  telugu: { regular: 'HindGuntur-Regular.ttf', bold: 'HindGuntur-Bold.ttf' },
-};
-
-const STANDARD_FONTS: Record<Style, string> = {
-  regular: 'Helvetica',
-  bold: 'Helvetica-Bold',
-  italic: 'Helvetica-Oblique',
-};
-
-/**
- * `REPORT_FONT_DIR`, else `<package>/assets/fonts`. The module sits two levels
- * below the package root in both src/ and dist/, so one relative path serves both.
- */
+/** `REPORT_FONT_DIR`, else the fonts shipped with @cbi/pdf-fonts. */
 export function fontDir(): string {
-  return (
-    process.env.REPORT_FONT_DIR || fileURLToPath(new URL('../../assets/fonts', import.meta.url))
-  );
+  return process.env.REPORT_FONT_DIR || defaultFontDir();
 }
 
-/** Whether the regular face of every script is present (bold/italic are optional). */
-export function fontsAvailable(dir = fontDir()): boolean {
-  return Object.values(FONT_FILES).every((f) => existsSync(join(dir, f.regular!)));
-}
+/** English band labels (certificates are issued in English). */
+export const BAND_LABELS = pdfMessages('en').bands;
 
-// Includes the danda, which Telugu text also uses but only the Devanagari font has.
-const isDevanagari = (c: number) => (c >= 0x0900 && c <= 0x097f) || (c >= 0xa8e0 && c <= 0xa8ff);
-const isTelugu = (c: number) => c >= 0x0c00 && c <= 0x0c7f;
-/**
- * Characters that stay with the surrounding run: marks, spaces (not the NBSP,
- * which Hind Guntur lacks), digits, the punctuation all three fonts carry (not
- * $ & @ ` or bullets), ZWNJ/ZWJ, dashes, curly quotes and the ellipsis.
- */
-const NEUTRAL_ASCII = `0123456789!"#%'()*+,-./:;<=>?[\\]^_{|}~`;
-const NEUTRAL_CODES = new Set([
-  0x200c, 0x200d, 0x2013, 0x2014, 0x2018, 0x2019, 0x201c, 0x201d, 0x2026,
-]);
-const isNeutral = (ch: string, code: number) =>
-  (/^[\p{M}\s]$/u.test(ch) && code !== 0xa0) ||
-  NEUTRAL_ASCII.includes(ch) ||
-  NEUTRAL_CODES.has(code);
-
-function scriptOf(ch: string): Script | null {
-  const code = ch.codePointAt(0)!;
-  if (isDevanagari(code)) return 'devanagari';
-  if (isTelugu(code)) return 'telugu';
-  return isNeutral(ch, code) ? null : 'latin';
-}
-
-/**
- * Splits text into runs per script so each run can use a font that has its
- * glyphs. Neutral characters join the current run (leading ones join the first
- * script that follows); text with no script letters is one Latin run.
- */
-export function scriptRuns(text: string): { script: Script; text: string }[] {
-  const runs: { script: Script; text: string }[] = [];
-  let pending = '';
-  for (const ch of text) {
-    const last = runs.at(-1);
-    const script = scriptOf(ch);
-    if (script === null) {
-      if (last) last.text += ch;
-      else pending += ch;
-    } else if (last?.script === script) {
-      last.text += ch;
-    } else {
-      runs.push({ script, text: pending + ch });
-      pending = '';
-    }
-  }
-  if (pending) runs.push({ script: 'latin', text: pending });
-  return runs;
-}
-
-const VERDICT_LABELS: Record<NonNullable<ReportContent['questions']>[number]['verdict'], string> = {
-  STRONG: 'Strong',
-  ADEQUATE: 'Adequate',
-  WEAK: 'Needs work',
-  UNASSESSED: 'Not assessed',
-};
-
-const STAR_LABELS = { situation: 'Situation', task: 'Task', action: 'Action', result: 'Result' };
-
-const DELIVERY_TIP_TEXT: Record<NonNullable<ReportContent['delivery']>['tips'][number], string> = {
-  PACE_FAST: `Slow down a little: aim for ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max} words per minute and pause briefly after key points.`,
-  PACE_SLOW: `Pick up the pace a little: aim for ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max} words per minute by outlining your answer before you start.`,
-  FILLERS: 'Replace filler words with a short silent pause; it sounds more confident.',
-  PAUSES:
-    'Long pauses are fine for thinking; say "let me think for a moment" so the silence is clearly yours.',
-  HEDGING: 'State what you did plainly ("I led", "I decided") instead of "I think" or "maybe".',
-};
-
-/** Long text cut at a word boundary for the compact PDF. */
-const clip = (t: string, max: number) =>
-  t.length <= max
-    ? t
-    : `${t.slice(0, t.lastIndexOf(' ', max) > 0 ? t.lastIndexOf(' ', max) : max)}...`;
+export { fontsAvailable, pdfSafe };
 
 export type TextWriter = (
   text: string,
@@ -166,39 +42,18 @@ export type TextWriter = (
  * standard fonts. Shared by reports and certificates.
  */
 export function createTextWriter(doc: PDFKit.PDFDocument, dir: string | null): TextWriter {
-  const fontName = (script: Script, style: Style) => `${script}-${style}`;
-  if (dir !== null) {
-    for (const script of Object.keys(FONT_FILES) as Script[]) {
-      for (const style of Object.keys(STANDARD_FONTS) as Style[]) {
-        // A style the script lacks (e.g. Telugu italic) or a missing file uses the regular face.
-        const file = FONT_FILES[script][style];
-        const path = join(
-          dir,
-          file && existsSync(join(dir, file)) ? file : FONT_FILES[script].regular!,
-        );
-        doc.registerFont(fontName(script, style), path);
-      }
-    }
-  }
+  if (dir !== null) registerScriptFonts(doc, dir);
   return (t, style, size, opts = {}) => {
-    doc.fontSize(size);
-    if (dir === null) return doc.font(STANDARD_FONTS[style]).text(pdfSafe(t), opts);
-    // Noto Sans has no arrow glyph.
-    const runs = scriptRuns(t.replaceAll('→', '->'));
-    doc.font(fontName('latin', style));
-    if (runs.length === 0) return doc.text('', opts);
-    // pdfkit places each call's baseline at its own font's ascent; pin every run to
-    // the Latin font's so mixed-script lines sit on one baseline.
-    const ascent =
-      ((doc as unknown as { _font: { ascender: number } })._font.ascender / 1000) * size;
-    runs.forEach((run, i) =>
-      doc
-        .font(fontName(run.script, style))
-        .text(run.text, { ...opts, baseline: -ascent, continued: i < runs.length - 1 }),
-    );
-    return doc;
+    if (dir === null) return doc.fontSize(size).font(STANDARD_FONTS[style]).text(pdfSafe(t), opts);
+    return writeScriptText(doc, t, style, size, opts);
   };
 }
+
+/** Long text cut at a word boundary for the compact PDF. */
+const clip = (t: string, max: number) =>
+  t.length <= max
+    ? t
+    : `${t.slice(0, t.lastIndexOf(' ', max) > 0 ? t.lastIndexOf(' ', max) : max)}...`;
 
 const date = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '-');
 
@@ -207,21 +62,24 @@ export interface RenderOptions {
   fontDir?: string | null;
   /** Compress page streams (tests turn it off to inspect the output). */
   compress?: boolean;
+  /** The language of headings and labels; defaults to {@link reportLanguage}. */
+  language?: OutputLanguage;
 }
 
-/** Neutral wording for integrity observations. */
-const INTEGRITY_LABELS: Record<string, string> = {
-  TAB_HIDDEN: 'Switched to another tab or app',
-  WINDOW_BLUR: 'Interview window lost focus',
-  FULLSCREEN_EXIT: 'Left full screen',
-  PASTE: 'Pasted text into an answer',
-  CAMERA_LOST: 'Camera stopped',
-  MICROPHONE_LOST: 'Microphone stopped',
-};
+/**
+ * The language of the PDF's fixed text: the session's language, or for an
+ * automatic one the script the report's summary was written in (the summary
+ * is written in the candidate's output language).
+ */
+export function reportLanguage(content: ReportContent): OutputLanguage {
+  return outputLanguage(content.header.language, [content.summary]);
+}
 
 /**
- * Renders the readiness report as an A4 PDF. With the embedded fonts present
- * any mix of English, Hindi and Telugu renders; without them (or if shaping
+ * Renders the readiness report as an A4 PDF, its headings and labels in the
+ * report's language (English, Hindi or Telugu; the fallback fonts print
+ * English ones). With the embedded fonts present any mix of English, Hindi
+ * and Telugu renders; without them (or if shaping
  * fails on some unusual text) it falls back to the standard fonts and
  * {@link pdfSafe}, so a report always gets a PDF.
  */
@@ -230,18 +88,26 @@ export async function renderReportPdf(
   options: RenderOptions = {},
 ): Promise<Buffer> {
   const dir = options.fontDir === undefined ? fontDir() : options.fontDir;
-  if (dir === null || !fontsAvailable(dir)) return render(content, null, options);
+  const language = options.language ?? reportLanguage(content);
+  // The standard fonts cannot print Hindi or Telugu labels: English ones then.
+  if (dir === null || !fontsAvailable(dir)) return render(content, null, options, 'en');
   try {
-    return await render(content, dir, options);
+    return await render(content, dir, options, language);
   } catch {
-    return render(content, null, options);
+    return render(content, null, options, 'en');
   }
 }
 
-function render(content: ReportContent, dir: string | null, options: RenderOptions) {
+function render(
+  content: ReportContent,
+  dir: string | null,
+  options: RenderOptions,
+  language: OutputLanguage,
+) {
+  const m = pdfMessages(language);
   return new Promise<Buffer>((resolve, reject) => {
     const embedded = dir !== null;
-    const title = `Readiness report - ${content.header.title}`;
+    const title = `${m.title} - ${content.header.title}`;
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
@@ -265,30 +131,40 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     const bullet = (t: string) => write(`- ${t}`, 'regular', 10, { indent: 10 }).moveDown(0.1);
 
     const { header, overall } = content;
-    h1('Interview readiness report');
-    p(`${header.title}${header.companyName ? ` at ${header.companyName}` : ''}`, 12);
+    h1(m.title);
     p(
-      `Date: ${date(header.endedAt ?? header.startedAt)}   Mode: ${header.mode.toLowerCase()}   Duration: ${Math.round(header.durationSec / 60)} min`,
-    );
-
-    h2('Overall readiness');
-    p(
-      `${overall.score === null ? 'No overall score' : `${overall.score} / 100`} - ${BAND_LABELS[overall.band]}`,
+      header.companyName
+        ? fill(m.atCompany, { title: header.title, company: header.companyName })
+        : header.title,
       12,
     );
-    p(`Evidence confidence: ${overall.confidence.level.toLowerCase()}`);
+    p(
+      `${m.date}: ${date(header.endedAt ?? header.startedAt)}   ${m.mode}: ${m.modes[header.mode]}   ${m.duration}: ${fill(m.minutes, { n: Math.round(header.durationSec / 60) })}`,
+    );
+
+    h2(m.overall);
+    p(
+      `${overall.score === null ? m.noOverall : `${overall.score} / 100`} - ${m.bands[overall.band]}`,
+      12,
+    );
+    p(`${m.confidence}: ${m.confidenceLevels[overall.confidence.level]}`);
     if (content.benchmark) {
       const b = content.benchmark;
       p(
-        `Better than ${b.percentile}% of ${b.sampleSize} candidates practising for ${b.roleTitle ?? `${b.family?.toLowerCase()} roles`} (last ${b.windowDays} days).`,
+        fill(m.benchmark, {
+          percentile: b.percentile,
+          sample: b.sampleSize,
+          role: b.roleTitle ?? b.family ?? '-',
+          days: b.windowDays,
+        }),
       );
     }
     p(content.summary);
 
-    h2('Dimensions');
+    h2(m.dimensions);
     for (const d of content.dimensions) {
       write(
-        `${d.name}: ${d.score === null ? 'not assessed' : `${d.score} / 100`} (weight ${d.weight}%)`,
+        `${d.name}: ${d.score === null ? m.notAssessed : `${d.score} / 100`} (${m.weight} ${d.weight}%)`,
         'bold',
         10,
       );
@@ -298,19 +174,19 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.strengths.length) {
-      h2('Strengths');
+      h2(m.strengths);
       content.strengths.forEach((s) => bullet(s.text));
     }
     if (content.gaps.length) {
-      h2('Gaps to work on');
+      h2(m.gaps);
       content.gaps.forEach((g) => bullet(g.text));
     }
 
-    h2('Your plan');
+    h2(m.plan);
     for (const [label, items] of [
-      ['Next 24 hours', content.plan.next24h],
-      ['Next 3 days', content.plan.next3Days],
-      ['Next 7 days', content.plan.next7Days],
+      [m.next24h, content.plan.next24h],
+      [m.next3Days, content.plan.next3Days],
+      [m.next7Days, content.plan.next7Days],
     ] as const) {
       write(label, 'bold', 10);
       items.forEach((i) => bullet(`${i.action} (${i.why})`));
@@ -318,55 +194,63 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.questions?.length) {
-      h2('Answer by answer');
+      h2(m.answers);
       for (const q of content.questions) {
         write(`Q${q.seq}. ${clip(q.question, 220)}`, 'bold', 10);
-        p(`Verdict: ${VERDICT_LABELS[q.verdict]}`, 9);
+        p(`${m.verdict}: ${m.verdicts[q.verdict]}`, 9);
         if (q.star) {
-          const covered = STAR_PARTS.filter((part) => q.star![part]).map((x) => STAR_LABELS[x]);
-          const missing = STAR_PARTS.filter((part) => !q.star![part]).map((x) => STAR_LABELS[x]);
+          const covered = STAR_PARTS.filter((part) => q.star![part]).map((x) => m.starParts[x]);
+          const missing = STAR_PARTS.filter((part) => !q.star![part]).map((x) => m.starParts[x]);
           p(
-            `Structure (STAR): ${covered.join(', ') || 'none'}${missing.length ? ` - missing ${missing.join(', ')}` : ''}`,
+            fill(m.starLine, { covered: covered.join(', ') || m.starNone }) +
+              (missing.length ? fill(m.starMissing, { missing: missing.join(', ') }) : ''),
             9,
           );
         }
-        q.whatWorked.slice(0, 2).forEach((w) => bullet(`Worked: ${w}`));
-        q.missing.slice(0, 2).forEach((m) => bullet(`${q.fallback ? 'Cover' : 'Missing'}: ${m}`));
+        q.whatWorked.slice(0, 2).forEach((w) => bullet(`${m.worked}: ${w}`));
+        q.missing
+          .slice(0, 2)
+          .forEach((x) => bullet(`${q.fallback ? m.cover : m.missingLabel}: ${x}`));
         if (q.improvedAnswer) {
-          write(
-            `Example answer (built from your own answer): ${clip(q.improvedAnswer, 700)}`,
-            'italic',
-            9,
-          );
+          write(`${m.example}: ${clip(q.improvedAnswer, 700)}`, 'italic', 9);
         }
         doc.moveDown(0.4);
       }
       if (content.structure) {
         const st = content.structure;
         p(
-          `Structure: ${st.complete} of ${st.behaviouralAnswers} behavioural answers covered situation, task, action and result.${st.weakest ? ` Most often missing: ${STAR_LABELS[st.weakest].toLowerCase()}.` : ''}`,
+          fill(m.structureSummary, { complete: st.complete, total: st.behaviouralAnswers }) +
+            (st.weakest
+              ? fill(m.structureWeakest, { part: m.starParts[st.weakest].toLowerCase() })
+              : ''),
         );
       }
     }
 
     if (content.delivery) {
       const d = content.delivery.summary;
-      h2('Delivery (spoken answers)');
+      const target = { min: DELIVERY_TARGETS.wpm.min, max: DELIVERY_TARGETS.wpm.max };
+      h2(m.delivery);
       p(
-        `Pace: ${d.wpm ?? '-'} words per minute (target ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max})   Filler words: ${d.fillerCount} (${d.fillerRate} per 100 words)${d.longPauses !== null ? `   Long pauses: ${d.longPauses}` : ''}   Hedging phrases: ${d.hedgeCount}`,
+        fill(m.deliveryLine, {
+          wpm: d.wpm ?? '-',
+          ...target,
+          fillers: d.fillerCount,
+          rate: d.fillerRate,
+          hedges: d.hedgeCount,
+        }) + (d.longPauses !== null ? fill(m.longPauses, { n: d.longPauses }) : ''),
       );
-      content.delivery.tips.forEach((tip) => bullet(DELIVERY_TIP_TEXT[tip]));
-      write(
-        'Delivery is coaching only and never affects your scores: pace and filler words vary with accent, language and speech differences.',
-        'italic',
-        8,
-      ).fontSize(10);
+      content.delivery.tips.forEach((tip) => bullet(fill(m.deliveryTips[tip], target)));
+      write(m.deliveryNote, 'italic', 8).fontSize(10);
     }
 
     if (content.previous) {
-      h2('Progress since your last attempt');
+      h2(m.progress);
       p(
-        `Previous overall: ${content.previous.overall ?? '-'} on ${date(content.previous.endedAt)}`,
+        fill(m.previousOverall, {
+          score: content.previous.overall ?? '-',
+          date: date(content.previous.endedAt),
+        }),
       );
       content.previous.deltas.forEach((d) =>
         bullet(`${d.name}: ${d.delta > 0 ? '+' : ''}${d.delta}`),
@@ -374,36 +258,41 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.coding?.length) {
-      h2('Coding');
+      h2(m.coding);
       for (const c of content.coding) {
         const outcome = c.judgeUnavailable
-          ? 'not run (the code judge was unavailable); reviewed from the code'
+          ? m.judgeUnavailable
           : c.passed !== null
-            ? `${c.passed} of ${c.total} tests passed`
-            : 'no solution';
+            ? fill(m.testsPassed, { passed: c.passed, total: c.total ?? '-' })
+            : m.noSolution;
         bullet(
-          `${c.title} (${c.difficulty.toLowerCase()}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ' - not submitted before time ran out'}`,
+          `${c.title} (${m.difficulties[c.difficulty]}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ` - ${m.notSubmitted}`}`,
         );
       }
     }
 
     if (content.integrity) {
-      h2('Session observations');
+      h2(m.observations);
       const counts = Object.entries(content.integrity.counts).filter(
         ([type]) => type !== 'TAB_VISIBLE' && type !== 'WINDOW_FOCUS',
       );
-      if (counts.length === 0) p('No browser events were noted.');
-      counts.forEach(([type, n]) => bullet(`${INTEGRITY_LABELS[type] ?? type}: ${n}`));
+      if (counts.length === 0) p(m.noObservations);
+      counts.forEach(([type, n]) => bullet(`${m.integrity[type] ?? type}: ${n}`));
       if (content.integrity.awaySec > 0) {
-        bullet(
-          `Time away from the interview page: about ${Math.round(content.integrity.awaySec / 60)} min`,
-        );
+        bullet(fill(m.timeAway, { n: Math.round(content.integrity.awaySec / 60) }));
       }
-      write(content.integrity.note, 'italic', 8).fontSize(10);
+      // The standard note and disclaimer are shown in the report's language.
+      const note =
+        content.integrity.note === INTEGRITY_NOTE ? m.integrityNote : content.integrity.note;
+      write(note, 'italic', 8).fontSize(10);
     }
 
     doc.moveDown(1);
-    write(content.disclaimer, 'italic', 8);
+    write(
+      content.disclaimer === REPORT_DISCLAIMER ? m.disclaimer : content.disclaimer,
+      'italic',
+      8,
+    );
     doc.end();
   });
 }

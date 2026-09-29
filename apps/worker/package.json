@@ -6,8 +6,7 @@
   "description": "BullMQ background workers for CareerPilot Interview",
   "main": "dist/index.js",
   "files": [
-    "dist",
-    "assets"
+    "dist"
   ],
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env --conditions=@cbi/source src/index.ts",
@@ -27,6 +26,7 @@
     "@cbi/db": "workspace:*",
     "@cbi/documents": "workspace:*",
     "@cbi/interview-engine": "workspace:*",
+    "@cbi/pdf-fonts": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
     "@cbi/scoring-core": "workspace:*",
     "@cbi/shared-types": "workspace:*",

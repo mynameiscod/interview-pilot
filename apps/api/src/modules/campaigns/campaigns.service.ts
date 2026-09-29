@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Logger } from '@cbi/config';
 import type { Readable } from 'node:stream';
 import {
+  ACTIVE_CAMPAIGN_EXPORT_STATUSES,
   CAMPAIGN_EXPORT_STUCK_AFTER_MS,
   CampaignApplicationModel,
   CampaignExportModel,
@@ -451,12 +452,14 @@ export function createCampaignService({
      */
     async startExport(id: string, actorId: string, ctx: ClientContext): Promise<CampaignExport> {
       const c = await byId(id);
-      const active = await CampaignExportModel.findOne({
-        campaignId: c._id,
-        status: { $in: ['QUEUED', 'RUNNING'] },
-      })
-        .sort({ createdAt: -1 })
-        .lean<CampaignExportRecord>();
+      const findActive = () =>
+        CampaignExportModel.findOne({
+          campaignId: c._id,
+          status: { $in: ACTIVE_CAMPAIGN_EXPORT_STATUSES },
+        })
+          .sort({ createdAt: -1 })
+          .lean<CampaignExportRecord>();
+      const active = await findActive();
       if (active) return campaignExportView(active);
       const rows = await CampaignApplicationModel.countDocuments({ campaignId: c._id });
       if (rows > MAX_PACKAGE_ROWS) {
@@ -464,15 +467,24 @@ export function createCampaignService({
           `Packages hold up to ${MAX_PACKAGE_ROWS} candidates. Export the CSV instead.`,
         );
       }
-      const created = await CampaignExportModel.create({
-        campaignId: c._id,
-        requestedBy: actorId,
-        status: 'QUEUED',
-        progress: { done: 0, total: rows },
-        fileName: `campaign-${id}-package.zip`,
-        // Given up as stuck if the worker has not finished by then.
-        expiresAt: new Date(now().getTime() + CAMPAIGN_EXPORT_STUCK_AFTER_MS),
-      });
+      let created;
+      try {
+        created = await CampaignExportModel.create({
+          campaignId: c._id,
+          requestedBy: actorId,
+          status: 'QUEUED',
+          progress: { done: 0, total: rows },
+          fileName: `campaign-${id}-package.zip`,
+          // Given up as stuck if the worker has not finished by then.
+          expiresAt: new Date(now().getTime() + CAMPAIGN_EXPORT_STUCK_AFTER_MS),
+        });
+      } catch (err) {
+        // A simultaneous request created it first (one active export per campaign).
+        if ((err as { code?: number }).code !== 11000) throw err;
+        const winner = await findActive();
+        if (winner) return campaignExportView(winner);
+        throw AppError.conflict('An export was just started. Try again.');
+      }
       const exportId = String(created._id);
       try {
         await jobs.exportCampaignPackage(exportId);

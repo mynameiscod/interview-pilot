@@ -193,15 +193,14 @@ export async function deleteMediaAsset(
         segments: [],
         manifestKey: null,
         playbackFile: { status: 'NONE', key: null, bytes: null, at: now, attempts: 0, error: null },
-        deletion: {
-          status: 'DELETED',
-          at: now,
-          reason: opts.reason,
-          by: opts.by,
-          keys,
-          sweepAfter: new Date(now.getTime() + MEDIA_DELETE_SWEEP_DELAY_MS),
-        },
+        'deletion.status': 'DELETED',
+        'deletion.at': now,
+        'deletion.reason': opts.reason,
+        'deletion.by': opts.by,
+        'deletion.sweepAfter': new Date(now.getTime() + MEDIA_DELETE_SWEEP_DELAY_MS),
       },
+      // Added to, not replaced: a key an uploader noted during the delete must be kept.
+      $addToSet: { 'deletion.keys': { $each: keys } },
     },
   );
   return res.modifiedCount === 1;
@@ -296,6 +295,60 @@ export async function completeMediaFileBuild(
     },
   );
   return res.modifiedCount === 1;
+}
+
+/** Joined-file states an admin can ask to build again (not while one is being built). */
+export const MEDIA_FILE_REBUILDABLE = ['READY', 'FAILED', 'UNAVAILABLE'] as const;
+
+const rebuild = (now: Date) => ({
+  $set: {
+    'playbackFile.status': 'PENDING',
+    'playbackFile.at': now,
+    'playbackFile.attempts': 0,
+    'playbackFile.error': null,
+  },
+});
+
+/**
+ * Queues a finalized recording's joined file to be built again (an admin's
+ * "Rebuild file"). Until it is, the recording plays part by part; the old
+ * file's key is kept so a delete still removes it. Returns the updated
+ * record, or null when the recording is not in a rebuildable state.
+ */
+export async function requestMediaFileRebuild(id: Id, now = new Date()) {
+  return MediaAssetModel.findOneAndUpdate(
+    {
+      _id: id,
+      'deletion.status': 'NONE',
+      status: { $in: ['COMPLETE', 'PARTIAL'] },
+      'playbackFile.status': { $in: MEDIA_FILE_REBUILDABLE },
+    },
+    rebuild(now),
+    { returnDocument: 'after' },
+  ).lean<MediaAssetRecord>();
+}
+
+/** Whether any recording's file was given up for want of ffmpeg. */
+export async function hasUnavailableMediaFiles(): Promise<boolean> {
+  return Boolean(
+    await MediaAssetModel.exists({
+      'deletion.status': 'NONE',
+      'playbackFile.status': 'UNAVAILABLE',
+    }),
+  );
+}
+
+/** Queues every file marked UNAVAILABLE for building again (ffmpeg is back). Returns how many. */
+export async function requeueUnavailableMediaFiles(now = new Date()): Promise<number> {
+  const res = await MediaAssetModel.updateMany(
+    {
+      'deletion.status': 'NONE',
+      status: { $in: ['COMPLETE', 'PARTIAL'] },
+      'playbackFile.status': 'UNAVAILABLE',
+    },
+    rebuild(now),
+  );
+  return res.modifiedCount;
 }
 
 export interface MediaSweepResult {

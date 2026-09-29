@@ -219,6 +219,11 @@ describe('sessions', () => {
       .expect(204);
     await refresh(phone.agent).expect(401);
     await refresh(laptop.agent).expect(200);
+    // The signed-out device's access token stops working at once; the other keeps working.
+    const me = (token: string) =>
+      request(t.app).get('/api/v1/users/me').set('Authorization', `Bearer ${token}`);
+    await me(phone.accessToken).expect(401);
+    await me(laptop.accessToken).expect(200);
   });
 
   it('logout-all ends every session and invalidates live access tokens', async () => {

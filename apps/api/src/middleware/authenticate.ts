@@ -8,17 +8,23 @@ import {
 } from '@cbi/shared-types';
 import type { Request, RequestHandler } from 'express';
 import { AppError } from '../lib/errors.js';
+import type { RevokedSessions } from '../modules/auth/revoked-sessions.js';
 import type { UserStateCache } from '../modules/auth/user-state.js';
 import type { AuthContext } from '../types/express.js';
 
 /**
  * Requires a valid Bearer access token for `audience`, then checks the live
  * user state: token version (logout-all), status (suspension) and, for admin,
- * that admin roles still exist.
+ * that admin roles still exist; and that the token's session was not signed
+ * out since it was issued (one device signed out, logout).
  */
 export function authenticate(
   audience: SessionAudience,
-  deps: { tokens: AccessTokenIssuer; userState: UserStateCache },
+  deps: {
+    tokens: AccessTokenIssuer;
+    userState: UserStateCache;
+    revokedSessions?: RevokedSessions;
+  },
 ): RequestHandler {
   return async (req, _res, next) => {
     const header = req.headers.authorization;
@@ -32,16 +38,20 @@ export function authenticate(
         expired ? 'Your session has expired.' : 'Please sign in to continue',
       );
     }
-    const state = await deps.userState.get(claims.userId);
-    if (!state || state.tokenVersion !== claims.tokenVersion) {
-      throw AppError.unauthenticated('Your session has ended. Please sign in again.');
-    }
+    const [state, revoked] = await Promise.all([
+      deps.userState.get(claims.userId),
+      deps.revokedSessions?.isRevoked(claims.sessionId) ?? false,
+    ]);
+    const ended = () => AppError.unauthenticated('Your session has ended. Please sign in again.');
+    if (!state || state.tokenVersion !== claims.tokenVersion) throw ended();
     if (state.status !== 'ACTIVE') {
       throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This account is suspended.');
     }
     if (audience === 'admin' && state.adminRoles.length === 0) {
       throw AppError.forbidden('This account does not have admin access.');
     }
+    // After the account checks, so suspension and lost admin access keep their own answers.
+    if (revoked) throw ended();
     req.auth = {
       userId: claims.userId,
       audience,

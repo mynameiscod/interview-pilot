@@ -1,10 +1,12 @@
 import { BRAND_NAMES } from '@cbi/design-system';
-import type {
-  CheckoutOrder,
-  CouponRejection,
-  PurchaseSummary,
-  Quote,
-  VerifyPaymentBody,
+import {
+  GST_STATES,
+  type CheckoutOrder,
+  type CouponRejection,
+  type GstStateCode,
+  type PurchaseSummary,
+  type Quote,
+  type VerifyPaymentBody,
 } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState, type FormEvent } from 'react';
@@ -20,7 +22,7 @@ import {
   paymentErrorMessage,
   validityText,
 } from './payment-format';
-import { paymentKeys, usePaymentsApi, useQuote } from './payments-api';
+import { paymentKeys, useCheckoutProfile, usePaymentsApi, useQuote } from './payments-api';
 import { loadRazorpay } from './razorpay';
 
 /** Checkout renders in Razorpay's own frame, so it needs the resolved brand colour. */
@@ -194,6 +196,48 @@ function MockPanel({
   );
 }
 
+/**
+ * The buyer's state for the GST invoice (place of supply). Prefilled from
+ * the checkout profile; optional (unknown means IGST on the invoice).
+ */
+function BillingStateField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: GstStateCode | null;
+  disabled: boolean;
+  onChange: (value: GstStateCode | null) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  return (
+    <div className="mb-3">
+      <label htmlFor={id} className="form-label">
+        {t('checkout.billingStateLabel')}
+      </label>
+      <select
+        id={id}
+        className="form-select"
+        value={value ?? ''}
+        disabled={disabled}
+        aria-describedby={`${id}-hint`}
+        onChange={(e) => onChange((e.target.value || null) as GstStateCode | null)}
+      >
+        <option value="">{t('checkout.billingStateNone')}</option>
+        {GST_STATES.map((s) => (
+          <option key={s.code} value={s.code}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <p id={`${id}-hint`} className="form-text mb-0">
+        {t('checkout.billingStateHint')}
+      </p>
+    </div>
+  );
+}
+
 /** Order summary, coupon and payment for one plan (Razorpay Checkout, or mock mode in development). */
 export function CheckoutPage() {
   const { t, i18n } = useTranslation();
@@ -213,6 +257,11 @@ export function CheckoutPage() {
   const busyRef = useRef(false);
 
   const quote = useQuote(planCode, couponCode);
+  const profile = useCheckoutProfile();
+  // Undefined until changed here: the order then keeps the saved state.
+  const [billingState, setBillingState] = useState<GstStateCode | null | undefined>(undefined);
+  const shownState =
+    billingState === undefined ? (profile.data?.billingState ?? null) : billingState;
 
   const claim = () => {
     if (busyRef.current) return false;
@@ -310,6 +359,7 @@ export function CheckoutPage() {
       const order = await api.createOrder({
         planCode,
         couponCode: current.coupon?.applied ? current.coupon.code : null,
+        ...(billingState !== undefined ? { billingState } : {}),
       });
       if (!order.provider) {
         // A 100% coupon: the purchase is already paid.
@@ -403,6 +453,11 @@ export function CheckoutPage() {
                 {t('checkout.payTitle')}
               </h2>
               <p className="small cb-text-secondary">{t('checkout.payNote')}</p>
+              <BillingStateField
+                value={shownState}
+                disabled={busy || profile.isPending}
+                onChange={setBillingState}
+              />
               <button
                 type="button"
                 className="btn btn-primary btn-lg w-100"

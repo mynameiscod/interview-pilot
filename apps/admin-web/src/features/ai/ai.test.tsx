@@ -199,6 +199,33 @@ describe('models', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows cache read and cache write prices apart from input', async () => {
+    const at = new Date().toISOString();
+    const priced = (unit: string, micros: number) => ({
+      unit,
+      pricePerUnitMicros: micros,
+      currency: 'USD',
+      effectiveFrom: at,
+    });
+    await renderAt('/ai/models', ['SUPER_ADMIN'], {
+      'GET /admin/ai/models': () =>
+        ok([
+          model({
+            currentPricing: [
+              priced('PER_1M_INPUT_TOKENS', 4_000_000),
+              priced('PER_1M_CACHED_INPUT_TOKENS', 200_000),
+              priced('PER_1M_CACHE_WRITE_INPUT_TOKENS', 5_000_000),
+              priced('PER_1M_OUTPUT_TOKENS', 20_000_000),
+            ] as never,
+          }),
+        ]),
+    });
+    expect(await screen.findByText('Cached input $0.20 / 1M tokens')).toBeInTheDocument();
+    expect(screen.getByText('Cache writes $5.00 / 1M tokens')).toBeInTheDocument();
+    // Token units are not repeated in the generic list.
+    expect(screen.queryByText(/per 1M cache write tokens/)).not.toBeInTheDocument();
+  });
+
   it('adds a price as a decimal string with a reason', async () => {
     const api = await renderAt('/ai/models', ['SUPER_ADMIN'], {
       'GET /admin/ai/models': () => ok([model()]),

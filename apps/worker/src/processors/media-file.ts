@@ -1,13 +1,15 @@
 import { spawn } from 'node:child_process';
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@cbi/config';
 import {
   claimMediaFileBuild,
   completeMediaFileBuild,
+  hasUnavailableMediaFiles,
   mediaFileKey,
   mediaParts,
+  requeueUnavailableMediaFiles,
   type MediaAssetRecord,
   type MediaFileOutcome,
 } from '@cbi/db';
@@ -24,7 +26,9 @@ import type { MediaMime } from '@cbi/shared-types';
  * WebM muxer writes duration and cues, which is what makes it seekable.
  *
  * ffmpeg is a system binary (installed in the worker image). Without it the
- * file is marked UNAVAILABLE and the recording keeps playing part by part.
+ * file is marked UNAVAILABLE and the recording keeps playing part by part;
+ * once ffmpeg answers again (see createUnavailableRetry) those files are
+ * queued and built. The joined file is uploaded from disk as a stream.
  */
 
 /** ffmpeg could not be started (not installed, or not on the path). */
@@ -102,7 +106,7 @@ export function joinArgs(list: string, out: string, mime: MediaMime, mode: 'copy
 }
 
 export interface MediaFileDeps {
-  storage: Pick<StorageProvider, 'get' | 'put'>;
+  storage: Pick<StorageProvider, 'get' | 'putFile'>;
   ffmpeg: FfmpegRunner;
   logger: Logger;
   /** Where temporary part files go (the OS temp directory by default). */
@@ -142,11 +146,12 @@ export async function buildMediaFile(
       );
       await deps.ffmpeg(joinArgs('parts.txt', out, asset.mimeType, 'encode'), dir);
     }
-    const file = await readFile(join(dir, out));
-    if (file.length === 0) return { status: 'FAILED', error: 'ffmpeg wrote an empty file' };
+    // Streamed from disk: a long recording is never held in memory whole.
+    const { size } = await stat(join(dir, out));
+    if (size === 0) return { status: 'FAILED', error: 'ffmpeg wrote an empty file' };
     const key = mediaFileKey(asset);
-    await deps.storage.put(key, file, asset.mimeType);
-    return { status: 'READY', key, bytes: file.length };
+    await deps.storage.putFile(key, join(dir, out), asset.mimeType);
+    return { status: 'READY', key, bytes: size };
   } catch (err) {
     if (err instanceof FfmpegMissingError) return { status: 'UNAVAILABLE', error: err.message };
     return { status: 'FAILED', error: err instanceof Error ? err.message : String(err) };
@@ -159,6 +164,44 @@ export interface MediaFileRunResult {
   built: number;
   failed: number;
   unavailable: number;
+  /** Files marked UNAVAILABLE queued again because ffmpeg answers now. */
+  requeued: number;
+}
+
+/** Checks for ffmpeg and requeues UNAVAILABLE files when it answers; returns how many. */
+export type UnavailableRetry = (now: Date) => Promise<number>;
+
+/** How often ffmpeg is looked for while files wait for it. */
+export const FFMPEG_PROBE_INTERVAL_MS = 10 * 60_000;
+
+/**
+ * Files marked UNAVAILABLE (the worker had no ffmpeg) are never claimed
+ * again on their own. While any wait, this runs `ffmpeg -version` at most
+ * every `intervalMs`; when it succeeds (installed since, or MEDIA_FFMPEG_PATH
+ * fixed) they are queued to be built like new ones.
+ */
+export function createUnavailableRetry(opts: {
+  ffmpeg: FfmpegRunner;
+  logger: Logger;
+  intervalMs?: number;
+}): UnavailableRetry {
+  const intervalMs = opts.intervalMs ?? FFMPEG_PROBE_INTERVAL_MS;
+  let lastProbe = -Infinity;
+  return async (now) => {
+    if (now.getTime() - lastProbe < intervalMs) return 0;
+    if (!(await hasUnavailableMediaFiles())) return 0;
+    lastProbe = now.getTime();
+    try {
+      await opts.ffmpeg(['-hide_banner', '-version'], tmpdir());
+    } catch (err) {
+      if (err instanceof FfmpegMissingError) return 0;
+      opts.logger.warn({ err }, 'ffmpeg check failed');
+      return 0;
+    }
+    const requeued = await requeueUnavailableMediaFiles(now);
+    if (requeued > 0) opts.logger.info({ requeued }, 'ffmpeg is available: recording files queued');
+    return requeued;
+  };
 }
 
 /**
@@ -168,10 +211,11 @@ export interface MediaFileRunResult {
  * marked UNAVAILABLE per run instead of churning through all of them).
  */
 export async function runMediaFileBuilds(
-  deps: MediaFileDeps & { max?: number; now?: () => Date },
+  deps: MediaFileDeps & { max?: number; now?: () => Date; retryUnavailable?: UnavailableRetry },
 ): Promise<MediaFileRunResult> {
   const now = deps.now ?? (() => new Date());
-  const result: MediaFileRunResult = { built: 0, failed: 0, unavailable: 0 };
+  const result: MediaFileRunResult = { built: 0, failed: 0, unavailable: 0, requeued: 0 };
+  if (deps.retryUnavailable) result.requeued = await deps.retryUnavailable(now());
   for (let i = 0; i < (deps.max ?? 5); i++) {
     const claimed = await claimMediaFileBuild(now());
     if (!claimed) break;

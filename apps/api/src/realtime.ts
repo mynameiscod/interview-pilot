@@ -61,8 +61,16 @@ export async function createRealtime(opts: {
       const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
       if (typeof token !== 'string') throw new Error('missing token');
       const claims = await c.tokens.verify(token, 'candidate');
-      const state = await c.userState.get(claims.userId);
-      if (!state || state.tokenVersion !== claims.tokenVersion || state.status !== 'ACTIVE') {
+      const [state, revoked] = await Promise.all([
+        c.userState.get(claims.userId),
+        c.revokedSessions.isRevoked(claims.sessionId),
+      ]);
+      if (
+        !state ||
+        state.tokenVersion !== claims.tokenVersion ||
+        state.status !== 'ACTIVE' ||
+        revoked
+      ) {
         throw new Error('session ended');
       }
       (socket.data as SocketData) = { userId: claims.userId, sessionId: null };

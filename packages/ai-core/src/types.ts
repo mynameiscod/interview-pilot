@@ -39,11 +39,14 @@ export interface LlmRequest<T = unknown> {
 
 /**
  * Billable quantities reported by the provider. `inputTokens` includes any
- * `cachedInputTokens`; `cachedInputTokens` is the subset read from a cache.
+ * `cachedInputTokens` and `cacheWriteInputTokens`; `cachedInputTokens` is
+ * the subset read from a cache, `cacheWriteInputTokens` the subset written
+ * to one (providers that bill cache writes separately, e.g. Anthropic).
  */
 export interface UsageUnits {
   inputTokens: number;
   cachedInputTokens: number;
+  cacheWriteInputTokens?: number;
   outputTokens: number;
   requests: number;
   /** Wall-clock seconds of a session (realtime), audio seconds (STT/TTS). */
