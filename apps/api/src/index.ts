@@ -59,6 +59,7 @@ async function main(): Promise<void> {
   const stopAiListener = await container.ai.listenForChanges();
   await container.integrations.start();
   const stopIntegrationsListener = await container.integrations.listenForChanges();
+  const stopOpsListener = await container.opsChanges.listenForChanges();
   logger.info(
     Object.fromEntries(
       (['email', 'payments', 'storage', 'sms', 'judge'] as const).map((k) => [
@@ -96,6 +97,7 @@ async function main(): Promise<void> {
       try {
         await stopAiListener();
         await stopIntegrationsListener();
+        await stopOpsListener();
         await container.jobs.close();
         await container.queueAdmin.close();
         await Promise.allSettled([disconnectMongo(), redis.quit(), queueRedis.quit()]);

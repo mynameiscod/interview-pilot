@@ -46,7 +46,11 @@ import { createReviewService } from './modules/review/review.service.js';
 import { createQueueAdmin, type QueueAdmin } from './lib/queue-admin.js';
 import { createIntegrationsAdminService } from './modules/ops/integrations.service.js';
 import { createAnalyticsService } from './modules/ops/analytics.service.js';
-import { createFlagService, createSettingsService } from './modules/ops/ops.service.js';
+import {
+  createFlagService,
+  createOpsChangeBus,
+  createSettingsService,
+} from './modules/ops/ops.service.js';
 import { createProofService } from './modules/ops/proof.service.js';
 import { createSystemService } from './modules/ops/system.service.js';
 
@@ -181,8 +185,10 @@ export function buildContainer(opts: ContainerOptions) {
   const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
   const inputs = createInputsService({ storage, jobs, audit, logger });
   const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
-  const flags = createFlagService({ audit });
-  const settings = createSettingsService({ audit });
+  // Flag and setting changes reach every API process over Redis pub/sub.
+  const opsChanges = createOpsChangeBus({ redis, logger });
+  const flags = createFlagService({ audit, changes: opsChanges });
+  const settings = createSettingsService({ audit, changes: opsChanges });
   const interviews = createInterviewService({ jobs, audit, logger, consent });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
@@ -289,6 +295,7 @@ export function buildContainer(opts: ContainerOptions) {
     review,
     flags,
     settings,
+    opsChanges,
     analytics,
     queueAdmin,
     system,
