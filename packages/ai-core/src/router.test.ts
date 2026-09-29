@@ -593,3 +593,109 @@ describe('parseJsonOutput', () => {
     expect(() => parseJsonOutput('Sure! {"a":1}')).toThrow();
   });
 });
+
+describe('AI router: effort', () => {
+  it('sends the route effort, lets a request override it and leaves admin tests at the default', async () => {
+    const t = setup({
+      models: [model('opus', 'p-anthropic')],
+      script: { opus: [ok('a'), ok('b'), ok('c')] },
+    });
+    t.config.routes.get('interview.question')!.effort = 'low';
+    await t.router.run('interview.question', request);
+    await t.router.run('interview.question', { ...request, effort: 'high' });
+    await t.router.runOnModel('opus', 'admin.test', request);
+    expect(t.anthropic.calls.map((c) => c.request.effort)).toEqual(['low', 'high', null]);
+  });
+});
+
+describe('AI router: streaming', () => {
+  /** Adds a scripted `stream` to an adapter: deltas, then an optional error or the final result. */
+  function streaming(
+    adapter: LlmAdapter,
+    script: { deltas: string[]; error?: AiProviderError; result?: LlmCallResult }[],
+  ) {
+    const signals: AbortSignal[] = [];
+    adapter.stream = async function* (input) {
+      signals.push(input.signal);
+      const step = script.shift();
+      if (!step) throw new Error('unscripted stream');
+      for (const text of step.deltas) {
+        await Promise.resolve();
+        input.signal.throwIfAborted();
+        yield { type: 'delta' as const, text };
+      }
+      if (step.error) throw step.error;
+      yield { type: 'done' as const, result: step.result ?? ok(step.deltas.join('')) };
+    };
+    return signals;
+  }
+
+  async function collect(gen: AsyncGenerator<string, unknown>) {
+    const deltas: string[] = [];
+    for (;;) {
+      const next = await gen.next();
+      if (next.done) return { deltas, result: next.value };
+      deltas.push(next.value);
+    }
+  }
+
+  it('yields deltas as they arrive and returns the metered result', async () => {
+    const t = setup({ models: [model('opus', 'p-anthropic')], script: {} });
+    streaming(t.anthropic.adapter, [{ deltas: ['Tell me ', 'about ', 'a project.'] }]);
+    const { deltas, result } = await collect(t.router.stream('interview.question', request));
+    expect(deltas).toEqual(['Tell me ', 'about ', 'a project.']);
+    expect(result).toMatchObject({ text: 'Tell me about a project.', costMicros: 7_500 });
+    expect(t.usage.map((u) => u.outcome)).toEqual(['SUCCESS']);
+  });
+
+  it('serves adapters without streaming through generate, as one delta', async () => {
+    const t = setup({ models: [model('gpt', 'p-openai')], script: { gpt: [ok('whole reply')] } });
+    const { deltas } = await collect(t.router.stream('interview.question', request));
+    expect(deltas).toEqual(['whole reply']);
+  });
+
+  it('falls back to the next model when a stream fails before its first delta', async () => {
+    const t = setup({
+      models: [
+        model('opus', 'p-anthropic', { params: { ...model('x', 'y').params, retries: 0 } }),
+        model('gpt', 'p-openai'),
+      ],
+      script: { gpt: [ok('from gpt')] },
+    });
+    streaming(t.anthropic.adapter, [{ deltas: [], error: fail('PROVIDER_ERROR', '529') }]);
+    const { deltas, result } = await collect(t.router.stream('interview.question', request));
+    expect(deltas).toEqual(['from gpt']);
+    expect((result as { model: { modelId: string } }).model.modelId).toBe('gpt');
+  });
+
+  it('never falls back after text was sent: an interrupted stream fails', async () => {
+    const t = setup({
+      models: [model('opus', 'p-anthropic'), model('gpt', 'p-openai')],
+      script: { gpt: [ok('never')] },
+    });
+    streaming(t.anthropic.adapter, [{ deltas: ['Half a '], error: fail('NETWORK_ERROR') }]);
+    const gen = t.router.stream('interview.question', request);
+    expect((await gen.next()).value).toBe('Half a ');
+    await expect(gen.next()).rejects.toBeInstanceOf(AiUnavailableError);
+    expect(t.openai.calls).toHaveLength(0);
+  });
+
+  it('aborts the provider call when the consumer stops early', async () => {
+    const t = setup({ models: [model('opus', 'p-anthropic')], script: {} });
+    const signals = streaming(t.anthropic.adapter, [{ deltas: ['one', 'two', 'three'] }]);
+    for await (const text of t.router.stream('interview.question', request)) {
+      expect(text).toBe('one');
+      break;
+    }
+    expect(signals[0]!.aborted).toBe(true);
+  });
+
+  it('refuses structured output', async () => {
+    const t = setup({ models: [model('opus', 'p-anthropic')], script: {} });
+    const gen = t.router.stream('interview.question', {
+      ...request,
+      output: { name: 'x', schema: z.object({}) },
+    } as never);
+    await expect(gen.next()).rejects.toThrow(/cannot be streamed/);
+  });
+});

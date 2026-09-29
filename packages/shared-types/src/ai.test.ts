@@ -7,6 +7,9 @@ import {
   AiFeature,
   CreatePromptVersionBody,
   DecimalPrice,
+  DEFAULT_ROUTE_EFFORT,
+  effortSupported,
+  samplingParamsSupported,
   UpsertAiRouteBody,
 } from './ai.js';
 
@@ -53,6 +56,44 @@ describe('AI contracts', () => {
       retries: 1,
       temperature: null,
     });
+  });
+
+  it('knows which models reject sampling parameters', () => {
+    for (const id of [
+      'claude-opus-5-5',
+      'claude-opus-5',
+      'claude-opus-4-7',
+      'claude-sonnet-5-5',
+      'claude-sonnet-5',
+      'claude-fable-5-1',
+    ]) {
+      expect(samplingParamsSupported('anthropic', id)).toBe(false);
+    }
+    expect(samplingParamsSupported('anthropic', 'claude-haiku-4-5')).toBe(true);
+    expect(samplingParamsSupported('anthropic', 'claude-sonnet-4-6')).toBe(true);
+    expect(samplingParamsSupported('openai', 'gpt-5.6-terra')).toBe(false);
+    expect(samplingParamsSupported('openai', 'gpt-4.1')).toBe(true);
+    expect(samplingParamsSupported('gemini', 'gemini-3.1-pro-preview')).toBe(true);
+  });
+
+  it('knows which models take an effort setting', () => {
+    expect(effortSupported('anthropic', 'claude-opus-5-5')).toBe(true);
+    expect(effortSupported('anthropic', 'claude-sonnet-4-6')).toBe(true);
+    expect(effortSupported('anthropic', 'claude-haiku-4-5')).toBe(false);
+    expect(effortSupported('anthropic', 'claude-sonnet-4-5')).toBe(false);
+    expect(effortSupported('openai', 'gpt-5.6-terra')).toBe(true);
+    expect(effortSupported('gemini', 'gemini-3.1-pro-preview')).toBe(false);
+  });
+
+  it('seeds an effort for every LLM feature and accepts effort on route updates', () => {
+    const llm = AiFeature.options.filter(
+      (f) => AI_FEATURE_CAPABILITY[f] === 'LLM' && f !== 'admin.test',
+    );
+    expect(llm.every((f) => DEFAULT_ROUTE_EFFORT[f])).toBe(true);
+    const base = { active: true, chain: [], reason: 'tune' };
+    expect(UpsertAiRouteBody.parse({ ...base, effort: 'high' }).effort).toBe('high');
+    expect(UpsertAiRouteBody.parse(base).effort).toBeUndefined();
+    expect(UpsertAiRouteBody.safeParse({ ...base, effort: 'max' }).success).toBe(false);
   });
 
   it('requires a reason for price changes', () => {

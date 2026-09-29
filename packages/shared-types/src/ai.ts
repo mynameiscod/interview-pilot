@@ -116,8 +116,60 @@ export const PriceEntry = z.object({
 });
 export type PriceEntry = z.infer<typeof PriceEntry>;
 
+/**
+ * How much reasoning a route asks for. Lower effort is cheaper and faster;
+ * classification and structuring rarely need more than `low`, evaluation
+ * benefits from `high`. Adapters map it to the provider's control (Claude
+ * `output_config.effort`, OpenAI reasoning effort) and drop it for models
+ * that have none.
+ */
+export const AiEffort = z.enum(['low', 'medium', 'high']);
+export type AiEffort = z.infer<typeof AiEffort>;
+
+/** Seeded effort per LLM feature (admins can change it per route). */
+export const DEFAULT_ROUTE_EFFORT: Readonly<Partial<Record<AiFeature, AiEffort>>> = {
+  'role.analyze': 'low',
+  'resume.structure': 'low',
+  'jd.structure': 'low',
+  'blueprint.generate': 'medium',
+  'interview.question': 'low',
+  'interview.assessTurn': 'low',
+  'evaluation.extractEvidence': 'high',
+  'evaluation.scoreDimension': 'high',
+  'report.recommendations': 'medium',
+};
+
+/**
+ * Current Claude models reject sampling parameters (`temperature`, `top_p`,
+ * `top_k`) with a 400: Fable/Mythos 5+, Opus 4.7+, Sonnet 5+. Older Claude
+ * models (Opus/Sonnet 4.6, Haiku 4.5) accept them. OpenAI reasoning models
+ * (GPT-5 family, o-series) only take the default temperature.
+ */
+const CLAUDE_NO_SAMPLING = /^claude-(fable|mythos|opus-5|opus-4-[7-9]|sonnet-5)/;
+const OPENAI_REASONING = /^(gpt-5|o\d)/;
+
+/** Whether a model accepts a configured temperature. */
+export function samplingParamsSupported(providerKey: AiProviderKey, modelId: string): boolean {
+  if (providerKey === 'anthropic') return !CLAUDE_NO_SAMPLING.test(modelId);
+  if (providerKey === 'openai') return !OPENAI_REASONING.test(modelId);
+  return true;
+}
+
+/**
+ * Claude models that accept `output_config.effort` (Opus 4.5+, Sonnet 4.6+,
+ * Fable/Mythos). Haiku 4.5 and Sonnet 4.5 reject it.
+ */
+const CLAUDE_EFFORT = /^claude-(fable|mythos|opus-5|opus-4-[5-9]|sonnet-5|sonnet-4-[6-9])/;
+
+export function effortSupported(providerKey: AiProviderKey, modelId: string): boolean {
+  if (providerKey === 'anthropic') return CLAUDE_EFFORT.test(modelId);
+  // OpenAI reasoning models (GPT-5 family and o-series) take a reasoning effort.
+  if (providerKey === 'openai') return OPENAI_REASONING.test(modelId);
+  return false;
+}
+
 const modelParamFields = {
-  /** Null for models that reject sampling parameters (e.g. Claude Opus 5). */
+  /** Null for models that reject sampling parameters (see `samplingParamsSupported`). */
   temperature: z.number().min(0).max(2).nullable(),
   maxOutputTokens: z.number().int().min(16).max(128_000),
   timeoutMs: z.number().int().min(1000).max(600_000),
@@ -292,6 +344,8 @@ export const AiRouteSummary = z.object({
       label: z.string(),
     }),
   ),
+  /** Null: the provider default. */
+  effort: AiEffort.nullable(),
   updatedAt: z.iso.datetime().nullable(),
 });
 export type AiRouteSummary = z.infer<typeof AiRouteSummary>;
@@ -305,6 +359,8 @@ export const UpsertAiRouteBody = z.object({
     .refine((chain) => new Set(chain.map((c) => c.modelId)).size === chain.length, {
       message: 'A model can appear only once in a chain',
     }),
+  /** Absent keeps the current setting; null means the provider default. */
+  effort: AiEffort.nullable().optional(),
   reason,
 });
 export type UpsertAiRouteBody = z.infer<typeof UpsertAiRouteBody>;

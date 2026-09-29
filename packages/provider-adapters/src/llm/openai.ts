@@ -5,6 +5,7 @@ import {
   type LlmAdapter,
   type ProviderCredentials,
 } from '@cbi/ai-core';
+import { effortSupported, samplingParamsSupported } from '@cbi/shared-types';
 import OpenAI from 'openai';
 import { splitSystem, toProviderError } from './shared.js';
 
@@ -40,7 +41,13 @@ export function createOpenAiLlmAdapter(opts: OpenAiAdapterOptions = {}): LlmAdap
             ...(system ? { instructions: system } : {}),
             input: turns.map((m) => ({ role: m.role, content: m.content })),
             max_output_tokens: request.maxOutputTokens ?? model.params.maxOutputTokens,
-            ...(model.params.temperature !== null ? { temperature: model.params.temperature } : {}),
+            ...(model.params.temperature !== null &&
+            samplingParamsSupported('openai', model.modelId)
+              ? { temperature: model.params.temperature }
+              : {}),
+            ...(request.effort && effortSupported('openai', model.modelId)
+              ? { reasoning: { effort: request.effort } }
+              : {}),
             ...(request.output
               ? {
                   text: {
