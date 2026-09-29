@@ -10,6 +10,8 @@ import {
   type RoundType,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
+import { LANGUAGE_NAMES, type OutputLanguage } from './language.js';
+import { verifyQuotes } from './quotes.js';
 
 /**
  * The AI steps of evaluation, shared by the pipeline and the AI regression
@@ -85,7 +87,9 @@ export interface ExtractedEvidence {
 
 /**
  * Evidence for one round's answered questions. Items naming unknown
- * questions or competencies are dropped. Null when the model is unavailable.
+ * questions or competencies are dropped, and quotes that cannot be found in
+ * the cited answer are removed (lowering that item's confidence). Null when
+ * the model is unavailable.
  */
 export async function extractEvidenceWithAi(
   deps: AiStepDeps,
@@ -95,7 +99,7 @@ export async function extractEvidenceWithAi(
     turns: readonly TurnForExtraction[];
   },
   ctx?: AiCallContext,
-): Promise<{ items: ExtractedEvidence[]; promptVersion: number } | null> {
+): Promise<{ items: ExtractedEvidence[]; promptVersion: number; unverifiedQuotes: number } | null> {
   const keys = new Set(input.competencies.map((c) => c.key));
   const questionIds = new Set(input.turns.map((t) => t.questionId));
   const result = await runAiStep(
@@ -119,12 +123,26 @@ export async function extractEvidenceWithAi(
     ctx,
   );
   if (!result) return null;
-  return {
-    items: result.data.items.filter(
-      (i) => questionIds.has(i.questionId) && keys.has(i.competencyKey),
-    ),
-    promptVersion: result.promptVersion,
-  };
+  const known = result.data.items.filter(
+    (i) => questionIds.has(i.questionId) && keys.has(i.competencyKey),
+  );
+  const answers = new Map(input.turns.map((t) => [t.questionId, t.answer]));
+  const { items, unverified } = verifyQuotes(known, answers);
+  if (unverified > 0) {
+    // Metric: evaluation.quote_unverified (counted by log-based metrics).
+    deps.logger.warn(
+      {
+        metric: 'evaluation.quote_unverified',
+        unverified,
+        quoted: known.filter((i) => i.quote?.trim()).length,
+        promptVersion: result.promptVersion,
+        model: result.model,
+        sessionId: ctx?.sessionId,
+      },
+      'evidence quotes not found in the answers were removed',
+    );
+  }
+  return { items, promptVersion: result.promptVersion, unverifiedQuotes: unverified };
 }
 
 /**
@@ -172,9 +190,11 @@ export async function scoreDimensionWithAi(
   };
 }
 
+/** Strengths, gaps and plan, written in the candidate's output language. */
 export async function recommendationsWithAi(
   deps: AiStepDeps,
   values: {
+    language: OutputLanguage;
     role: string;
     overall: string;
     confidence: string;
@@ -189,7 +209,7 @@ export async function recommendationsWithAi(
     'report.recommendations',
     RecommendationsAi,
     {
-      language: 'English',
+      language: LANGUAGE_NAMES[values.language],
       role: values.role,
       overall: values.overall,
       confidence: values.confidence,

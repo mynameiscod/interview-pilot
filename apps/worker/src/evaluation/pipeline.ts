@@ -38,6 +38,9 @@ import {
   recommendationsWithAi,
   scoreDimensionWithAi,
 } from './ai-steps.js';
+import { mapWithConcurrency } from './concurrency.js';
+import { outputLanguage } from './language.js';
+import { reportReadyEmail, submittedEmail } from './notify-messages.js';
 import { renderReportPdf } from './pdf.js';
 import { buildReportContent, fallbackRecommendations } from './report-content.js';
 import type { JudgeAdapter } from '@cbi/provider-adapters';
@@ -85,6 +88,9 @@ async function context(s: Session) {
     throw new Error('session references a missing blueprint or template');
   return { blueprint: blueprint.content, template: template.content, turns };
 }
+
+const answerTexts = (turns: readonly { answer?: { text: string } | null }[]) =>
+  turns.map((t) => t.answer?.text ?? '');
 
 const ctxOf = (s: Session) => ({ userId: String(s.userId), sessionId: String(s._id) });
 const roleOf = (b: BlueprintContent) => `${b.role.title} (${b.role.seniority.toLowerCase()})`;
@@ -165,6 +171,9 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   }
 }
 
+/** Dimensions scored at the same time (each is an independent AI call). */
+export const SCORING_CONCURRENCY = 3;
+
 /** 3. One AI score per dimension, from that dimension's evidence and rubric only. */
 async function scoreDimensions(deps: EvaluationDeps, s: Session) {
   const { blueprint } = await context(s);
@@ -172,39 +181,35 @@ async function scoreDimensions(deps: EvaluationDeps, s: Session) {
     sessionId: s._id,
     run: s.processing!.run,
   }).lean();
-  const drafts: DraftDimensionScore[] = [];
-  for (const c of blueprint.competencies) {
-    const items = evidence
-      .filter((e) => e.competencyKey === c.key)
-      .map((e) => ({
-        id: String(e._id),
-        strength: e.strength,
-        practical: e.practical,
-        claim: e.claim,
-      }));
-    if (items.length === 0) {
-      drafts.push({
+  const drafts = await mapWithConcurrency(
+    blueprint.competencies,
+    SCORING_CONCURRENCY,
+    async (c): Promise<DraftDimensionScore> => {
+      const items = evidence
+        .filter((e) => e.competencyKey === c.key)
+        .map((e) => ({
+          id: String(e._id),
+          strength: e.strength,
+          practical: e.practical,
+          claim: e.claim,
+        }));
+      if (items.length === 0) {
+        return { key: c.key, aiScore: null, rationale: null, evidenceIds: [], promptVersion: null };
+      }
+      const result = await scoreDimensionWithAi(
+        deps,
+        { role: roleOf(blueprint), competency: c, evidence: items },
+        ctxOf(s),
+      );
+      return {
         key: c.key,
-        aiScore: null,
-        rationale: null,
-        evidenceIds: [],
-        promptVersion: null,
-      });
-      continue;
-    }
-    const result = await scoreDimensionWithAi(
-      deps,
-      { role: roleOf(blueprint), competency: c, evidence: items },
-      ctxOf(s),
-    );
-    drafts.push({
-      key: c.key,
-      aiScore: result?.score ?? null,
-      rationale: result?.rationale ?? null,
-      evidenceIds: result ? result.evidenceIds : items.map((i) => i.id),
-      promptVersion: result?.promptVersion ?? null,
-    });
-  }
+        aiScore: result?.score ?? null,
+        rationale: result?.rationale ?? null,
+        evidenceIds: result ? result.evidenceIds : items.map((i) => i.id),
+        promptVersion: result?.promptVersion ?? null,
+      };
+    },
+  );
   await InterviewSessionModel.updateOne(
     { _id: s._id },
     { $set: { 'processing.draft.dimensions': drafts } },
@@ -293,11 +298,12 @@ async function aggregateScores(_deps: EvaluationDeps, s: Session) {
 
 /** 5. Strengths, gaps and plans (AI), with a deterministic fallback. */
 async function recommendations(deps: EvaluationDeps, s: Session) {
-  const [{ blueprint }, score] = await Promise.all([
+  const [{ blueprint, turns }, score] = await Promise.all([
     context(s),
     InterviewScoreModel.findOne({ sessionId: s._id, revision: 0 }).lean(),
   ]);
   if (!score) throw new Error('score revision 0 missing');
+  const language = outputLanguage(s.language, answerTexts(turns));
   const evidence = await InterviewEvidenceModel.find({ sessionId: s._id, run: s.processing!.run })
     .sort({ strength: -1 })
     .lean();
@@ -307,6 +313,7 @@ async function recommendations(deps: EvaluationDeps, s: Session) {
   const result = await recommendationsWithAi(
     deps,
     {
+      language,
       role: roleOf(blueprint),
       overall:
         score.overall === null ? 'not enough evidence' : `${score.overall}/100 (${score.band})`,
@@ -496,20 +503,14 @@ async function notify(deps: EvaluationDeps, s: Session) {
   }
   const user = await UserModel.findById(s.userId, { primaryEmail: 1, emailVerifiedAt: 1 }).lean();
   if (!user?.primaryEmail || !user.emailVerifiedAt) return;
+  const turns = await InterviewTurnModel.find({ sessionId: s._id }, { answer: 1 }).lean();
+  const language = outputLanguage(s.language, answerTexts(turns));
   if (!(await candidateSeesReport(s))) {
-    await deps.email.send({
-      to: user.primaryEmail,
-      subject: 'Your interview has been submitted',
-      text: `Thank you for completing your interview. It has been evaluated and shared with the company that invited you, which will contact you about next steps.\n\nCareerPilot Interview by CodeBegun`,
-    });
+    await deps.email.send({ to: user.primaryEmail, ...submittedEmail(language) });
     return;
   }
   const link = `${deps.candidateUrl.replace(/\/$/, '')}/app/reports/${String(s._id)}`;
-  await deps.email.send({
-    to: user.primaryEmail,
-    subject: 'Your interview readiness report is ready',
-    text: `Your practice interview has been evaluated.\n\nOpen your report: ${link}\n\nIt includes your readiness by area, the evidence behind it and a 7-day practice plan.\n\nCareerPilot Interview by CodeBegun`,
-  });
+  await deps.email.send({ to: user.primaryEmail, ...reportReadyEmail(language, link) });
 }
 
 const HANDLERS: Record<ProcessingStage, (deps: EvaluationDeps, s: Session) => Promise<void>> = {
