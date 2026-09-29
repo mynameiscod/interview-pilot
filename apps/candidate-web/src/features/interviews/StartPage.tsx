@@ -1,4 +1,4 @@
-import { isSpokenMode, type InterviewSummary } from '@cbi/shared-types';
+import { isSpokenMode, UiLocale, type InterviewSummary } from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -133,7 +133,7 @@ function ConsentCard({ interview }: { interview: InterviewSummary }) {
 }
 
 function StartScreen({ interview }: { interview: InterviewSummary }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useInterviewsApi();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -153,7 +153,12 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
     setStarting(true);
     setError(null);
     try {
-      const started = await api.start(interview.id);
+      // An "auto" interview language follows the language the candidate is using here.
+      const uiLocale = UiLocale.safeParse(i18n.resolvedLanguage);
+      const started = await api.start(
+        interview.id,
+        uiLocale.success ? { uiLocale: uiLocale.data } : {},
+      );
       queryClient.setQueryData(queryKeys.interview(interview.id), started);
       void queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
       void queryClient.invalidateQueries({ queryKey: queryKeys.credits });

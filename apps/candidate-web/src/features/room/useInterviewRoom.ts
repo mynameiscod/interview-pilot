@@ -31,7 +31,8 @@ export const ACK_TIMEOUT_MS = 10_000;
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 /** Pause before retrying an answer the server was too busy to take. */
 export const BUSY_RETRY_MS = 1_500;
-const MAX_BUSY_RETRIES = 5;
+/** Busy retries before checking with the server whether the answer was saved after all. */
+const MAX_BUSY_RETRIES = 8;
 const MAX_RECONNECT_DELAY_SEC = 30;
 
 /** Once the room sees one of these, the interview is over for the candidate. */
@@ -116,10 +117,16 @@ export interface RoomState {
 type Action =
   | { type: 'status'; status: RoomState['status']; at: number }
   | { type: 'snapshot'; snapshot: InterviewSnapshot; at: number }
-  | { type: 'thinking' }
-  | { type: 'question'; question: LiveQuestion }
+  | { type: 'thinking'; at: number }
+  | { type: 'question'; question: LiveQuestion; at: number }
   | { type: 'transition'; event: RoundTransitionEvent }
-  | { type: 'answered'; questionId: string; text: string; source: 'TEXT' | 'VOICE' }
+  | {
+      type: 'answered';
+      questionId: string;
+      text: string;
+      source: 'TEXT' | 'VOICE';
+      at: number;
+    }
   | { type: 'codingSubmitted'; questionId: string; submission: CodingSubmission }
   | { type: 'mode'; mode: InterviewMode }
   | { type: 'switchingMode'; switching: boolean }
@@ -194,21 +201,24 @@ function questionTurn(q: LiveQuestion): LiveTurn {
   };
 }
 
+/** The countdown stopped at `at`, keeping the time left at that moment. */
+function frozen(state: RoomState, at: number): RoomState {
+  if (!state.clockRunning) return state;
+  const elapsed = Math.max(0, at - state.syncedAt);
+  return {
+    ...state,
+    clockRunning: false,
+    remainingMs: Math.max(0, state.remainingMs - elapsed),
+    syncedAt: at,
+  };
+}
+
 export function roomReducer(state: RoomState, action: Action): RoomState {
   switch (action.type) {
     case 'status': {
-      if (action.status === 'connected' || !state.clockRunning) {
-        return { ...state, status: action.status };
-      }
+      if (action.status === 'connected') return { ...state, status: action.status };
       // The server stops the clock while nobody is connected; freeze it here too.
-      const elapsed = Math.max(0, action.at - state.syncedAt);
-      return {
-        ...state,
-        status: action.status,
-        clockRunning: false,
-        remainingMs: Math.max(0, state.remainingMs - elapsed),
-        syncedAt: action.at,
-      };
+      return { ...frozen(state, action.at), status: action.status };
     }
     case 'snapshot': {
       const s = action.snapshot;
@@ -250,12 +260,16 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
       };
     }
     case 'thinking':
-      return { ...state, thinking: true, question: null };
+      // The server holds the clock while it prepares the next question.
+      return { ...frozen(state, action.at), thinking: true, question: null };
     case 'question':
       // Already shown (it also came in a snapshot, or twice): ignore anything not newer.
       if (state.turns.some((t) => t.seq >= action.question.seq)) return state;
       return {
         ...state,
+        // The question is on screen: the candidate's clock runs again (while connected).
+        clockRunning: state.status === 'connected' && state.remainingMs > 0,
+        syncedAt: action.at,
         question: action.question,
         coding: withCoding(state.coding, action.question),
         thinking: false,
@@ -282,7 +296,8 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         : state.turns;
       const wasCurrent = state.question?.questionId === action.questionId;
       return {
-        ...state,
+        // Once answered, the interviewer's time is not the candidate's: the clock is held.
+        ...(wasCurrent ? frozen(state, action.at) : state),
         turns,
         question: wasCurrent ? null : state.question,
         thinking: wasCurrent ? true : state.thinking,
@@ -415,6 +430,8 @@ export function useInterviewRoom(sessionId: string) {
     let joined = false;
     let everConnected = false;
     let maxSeq = 0;
+    /** Seq of each question seen, so a pending answer's turn can be asked for again. */
+    const seqOf = new Map<string, number>();
     let failures = 0;
     let authRetries = 0;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -489,8 +506,30 @@ export function useInterviewRoom(sessionId: string) {
 
     function applySnapshot(snapshot: InterviewSnapshot) {
       maxSeq = Math.max(maxSeq, snapshot.lastSeq, ...snapshot.turns.map((t) => t.seq));
+      for (const turn of snapshot.turns) seqOf.set(turn.questionId, turn.seq);
+      if (snapshot.currentQuestion) {
+        seqOf.set(snapshot.currentQuestion.questionId, snapshot.currentQuestion.seq);
+      }
       dispatch({ type: 'snapshot', snapshot, at: Date.now() });
+      // An answer whose acknowledgement was lost may already be saved: then it was sent.
+      const pending = pendingRef.current;
+      const saved = pending
+        ? snapshot.turns.find((t) => t.questionId === pending.questionId && t.answer !== null)
+        : undefined;
+      if (pending && saved) sent(pending);
       if (FINISHED_STATES.includes(snapshot.state)) finish(snapshot.state);
+    }
+
+    /** The server has the answer: the interviewer is now preparing the next question. */
+    function sent(pending: PendingAnswer) {
+      settle(pending, 'sent');
+      dispatch({
+        type: 'answered',
+        questionId: pending.questionId,
+        text: pending.text,
+        source: pending.voiceTranscriptId ? 'VOICE' : 'TEXT',
+        at: Date.now(),
+      });
     }
 
     /** Observations are notes, not requests: sent without waiting and never retried. */
@@ -509,9 +548,12 @@ export function useInterviewRoom(sessionId: string) {
 
     async function join() {
       if (disposed || !socket.connected) return;
+      // With an answer waiting for its acknowledgement, ask for its turn again to see if it was saved.
+      const pendingSeq = pendingRef.current ? seqOf.get(pendingRef.current.questionId) : undefined;
+      const lastSeq = pendingSeq ? Math.min(maxSeq, pendingSeq - 1) : maxSeq;
       let ack: RtAck;
       try {
-        ack = await request(RtEvent.JOIN, { sessionId, lastSeq: maxSeq });
+        ack = await request(RtEvent.JOIN, { sessionId, lastSeq });
       } catch {
         // No acknowledgement in time: try again while the connection holds.
         if (!disposed && socket.connected) later(() => void join(), 2_000);
@@ -557,13 +599,7 @@ export function useInterviewRoom(sessionId: string) {
       }
       if (disposed || pendingRef.current !== pending) return;
       if (ack.ok) {
-        settle(pending, 'sent');
-        dispatch({
-          type: 'answered',
-          questionId: pending.questionId,
-          text: pending.text,
-          source: pending.voiceTranscriptId ? 'VOICE' : 'TEXT',
-        });
+        sent(pending);
         return;
       }
       if (attempt !== pending.attempt) return; // A newer resend is on its way.
@@ -574,6 +610,9 @@ export function useInterviewRoom(sessionId: string) {
             later(() => void flush(), BUSY_RETRY_MS);
             return;
           }
+          // Still busy: the answer may be saved already (the re-join settles it as sent).
+          await join();
+          if (disposed || pendingRef.current !== pending) return;
           dispatch({ type: 'problem', problem: 'sendFailed' });
           settle(pending, 'rejected');
           return;
@@ -643,10 +682,11 @@ export function useInterviewRoom(sessionId: string) {
       if (socket.active === false) scheduleReconnect();
     };
 
-    const onThinking = () => dispatch({ type: 'thinking' });
+    const onThinking = () => dispatch({ type: 'thinking', at: Date.now() });
     const onQuestion = (question: LiveQuestion) => {
       maxSeq = Math.max(maxSeq, question.seq);
-      dispatch({ type: 'question', question });
+      seqOf.set(question.questionId, question.seq);
+      dispatch({ type: 'question', question, at: Date.now() });
     };
     const onTransition = (event: RoundTransitionEvent) => dispatch({ type: 'transition', event });
     const onCompleted = (snapshot: InterviewSnapshot | undefined) => {

@@ -266,9 +266,10 @@ describe('interview room', () => {
     await sockets.last.serverConnect();
 
     await waitFor(() => expect(sockets.last.sent('answer:text')).toHaveLength(2));
+    // The unacknowledged answer's turn (seq 1) is asked for again, to see whether it was saved.
     expect(sockets.last.sent('interview:join')).toEqual([
       { sessionId: 'int1', lastSeq: 0 },
-      { sessionId: 'int1', lastSeq: 1 },
+      { sessionId: 'int1', lastSeq: 0 },
     ]);
     const [first, second] = sockets.last.sent('answer:text') as [AnswerPayload, AnswerPayload];
     expect(second.clientMsgId).toBe(first.clientMsgId);
@@ -277,6 +278,117 @@ describe('interview room', () => {
       screen.queryByRole('heading', { name: 'Reconnecting… your progress is saved' }),
     ).not.toBeInTheDocument();
     expect(screen.getByText('Connected')).toBeInTheDocument();
+  });
+
+  it('treats an answer the server saved as sent when its acknowledgement was lost', async () => {
+    let joins = 0;
+    const { sockets } = await openRoom({
+      setup: (socket) => {
+        // The answer is saved, but the acknowledgement never arrives.
+        socket.ackHandlers['answer:text'] = () => new Promise<RtAck>(() => undefined);
+        socket.ackHandlers['interview:join'] = () => ({
+          ok: true,
+          snapshot:
+            joins++ === 0
+              ? makeSnapshot()
+              : makeSnapshot({
+                  currentQuestion: null,
+                  thinking: true,
+                  clockRunning: false,
+                  turns: [
+                    {
+                      seq: 1,
+                      questionId: 'q1',
+                      roundIdx: 0,
+                      question: 'Tell me about a project you are proud of.',
+                      answer: 'Saved before the connection dropped.',
+                      answerSource: 'TEXT',
+                    },
+                  ],
+                }),
+        });
+      },
+    });
+    const user = userEvent.setup();
+    const box = await screen.findByRole('textbox', { name: 'Your answer' });
+    await user.type(box, 'Saved before the connection dropped.');
+    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+
+    await sockets.last.serverDisconnect();
+    await sockets.last.serverConnect();
+
+    // The interviewer is thinking; nothing failed and nothing is sent twice.
+    expect(await screen.findByText('Preparing the next question…')).toBeInTheDocument();
+    expect(
+      screen.getByText(/The interview clock is paused while the interviewer prepares/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(sockets.last.sent('answer:text')).toHaveLength(1);
+    await waitFor(() => expect(box).toHaveValue(''));
+  });
+
+  it('keeps retrying while the server is busy and never reports a saved answer as failed', async () => {
+    let answers = 0;
+    let joins = 0;
+    const { sockets } = await openRoom({
+      setup: (socket) => {
+        socket.ackHandlers['answer:text'] = () => {
+          answers++;
+          return { ok: false, code: 'BUSY', message: 'busy' };
+        };
+        socket.ackHandlers['interview:join'] = () => ({
+          ok: true,
+          snapshot:
+            joins++ === 0
+              ? makeSnapshot()
+              : makeSnapshot({
+                  currentQuestion: null,
+                  thinking: true,
+                  turns: [
+                    {
+                      seq: 1,
+                      questionId: 'q1',
+                      roundIdx: 0,
+                      question: 'Tell me about a project you are proud of.',
+                      answer: 'My answer',
+                      answerSource: 'TEXT',
+                    },
+                  ],
+                }),
+        });
+      },
+    });
+    const box = await screen.findByRole('textbox', { name: 'Your answer' });
+    // Retries are 1.5 s apart: let fake time also pass on its own, and jump ahead below.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(box, 'My answer');
+    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+    for (let i = 0; i < 10; i++) await act(async () => vi.advanceTimersByTime(1_500));
+    vi.useRealTimers();
+
+    expect(answers).toBeGreaterThan(1);
+    // Still busy after the retries: a re-join shows the answer was saved after all.
+    expect(await screen.findByText('Preparing the next question…')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(sockets.last.sent('interview:join').at(-1)).toEqual({ sessionId: 'int1', lastSeq: 0 });
+  });
+
+  it('pauses the countdown while the interviewer prepares the next question', async () => {
+    const { sockets } = await openRoom({
+      setup: (socket) => {
+        socket.ackHandlers['answer:text'] = () => ({ ok: true });
+      },
+    });
+    const user = userEvent.setup();
+    const box = await screen.findByRole('textbox', { name: 'Your answer' });
+    await waitFor(() => expect(screen.queryByText('(paused)')).not.toBeInTheDocument());
+    await user.type(box, 'An answer');
+    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+    expect(await screen.findByText('(paused)')).toBeInTheDocument();
+
+    await sockets.last.push('interview:question', makeQuestion({ questionId: 'q2', seq: 2 }));
+    await waitFor(() => expect(screen.queryByText('(paused)')).not.toBeInTheDocument());
   });
 
   it('re-joins to resync when the question is stale', async () => {

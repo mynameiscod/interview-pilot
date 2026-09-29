@@ -196,10 +196,15 @@ export function InterviewerPanel({
             </p>
           </>
         ) : (
-          <p className="mb-0 cb-text-secondary d-flex align-items-center gap-2">
-            <span className="spinner-grow spinner-grow-sm text-secondary" aria-hidden="true" />
-            {thinking ? t('room.thinking') : t('room.waiting')}
-          </p>
+          <>
+            <p className="mb-0 cb-text-secondary d-flex align-items-center gap-2">
+              <span className="spinner-grow spinner-grow-sm text-secondary" aria-hidden="true" />
+              {thinking ? t('room.thinking') : t('room.waiting')}
+            </p>
+            {thinking && (
+              <p className="small cb-text-secondary mt-2 mb-0">{t('room.thinkingHint')}</p>
+            )}
+          </>
         )}
       </div>
       {question && controls && <div className="mt-3">{controls}</div>}

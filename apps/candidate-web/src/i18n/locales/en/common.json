@@ -635,6 +635,7 @@
     "interviewer": "Interviewer",
     "followUp": "Follow-up",
     "thinking": "Preparing the next question…",
+    "thinkingHint": "The interview clock is paused while the interviewer prepares. Your answers are saved.",
     "waiting": "Waiting for the interviewer…",
     "transcript_one": "Transcript ({{count}} question)",
     "transcript_other": "Transcript ({{count}} questions)",
