@@ -156,6 +156,11 @@ export interface RoleBlueprintRecord {
   contentHash: string;
   generatedBy: { model: string; promptVersion: number | null } | null;
   sourceJobTargetId: Types.ObjectId | null;
+  /**
+   * The interview session an AI-generated blueprint was made for. Unique, so
+   * a retried analysis reuses its blueprint instead of creating another.
+   */
+  sourceSessionId?: Types.ObjectId | null;
   /** The candidate whose inputs produced an AI-generated blueprint (private to them and admins). */
   userId: Types.ObjectId | null;
   createdBy: Types.ObjectId | null;
@@ -180,6 +185,7 @@ const roleBlueprintSchema = new Schema<RoleBlueprintRecord>(
       default: null,
     },
     sourceJobTargetId: { type: Schema.Types.ObjectId, ref: 'JobTarget', default: null },
+    sourceSessionId: { type: Schema.Types.ObjectId, ref: 'InterviewSession', default: null },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     activatedAt: { type: Date, default: null },
@@ -197,6 +203,15 @@ roleBlueprintSchema.index(
     unique: true,
     partialFilterExpression: { roleId: { $type: 'objectId' }, status: 'ACTIVE' },
     name: 'one_active_per_role',
+  },
+);
+// At most one AI-generated blueprint per interview session (idempotent analysis retries).
+roleBlueprintSchema.index(
+  { sourceSessionId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { sourceSessionId: { $type: 'objectId' } },
+    name: 'one_generated_per_session',
   },
 );
 roleBlueprintSchema.index({ origin: 1, status: 1 });

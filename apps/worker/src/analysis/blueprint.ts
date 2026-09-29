@@ -1,7 +1,8 @@
 import {
   BlueprintContent,
+  CompetencyCategory,
   type BlueprintDraftAi,
-  type CompetencyCategory,
+  type RoleFamily,
   type RoleAnalysis,
   type RoleAnalysisAi,
   type RoundType,
@@ -122,6 +123,100 @@ export function matchRoleByTitle(title: string, roles: readonly MatchableRole[])
     if ([role.title, ...role.aliases].some((t) => normalizeTitle(t) === wanted)) return role.slug;
   }
   return null;
+}
+
+/** Library roles offered to `role.analyze` (prompt size and cost control). */
+export const ROLE_SHORTLIST_SIZE = 40;
+
+const tokens = (value: string) =>
+  new Set(
+    normalizeTitle(value)
+      .split(' ')
+      .filter((t) => t.length >= 2),
+  );
+
+export interface ShortlistRole extends MatchableRole {
+  family: RoleFamily;
+}
+
+/**
+ * The library roles most likely to match: exact title/alias matches first,
+ * then roles sharing words with the target title (weighted) and the job
+ * description, with a bonus for the company's role families. Capped, so the
+ * prompt does not grow with the library. Ties keep library order.
+ */
+export function shortlistRoles<R extends ShortlistRole>(
+  roles: readonly R[],
+  query: { title: string; jd?: string; families?: readonly RoleFamily[] },
+  limit = ROLE_SHORTLIST_SIZE,
+): R[] {
+  if (roles.length <= limit) return [...roles];
+  const exact = matchRoleByTitle(query.title, roles);
+  const titleWords = tokens(query.title);
+  const jdWords = tokens((query.jd ?? '').slice(0, 4000));
+  const families = new Set(query.families ?? []);
+  const scored = roles.map((role, index) => {
+    let score = role.slug === exact ? 1000 : 0;
+    for (const word of tokens([role.title, ...role.aliases].join(' '))) {
+      if (titleWords.has(word)) score += 10;
+      else if (jdWords.has(word)) score += 2;
+    }
+    if (families.has(role.family)) score += 5;
+    return { role, score, index };
+  });
+  return scored
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map((s) => s.role);
+}
+
+/**
+ * Keeps only competencies in the company's allowed question categories,
+ * re-weighted to 100. Returns the blueprint unchanged when no restriction
+ * applies or fewer than three competencies would remain (a blueprint needs
+ * at least three).
+ */
+export function restrictCategories(
+  blueprint: BlueprintContent,
+  allowed: readonly CompetencyCategory[],
+): { content: BlueprintContent; removed: string[] } {
+  if (allowed.length === 0) return { content: blueprint, removed: [] };
+  const keep = blueprint.competencies.filter((c) => allowed.includes(c.category));
+  if (keep.length === blueprint.competencies.length || keep.length < 3) {
+    return { content: blueprint, removed: [] };
+  }
+  const weights = distributeWeights(keep.map((c) => c.weight));
+  return {
+    content: BlueprintContent.parse({
+      ...blueprint,
+      competencies: keep.map((c, i) => ({ ...c, weight: weights[i]! })),
+    }),
+    removed: blueprint.competencies.filter((c) => !keep.includes(c)).map((c) => c.key),
+  };
+}
+
+/**
+ * Company guidance appended to the verified notes in analysis prompts: the
+ * question categories its interviews use and the role families it hires
+ * for. Empty when the company sets neither (or allows every category).
+ */
+export function companyGuidance(company: {
+  allowedQuestionCategories: readonly CompetencyCategory[];
+  roleFamilies: readonly RoleFamily[];
+}): string[] {
+  const lines: string[] = [];
+  const allowed = company.allowedQuestionCategories;
+  if (allowed.length > 0 && allowed.length < CompetencyCategory.options.length) {
+    lines.push(
+      `This company's interviews only cover these question categories: ${allowed.join(', ')}. Plan competencies in these categories only.`,
+    );
+  }
+  if (company.roleFamilies.length > 0) {
+    lines.push(
+      `This company hires for these role families: ${company.roleFamilies.join(', ')}. Prefer library roles in these families when they fit.`,
+    );
+  }
+  return lines;
 }
 
 /**
