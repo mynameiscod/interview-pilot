@@ -61,6 +61,29 @@ describe('payment settings', () => {
   });
 });
 
+describe('session, 2FA and data-rights settings', () => {
+  it('defaults to capped sessions, 2FA for super admins and a 7-day deletion grace', () => {
+    const env = loadEnv(apiEnvSchema, base);
+    expect(env.SESSION_MAX_AGE_CANDIDATE_DAYS).toBe(90);
+    expect(env.SESSION_MAX_AGE_ADMIN_DAYS).toBe(7);
+    expect(env.ADMIN_MFA_REQUIRED).toBe('super_admin');
+    expect(env.ACCOUNT_DELETION_GRACE_DAYS).toBe(7);
+    expect(loadEnv(workerEnvSchema, base).WORKER_ACCOUNT_ERASURE_INTERVAL_MS).toBe(3_600_000);
+  });
+
+  it('accepts 2FA for all admins and rejects unknown values', () => {
+    expect(loadEnv(apiEnvSchema, { ...base, ADMIN_MFA_REQUIRED: 'all' }).ADMIN_MFA_REQUIRED).toBe(
+      'all',
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...base, ADMIN_MFA_REQUIRED: 'none' })).toThrow(
+      /ADMIN_MFA_REQUIRED/,
+    );
+    expect(() => loadEnv(apiEnvSchema, { ...base, SESSION_MAX_AGE_ADMIN_DAYS: '60' })).toThrow(
+      /SESSION_MAX_AGE_ADMIN_DAYS/,
+    );
+  });
+});
+
 describe('loadEnv', () => {
   it('parses a valid API environment with defaults', () => {
     const env = loadEnv(apiEnvSchema, base);
