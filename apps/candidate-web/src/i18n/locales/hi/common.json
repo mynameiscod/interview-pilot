@@ -1038,6 +1038,10 @@
     "details": "विवरण",
     "view": "देखें",
     "viewNamed": "{{date}} की {{name}} ख़रीदारी देखें",
+    "receipt": "रसीद",
+    "receiptNamed": "{{date}} की {{name}} ख़रीदारी की रसीद डाउनलोड करें",
+    "receiptError": "रसीद डाउनलोड नहीं हो सकी। कृपया फिर से कोशिश करें।",
+    "partlyRefunded": "{{amount}} रिफ़ंड हुआ",
     "statuses": {
       "CREATED": "लंबित",
       "PAID": "भुगतान हो गया",

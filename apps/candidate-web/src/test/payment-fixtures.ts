@@ -44,9 +44,11 @@ export function makeOrder(overrides: Partial<CheckoutOrder> = {}): CheckoutOrder
 }
 
 export function makePurchase(overrides: Partial<PurchaseSummary> = {}): PurchaseSummary {
+  const status = overrides.status ?? 'CREATED';
+  const paid = status === 'PAID' || status === 'REFUNDED';
   return {
     id: 'p1',
-    status: 'CREATED',
+    status,
     plan: { code: 'STARTER', name: 'Starter', credits: 3, validityDays: 90 },
     couponCode: null,
     listPriceMinor: 49_900,
@@ -54,6 +56,9 @@ export function makePurchase(overrides: Partial<PurchaseSummary> = {}): Purchase
     totalMinor: 49_900,
     currency: 'INR',
     creditsIssuedAt: null,
+    refundedMinor: 0,
+    invoiceNumber: paid ? 'CPI/26-27/000001' : null,
+    receiptAvailable: paid,
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

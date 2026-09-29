@@ -1,7 +1,7 @@
 import { fail, fakeApi, makeSession, ok } from '@cbi/web-core/testing';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { makeOrder, makePlan, makePurchase, makeQuote } from '../../test/payment-fixtures';
 import { renderRoute } from '../../test/render';
 
@@ -327,6 +327,60 @@ describe('purchases', () => {
       'href',
       '/app/payments/p2',
     );
+  });
+
+  it('downloads receipts for paid purchases and shows partial refunds', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(new Blob(['%PDF-1.7']), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="receipt-CPI-26-27-000001.pdf"',
+          },
+        }),
+    );
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    const createObjectURL = vi.fn(() => 'blob:receipt');
+    let downloaded: string | null = null;
+    try {
+      const api = fakeApi({
+        ...signedIn,
+        'GET /payments/purchases': () =>
+          ok([
+            makePurchase({ id: 'p2', status: 'PAID', refundedMinor: 10_000 }),
+            makePurchase({ id: 'p1', status: 'FAILED' }),
+          ]),
+      });
+      await renderRoute('/app/purchases', { api });
+      const table = await screen.findByRole('table', { name: 'Your purchases' }, LOAD);
+      const [paid, failed] = within(table).getAllByRole('row').slice(1);
+      expect(paid).toHaveTextContent('₹100.00 refunded');
+      expect(within(failed!).queryByRole('button', { name: /receipt/ })).not.toBeInTheDocument();
+
+      vi.stubGlobal('fetch', fetchMock);
+      URL.createObjectURL = createObjectURL;
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+        this: HTMLAnchorElement,
+      ) {
+        downloaded = this.download;
+      });
+      const user = userEvent.setup();
+      await user.click(
+        within(paid!).getByRole('button', { name: /Download the receipt for the Starter/ }),
+      );
+      await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1));
+      const [url] = fetchMock.mock.calls[0] as unknown as [string];
+      expect(url).toMatch(/\/api\/v1\/payments\/purchases\/p2\/receipt$/);
+      expect(downloaded).toBe('receipt-CPI-26-27-000001.pdf');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
   });
 
   it('points to pricing when there are no purchases', async () => {
