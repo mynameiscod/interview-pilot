@@ -22,6 +22,7 @@
   "dependencies": {
     "@cbi/ai-core": "workspace:*",
     "@cbi/ai-runtime": "workspace:*",
+    "@cbi/auth-core": "workspace:*",
     "@cbi/config": "workspace:*",
     "@cbi/db": "workspace:*",
     "@cbi/documents": "workspace:*",

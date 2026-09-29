@@ -59,6 +59,20 @@ function CreditSummary({ interview }: { interview: InterviewSummary }) {
   );
 }
 
+/** A practice drill: free within the daily quota, so no credit is held. */
+function DrillSummary() {
+  const { t } = useTranslation();
+  return (
+    <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="start-credit">
+      <h2 id="start-credit" className="h5">
+        <i className="bi bi-lightning-charge me-2 text-secondary" aria-hidden="true" />
+        {t('start.creditTitle')}
+      </h2>
+      <p className="mb-0">{t('drill.start.freeNote')}</p>
+    </section>
+  );
+}
+
 /** Voice and video interviews: the device check and consents must be done before starting. */
 function VoiceReadinessCard({ interview }: { interview: InterviewSummary }) {
   const { t } = useTranslation();
@@ -174,7 +188,9 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
             : t('start.errors.consentNotReady')
           : startErrorMessage(t, err),
         inProgress: err instanceof ApiClientError && err.code === 'CONFLICT',
-        noCredits: err instanceof ApiClientError && err.code === 'INSUFFICIENT_CREDITS',
+        noCredits:
+          err instanceof ApiClientError &&
+          (err.code === 'INSUFFICIENT_CREDITS' || err.code === 'DRILL_LIMIT_REACHED'),
         voiceNotReady,
       });
       if (voiceNotReady) {
@@ -226,7 +242,9 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
       {isVoice && <VoiceReadinessCard interview={interview} />}
       {!isVoice && interview.consentsPending && <ConsentCard interview={interview} />}
 
-      {interview.campaign?.sponsored ? (
+      {interview.kind === 'DRILL' ? (
+        <DrillSummary />
+      ) : interview.campaign?.sponsored ? (
         <SponsoredSummary companyName={interview.campaign.companyName} />
       ) : (
         <CreditSummary interview={interview} />

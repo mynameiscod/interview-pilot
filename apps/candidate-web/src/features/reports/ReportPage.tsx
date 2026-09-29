@@ -6,6 +6,7 @@ import { Link, useLocation, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
+import { CertificatePanel } from '../progress/CertificatePanel';
 import { SharePanel } from '../proof/SharePanel';
 import { BenchmarkCard } from './components/BenchmarkCard';
 import { CodingResults } from './components/CodingResults';
@@ -134,6 +135,7 @@ function ReportView({ report }: { report: ReportSummary }) {
       />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />
       <SharePanel sessionId={report.sessionId} />
+      <CertificatePanel sessionId={report.sessionId} />
       <RecordingCard sessionId={report.sessionId} />
       {content.integrity && <SessionObservations integrity={content.integrity} />}
       {content.transcript && <ReportTranscript transcript={content.transcript} />}

@@ -50,35 +50,7 @@
   }
 }
 
-// Hero visual: what an interview can cover, plus the slogan.
-.cb-dash-visual {
-  position: relative;
-  border-radius: 1rem;
-  padding: 1.5rem;
-  background-color: rgba(var(--bs-secondary-rgb), 0.08);
-  overflow: hidden;
-}
-
-.cb-dash-visual-card {
-  background-color: var(--cb-surface);
-  border-radius: 0.8rem;
-  padding: 1rem 1.25rem;
-  box-shadow: 0 0.5rem 1.5rem rgba(var(--bs-primary-rgb), 0.08);
-}
-
-.cb-dash-slogan {
-  color: var(--cb-primary);
-  font-weight: 700;
-  font-style: italic;
-  line-height: 1.15;
-  font-size: 1.6rem;
-
-  span:nth-child(2) {
-    color: var(--cb-secondary-strong);
-  }
-}
-
-// Navy "start an interview" card.
+// Navy welcome card for new candidates.
 .cb-dash-start {
   border-radius: 1rem;
   padding: 1.75rem;
@@ -97,19 +69,6 @@
   :focus-visible {
     outline-color: var(--cb-background);
   }
-}
-
-.cb-dash-play {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 50%;
-  border: 2px solid var(--cb-secondary);
-  font-size: 1.5rem;
-  color: var(--cb-background);
 }
 
 // Status pills for interviews.
@@ -180,10 +139,4 @@
   border-radius: 0.8rem;
   padding: 1rem;
   background-color: var(--cb-surface-muted);
-}
-
-.cb-dash-tip {
-  border-radius: 1rem;
-  padding: 1rem 1.5rem;
-  background-color: rgba(var(--bs-secondary-rgb), 0.08);
 }

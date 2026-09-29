@@ -27,7 +27,10 @@ function optionalCandidate(c: Container): RequestHandler {
   return (req, res, next) => (req.headers.authorization ? auth(req, res, next) : next());
 }
 
-/** Public and candidate endpoints: `/analytics`, `/flags`, `/system/status`, `/proof`. */
+/**
+ * Public and candidate endpoints: `/analytics`, `/flags`, `/system/status`, `/proof`,
+ * `/certificates`.
+ */
 export function opsPublicRouter(c: Container): Router {
   const router = Router();
   const optional = optionalCandidate(c);
@@ -49,10 +52,15 @@ export function opsPublicRouter(c: Container): Router {
       .set('X-Robots-Tag', 'noindex')
       .json({ data: await c.proof.view(String(req.params.token)) });
   });
+  router.get('/certificates/:code', async (req, res) => {
+    noStore(res)
+      .set('X-Robots-Tag', 'noindex')
+      .json({ data: await c.certificates.verify(String(req.params.code)) });
+  });
   return router;
 }
 
-/** `/reports/:sessionId/shares` and `/reports/shares/:id` (candidate). */
+/** `/reports/:sessionId/shares`, `/reports/shares/:id` and `/reports/:sessionId/certificate` (candidate). */
 export function shareLinksRouter(c: Container): Router {
   const router = Router();
   router.use(authenticate('candidate', c), (_req, res, next) => {
@@ -73,6 +81,23 @@ export function shareLinksRouter(c: Container): Router {
     res.status(201).json({
       data: await c.proof.create(user(req), String(req.params.sessionId), body, clientContext(req)),
     });
+  });
+  // Readiness certificates (same flag as proof links).
+  router.get('/:sessionId/certificate', async (req, res) => {
+    res.json({ data: await c.certificates.status(user(req), String(req.params.sessionId)) });
+  });
+  router.post('/:sessionId/certificate', async (req, res) => {
+    res.json({
+      data: await c.certificates.issue(user(req), String(req.params.sessionId), clientContext(req)),
+    });
+  });
+  router.get('/:sessionId/certificate/pdf', async (req, res) => {
+    const { body, fileName } = await c.certificates.pdf(user(req), String(req.params.sessionId));
+    res
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `attachment; filename="${fileName}"`)
+      .set('X-Content-Type-Options', 'nosniff')
+      .send(body);
   });
   return router;
 }

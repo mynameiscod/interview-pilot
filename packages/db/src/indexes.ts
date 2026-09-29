@@ -26,6 +26,12 @@ import {
   SystemSettingModel,
 } from './models/ops.js';
 import { CodingAttemptModel, ProblemModel } from './models/coding.js';
+import {
+  BadgeAwardModel,
+  CertificateModel,
+  PlanItemProgressModel,
+  UserProgressModel,
+} from './models/progress.js';
 import { ConsentModel, ConsentTextModel } from './models/consent.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
@@ -110,6 +116,10 @@ const MODELS = [
   SystemSettingModel,
   ShareLinkModel,
   IntegrationConfigModel,
+  PlanItemProgressModel,
+  UserProgressModel,
+  BadgeAwardModel,
+  CertificateModel,
 ];
 
 export interface EnsureIndexesOptions {

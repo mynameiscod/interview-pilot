@@ -130,6 +130,8 @@ A candidate can share a read-only proof of one report by link.
 - **What it never shows:** the transcript, answers, evidence, rationales, summary, the target company, or contact details.
 - **Which revision:** the latest report revision the candidate may see. If the report stops being visible to the candidate (a campaign hides it), its links stop working.
 - **Search engines:** proof pages are served with `X-Robots-Tag: noindex`.
+- **Readiness certificates** use the same flag: a report at or above `practice.certificateMinBand` can be issued a certificate with a PDF and a public check page (`/verify/<code>`), and a proof link shows the certificate's check link. See [progress and practice](progress-and-practice.md#readiness-certificates).
+- **Settings:** `practice` holds the drill quota and length, the certificate band and the default weekly goal. Drills are left out of the interview KPIs and the funnel.
 
 ## Audit log
 

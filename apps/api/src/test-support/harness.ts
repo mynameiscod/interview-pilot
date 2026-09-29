@@ -51,6 +51,7 @@ export type RecordedJob =
   | { kind: 'tailor'; id: string }
   | { kind: 'evaluate'; id: string; rerun: boolean }
   | { kind: 'reportPdf'; id: string; revision: number }
+  | { kind: 'certificatePdf'; id: string }
   | { kind: 'campaignPackage'; id: string };
 
 /** Records enqueued work instead of sending it to Redis; `fail` simulates a queue outage. */
@@ -71,6 +72,7 @@ export function createRecordingJobQueues() {
       return 1;
     },
     renderReportPdf: (id, revision) => record({ kind: 'reportPdf', id, revision }),
+    renderCertificatePdf: (id) => record({ kind: 'certificatePdf', id }),
     exportCampaignPackage: (id) => record({ kind: 'campaignPackage', id }),
     close: async () => undefined,
   };

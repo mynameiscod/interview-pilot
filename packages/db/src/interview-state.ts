@@ -211,7 +211,10 @@ export async function applySessionEvent(input: ApplyEventInput): Promise<ApplyEv
       switch (effect.type) {
         case 'RESERVE_CREDIT': {
           const sponsored = input.set?.sponsored ?? s.sponsored;
-          if (sponsored) {
+          if (s.kind === 'DRILL') {
+            // Drills are free within the daily quota (checked before the start): no credit moves.
+            $set.credit = { status: 'FREE', lotId: null };
+          } else if (sponsored) {
             // A campaign pays: the candidate's credits are not touched (nothing to settle later).
             $set.credit = { status: 'SPONSORED', lotId: null };
           } else {
@@ -224,6 +227,8 @@ export async function applySessionEvent(input: ApplyEventInput): Promise<ApplyEv
         case 'CONSUME_CREDIT':
         case 'REFUND_CREDIT': {
           const refund = effect.type === 'REFUND_CREDIT';
+          // A free drill never reserved anything (the engine only settles a reserved credit).
+          if (s.credit?.status === 'FREE') break;
           if (s.credit?.status === 'SPONSORED') {
             // The candidate's credits were never touched; a refund returns the campaign's budget.
             if (refund && s.campaignId) {

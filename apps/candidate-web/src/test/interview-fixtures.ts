@@ -88,6 +88,8 @@ export function makeAnalysis(overrides: Partial<RoleAnalysis> = {}): RoleAnalysi
 export function makeInterview(overrides: Partial<InterviewSummary> = {}): InterviewSummary {
   return {
     id: 'int1',
+    kind: 'INTERVIEW',
+    drill: null,
     state: 'READY',
     mode: 'TEXT',
     language: 'auto',

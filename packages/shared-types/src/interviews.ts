@@ -86,18 +86,40 @@ export const RoleAnalysis = z.object({
 });
 export type RoleAnalysis = z.infer<typeof RoleAnalysis>;
 
-/** SPONSORED: a campaign pays for the interview; the candidate's credits are not used. */
+/**
+ * SPONSORED: a campaign pays for the interview; the candidate's credits are not used.
+ * FREE: a practice drill within the daily free quota; no credit is involved.
+ */
 export const InterviewCreditStatus = z.enum([
   'NONE',
   'RESERVED',
   'CONSUMED',
   'REFUNDED',
   'SPONSORED',
+  'FREE',
 ]);
 export type InterviewCreditStatus = z.infer<typeof InterviewCreditStatus>;
 
+/**
+ * INTERVIEW: a full readiness interview. DRILL: a short practice session on
+ * one competency of the candidate's current blueprint (see progress.ts).
+ */
+export const InterviewKind = z.enum(['INTERVIEW', 'DRILL']);
+export type InterviewKind = z.infer<typeof InterviewKind>;
+
+/** What a drill practises, and the interview whose blueprint it came from. */
+export const DrillInfo = z.object({
+  competencyKey: z.string(),
+  competencyName: z.string(),
+  sourceSessionId: z.string(),
+});
+export type DrillInfo = z.infer<typeof DrillInfo>;
+
 export const InterviewSummary = z.object({
   id: z.string(),
+  kind: InterviewKind,
+  /** Set for drills (null for interviews). */
+  drill: DrillInfo.nullable(),
   state: InterviewState,
   mode: InterviewMode,
   language: InterviewLanguagePreference,

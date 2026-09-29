@@ -197,8 +197,6 @@
     "greeting": "Hi {{name}}",
     "subtitle": "Your personalised interview practice space.",
     "profileLink": "Review your profile",
-    "startTitle": "Practise for your next interview",
-    "startBody": "Add your resume and the job description, or just pick a role. We will plan a realistic interview for it.",
     "startCta": "Start an interview",
     "recentTitle": "Recent interviews",
     "recentEmpty": "No interviews yet. Start one to see it here.",
@@ -212,18 +210,6 @@
     "viewReport": "View report",
     "viewReportNamed": "View report for {{title}}",
     "eyebrow": "Welcome back",
-    "tagline": "Practise with AI. Get real feedback. Be interview ready.",
-    "features": {
-      "roleSpecific": "Role-specific questions",
-      "realistic": "Realistic interview experience",
-      "feedback": "Detailed AI feedback"
-    },
-    "coverageTitle": "Your interview can cover",
-    "slogan": {
-      "practise": "Practise.",
-      "improve": "Improve.",
-      "hired": "Get hired."
-    },
     "recentAll": "View history",
     "minutes_one": "{{count}} min",
     "minutes_other": "{{count}} mins",
@@ -234,9 +220,7 @@
       "PROBLEM_SOLVING": "Thinking through open problems",
       "CODING": "Write code in a real editor",
       "BEHAVIORAL": "Teamwork, leadership, situations"
-    },
-    "tipLabel": "Tip",
-    "tip": "Add the job description as well as your resume. The questions then follow what the role actually asks for."
+    }
   },
   "profile": {
     "title": "Profile",
@@ -797,7 +781,8 @@
       "RESERVED": "We are finalising your credit.",
       "NONE": "No credit was used.",
       "SPONSORED": "Sponsored by {{company}} — no credits used.",
-      "sponsoredGeneric": "Sponsored — no credits used."
+      "sponsoredGeneric": "Sponsored — no credits used.",
+      "FREE": "This drill was free. No credit was used."
     },
     "reportReady": "Your readiness report is ready.",
     "stalled": "This is taking longer than usual — our team has been notified; your answers are saved.",
@@ -816,7 +801,8 @@
         "stuck": "delayed",
         "todo": "waiting"
       }
-    }
+    },
+    "viewDrill": "See your drill result"
   },
   "report": {
     "eyebrow": "Readiness report",
@@ -1969,5 +1955,217 @@
       "openCheck": "Open Resume check",
       "editNote": "Corrections you make here update the match score at once and are used the next time this interview is analysed."
     }
+  },
+  "progress": {
+    "loadError": "We could not load your progress. Please refresh the page.",
+    "notScored": "Not scored",
+    "practise": "Practise",
+    "practiseNamed": "Practise {{name}}",
+    "hero": {
+      "readiness": "Your readiness: {{score}}/100 · {{band}}",
+      "noScore": "Your latest interview: {{band}}",
+      "delta": "{{change}} since your last attempt",
+      "quickDrill": "Quick drill",
+      "drillOn": "5-minute drill on {{name}} · {{left}} of {{total}} free drills left today",
+      "drillNeedsInterview": "Drills practise the skills from your first interview. Finish one to unlock them.",
+      "drillsOff": "Practice drills are not available right now."
+    },
+    "empty": {
+      "title": "Your progress starts with your first interview",
+      "body": "After your first interview this page shows how ready you are, your plan, practice drills for your weakest skills and your streak.",
+      "steps": {
+        "inputs": {
+          "title": "Add your role",
+          "body": "Your resume and the job description, or just a role."
+        },
+        "interview": {
+          "title": "Take a practice interview",
+          "body": "About 30 minutes, by text or voice."
+        },
+        "practise": {
+          "title": "Practise and improve",
+          "body": "Tick off your plan and run 5-minute drills."
+        }
+      }
+    },
+    "readiness": {
+      "title": "Readiness over time",
+      "role": "Latest role: {{title}}",
+      "onePoint": "Take another interview to see your trend.",
+      "chartSummary_one": "Readiness chart: {{count}} scored interview, at {{last}} out of 100.",
+      "chartSummary_other": "Readiness chart: {{count}} scored interviews, from {{first}} to {{last}} out of 100.",
+      "noScores": "Readiness chart: no scored interviews yet.",
+      "tableCaption": "Readiness per interview, oldest first",
+      "colDate": "Date",
+      "colInterview": "Interview",
+      "colScore": "Score out of 100",
+      "colBand": "Readiness"
+    },
+    "dimensions": {
+      "title": "Skills",
+      "subtitle": "Scores from your interviews and drills for this role, oldest to latest.",
+      "empty": "Your skills appear here after your first interview.",
+      "notAssessed": "Not assessed yet",
+      "change": "({{change}})",
+      "tableCaption": "Skill scores across interviews and drills, oldest first",
+      "colSkill": "Skill",
+      "colScores": "Scores, oldest first",
+      "colLatest": "Latest",
+      "colChange": "Change",
+      "drillScore": "{{score}} (drill)"
+    },
+    "plan": {
+      "title": "Your plan",
+      "from": "From {{title}}, {{date}}",
+      "done": "{{done}} of {{total}} done",
+      "openReport": "Open the report",
+      "practise": "Practise this",
+      "saveError": "We could not save that. Please try again.",
+      "none": "Your plan appears here once your latest report is ready."
+    },
+    "streak": {
+      "title": "Streak and goals",
+      "current_one": "{{count}}-day streak",
+      "current_other": "{{count}}-day streak",
+      "longest_one": "Longest: {{count}} day",
+      "longest_other": "Longest: {{count}} days",
+      "doneToday": "You practised today",
+      "keepGoing": "Practise today to keep it going",
+      "startToday": "A drill today starts a streak",
+      "note": "A day counts when you finish an interview or a drill (India time)."
+    },
+    "goal": {
+      "week": "This week: {{done}} of {{target}} sessions",
+      "set": "Set a goal or target date",
+      "edit": "Change goals",
+      "weeklyLabel": "Weekly goal",
+      "perWeek_one": "{{count}} session a week",
+      "perWeek_other": "{{count}} sessions a week",
+      "dateLabel": "Date of your real interview (optional)",
+      "dateHelp": "We suggest a practice schedule up to that day.",
+      "save": "Save goals",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "daysLeft_one": "{{count}} day to your interview on {{date}}",
+      "daysLeft_other": "{{count}} days to your interview on {{date}}",
+      "today": "Your interview is today. Good luck!",
+      "passed": "Your interview date ({{date}}) has passed. Set a new one?",
+      "scheduleTitle": "Suggested schedule",
+      "drillOn": "Drill: {{name}}",
+      "mockInterview": "Full mock interview"
+    },
+    "badges": {
+      "title": "Milestones",
+      "count": "{{earned}} of {{total}}",
+      "earned": "Earned",
+      "notYet": "Not earned yet",
+      "earnedOn": "Earned {{date}}",
+      "names": {
+        "FIRST_INTERVIEW": "First interview",
+        "FIRST_VOICE_INTERVIEW": "First voice interview",
+        "STREAK_3": "3-day streak",
+        "STREAK_7": "7-day streak",
+        "READINESS_PLUS_10": "+10 readiness",
+        "PLAN_COMPLETE": "Plan complete",
+        "CODING_PASSED": "Coding round passed"
+      },
+      "how": {
+        "FIRST_INTERVIEW": "Finish your first interview.",
+        "FIRST_VOICE_INTERVIEW": "Finish an interview by voice.",
+        "STREAK_3": "Practise three days in a row.",
+        "STREAK_7": "Practise seven days in a row.",
+        "READINESS_PLUS_10": "Score 10 points above your first attempt at a role.",
+        "PLAN_COMPLETE": "Tick off every item of a plan.",
+        "CODING_PASSED": "Pass every test of a coding problem."
+      }
+    },
+    "areas": {
+      "drill": "Drill: {{name}}"
+    },
+    "recentDrills": {
+      "title": "Recent drills",
+      "openNamed": "Open the drill on {{name}}"
+    }
+  },
+  "drill": {
+    "eyebrow": "Practice drill",
+    "start": {
+      "title": "Drill: {{name}}",
+      "chooseTitle": "Choose a skill to practise",
+      "loadError": "We could not load this drill.",
+      "whatTitle": "What to expect",
+      "questions_one": "{{count}} question on this skill, about {{minutes}} minutes.",
+      "questions_other": "{{count}} questions on this skill, about {{minutes}} minutes.",
+      "feedback": "Quick feedback on each answer and a score for the skill. No PDF.",
+      "firstScore": "This will be your first score for this skill.",
+      "lastScore": "Your latest score for this skill: {{score}}/100.",
+      "free": "Free: {{left}} of {{total}} drills left today.",
+      "freeNote": "This practice drill is free. It does not use a credit.",
+      "modeTitle": "How do you want to answer?",
+      "modes": {
+        "TEXT": "Type your answers.",
+        "VOICE": "Speak your answers (we check your microphone first)."
+      },
+      "action": "Start the drill",
+      "starting": "Starting…",
+      "upgrade": "Want to keep going today? Take a full interview, which uses a credit.",
+      "errors": {
+        "limit": "You have used today's free drills. More are free tomorrow.",
+        "noInterview": "Finish an interview first: drills practise the skills from your latest interview."
+      }
+    },
+    "result": {
+      "title": "Drill result: {{name}}",
+      "loadError": "We could not load this drill.",
+      "inProgress": "This drill is still in progress.",
+      "evaluating": "Scoring your answers. This takes about a minute.",
+      "scoreTitle": "Your score",
+      "noScore": "There was not enough in your answers to score this skill. Try again with a specific example.",
+      "firstScore": "Your first score for this skill.",
+      "previous": "Before: {{score}} ({{change}})",
+      "confidence": "Evidence confidence: {{level}}",
+      "questionsTitle": "Feedback on each answer",
+      "skipped": "Not answered.",
+      "noFeedback": "No specific feedback for this answer.",
+      "strength": "Strength",
+      "toImprove": "To improve",
+      "neutral": "Note",
+      "again": "Practise again"
+    }
+  },
+  "certificate": {
+    "title": "Readiness certificate",
+    "notEligible": "Certificates are issued for reports rated “{{band}}” or higher.",
+    "eligible": "This report qualifies for a readiness certificate: a one-page PDF with a link anyone can use to check it.",
+    "issue": "Create certificate",
+    "issuing": "Creating…",
+    "issued": "Certificate {{code}}, issued {{date}}.",
+    "verifyAt": "Anyone can check it at",
+    "download": "Download certificate (PDF)",
+    "preparing": "Preparing the PDF…",
+    "proofLink": "Readiness certificate {{code}}",
+    "verify": {
+      "valid": "This readiness certificate is genuine.",
+      "notFoundTitle": "Certificate not found",
+      "notFound": "We could not find a certificate with this code. Check the code, or ask the candidate for a new link.",
+      "role": "Role",
+      "band": "Readiness",
+      "score": "Overall score",
+      "completed": "Interview date",
+      "issued": "Issued",
+      "code": "Certificate code",
+      "superseded": "A later manual review updated the report behind this certificate. The certificate shows the original result.",
+      "disclaimer": "This certificate records an AI-assessed practice interview on CareerPilot Interview. It is guidance on interview readiness, not a hiring decision or a qualification."
+    }
+  },
+  "unsubscribe": {
+    "title": "Stop practice emails",
+    "body": "You will stop getting practice reminders and product updates by email. Account and payment emails still arrive.",
+    "action": "Unsubscribe",
+    "working": "Unsubscribing…",
+    "done": "Done. You will not get practice emails any more.",
+    "profileHint": "You can turn them back on in your profile at any time.",
+    "profile": "Open your profile",
+    "invalid": "This unsubscribe link is not valid. You can change your email preferences in your profile."
   }
 }

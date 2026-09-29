@@ -42,6 +42,8 @@ export const EvaluationJob = {
   STAGE: 'evaluation.stage',
   /** The PDF of a report revision created after the pipeline (manual review). */
   REPORT_PDF: 'evaluation.report_pdf',
+  /** A readiness certificate's PDF (progress hub). */
+  CERTIFICATE_PDF: 'evaluation.certificate_pdf',
 } as const;
 export type EvaluationJob = (typeof EvaluationJob)[keyof typeof EvaluationJob];
 
@@ -56,6 +58,13 @@ export interface ReportPdfJobData {
   sessionId: string;
   revision: number;
 }
+
+export interface CertificatePdfJobData {
+  certificateId: string;
+}
+
+/** One job per certificate: issuing it twice is a no-op. */
+export const certificatePdfJobId = (certificateId: string) => `certificate-pdf-${certificateId}`;
 
 /** Deterministic id per session, stage and run: enqueueing a stage twice is a no-op. */
 export const evaluationJobId = (sessionId: string, stage: ProcessingStage, run: number) =>

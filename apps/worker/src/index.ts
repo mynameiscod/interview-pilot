@@ -1,5 +1,6 @@
 import { hostname } from 'node:os';
 import { buildAiRuntime, buildIntegrations } from '@cbi/ai-runtime';
+import { emailLinkKey } from '@cbi/auth-core';
 import {
   createLogger,
   initErrorTracking,
@@ -97,6 +98,16 @@ async function main(): Promise<void> {
     },
     erasure: { storage, intervalMs: env.WORKER_ACCOUNT_ERASURE_INTERVAL_MS },
     analyticsRollupIntervalMs: env.WORKER_ANALYTICS_ROLLUP_INTERVAL_MS,
+    nudges: {
+      intervalMs: env.WORKER_PRACTICE_NUDGE_INTERVAL_MS,
+      deps: {
+        email: integrations.email,
+        emailEnabled: () => integrations.ready('email'),
+        candidateUrl: env.PUBLIC_CANDIDATE_URL,
+        // The API verifies unsubscribe links with the same derived key.
+        linkKey: emailLinkKey(Buffer.from(env.AI_SECRETS_MASTER_KEY, 'base64')),
+      },
+    },
     payments: {
       gateway: integrations.payments,
       intervalMs: env.WORKER_PAYMENT_RECONCILE_INTERVAL_MS,

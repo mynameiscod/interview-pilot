@@ -67,6 +67,13 @@ export const DataExportBundle = z.object({
   feedback: z.array(loose),
   recordings: z.array(loose),
   shareLinks: z.array(loose),
+  /** Progress hub: goals, plan checklist ticks, badges and readiness certificates. */
+  progress: z.object({
+    goals: loose.nullable(),
+    planItems: z.array(loose),
+    badges: z.array(loose),
+    certificates: z.array(loose),
+  }),
   campaignApplications: z.array(loose),
   purchases: z.array(loose),
   creditLedger: z.array(loose),

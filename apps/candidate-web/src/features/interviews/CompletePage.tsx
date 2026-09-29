@@ -33,6 +33,7 @@ const STEPS: { key: string; stages: ProcessingStage[] }[] = [
 
 function CreditOutcome({ interview, outcome }: { interview: InterviewSummary; outcome: Outcome }) {
   const { t } = useTranslation();
+  if (interview.credit === 'FREE') return <p className="mb-0">{t('complete.credit.FREE')}</p>;
   if (interview.credit === 'SPONSORED') {
     return (
       <p className="mb-0">
@@ -161,7 +162,9 @@ export function CompletePage() {
   if (!isEnded(data)) return <Navigate to={interviewPath(data)} replace />;
   const outcome = outcomeOf(data);
   const stalled = progress.data?.status === 'FAILED' && !reportReady;
-  const reportPath = `/app/reports/${data.id}`;
+  // A drill's result is its own page (no full report, PDF or feedback form).
+  const drill = data.kind === 'DRILL';
+  const reportPath = drill ? `/app/drills/${data.id}` : `/app/reports/${data.id}`;
 
   return (
     <div className="container py-5">
@@ -203,14 +206,16 @@ export function CompletePage() {
           {reportReady && (
             <>
               <Link to={reportPath} className="btn btn-primary">
-                {t('complete.viewReport')}
+                {drill ? t('complete.viewDrill') : t('complete.viewReport')}
               </Link>
-              <Link
-                to={{ pathname: reportPath, hash: FEEDBACK_ANCHOR }}
-                className="btn btn-outline-primary"
-              >
-                {t('complete.rateInterview')}
-              </Link>
+              {!drill && (
+                <Link
+                  to={{ pathname: reportPath, hash: FEEDBACK_ANCHOR }}
+                  className="btn btn-outline-primary"
+                >
+                  {t('complete.rateInterview')}
+                </Link>
+              )}
             </>
           )}
           <Link to="/app" className={`btn ${reportReady ? 'btn-link' : 'btn-primary'}`}>

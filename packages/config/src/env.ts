@@ -517,6 +517,15 @@ export const workerEnvSchema = baseEnvSchema
       .int()
       .min(60_000)
       .default(15 * 60_000),
+    /**
+     * How often practice nudge emails are considered (candidates who opted into
+     * product updates; at most one per candidate every 3 days).
+     */
+    WORKER_PRACTICE_NUDGE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(10 * 60_000)
+      .default(6 * 60 * 60_000),
     /** How often accounts past their deletion grace period are erased. */
     WORKER_ACCOUNT_ERASURE_INTERVAL_MS: z.coerce
       .number()

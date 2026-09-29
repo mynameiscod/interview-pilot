@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 
-const BAND_LABELS: Record<ReportContent['overall']['band'], string> = {
+export const BAND_LABELS: Record<ReportContent['overall']['band'], string> = {
   READY: 'Interview-ready',
   READY_WITH_GAPS: 'Interview-ready with gaps',
   DEVELOPING: 'Developing',
@@ -43,7 +43,7 @@ export function pdfSafe(text: string): string {
 // ---- Embedded fonts ----------------------------------------------------------------------
 
 export type Script = 'latin' | 'devanagari' | 'telugu';
-type Style = 'regular' | 'bold' | 'italic';
+export type Style = 'regular' | 'bold' | 'italic';
 
 /** Files under apps/worker/assets/fonts (infrastructure/scripts/fetch-fonts.mjs restores them). */
 const FONT_FILES: Record<Script, Partial<Record<Style, string>>> = {
@@ -152,6 +152,54 @@ const clip = (t: string, max: number) =>
     ? t
     : `${t.slice(0, t.lastIndexOf(' ', max) > 0 ? t.lastIndexOf(' ', max) : max)}...`;
 
+export type TextWriter = (
+  text: string,
+  style: Style,
+  size: number,
+  opts?: PDFKit.Mixins.TextOptions,
+) => PDFKit.PDFDocument;
+
+/**
+ * Registers the embedded fonts on `doc` (when `dir` is set) and returns a
+ * writer for one paragraph: a run per script, chained with `continued` so
+ * lines still wrap. Without fonts it writes {@link pdfSafe} text in the
+ * standard fonts. Shared by reports and certificates.
+ */
+export function createTextWriter(doc: PDFKit.PDFDocument, dir: string | null): TextWriter {
+  const fontName = (script: Script, style: Style) => `${script}-${style}`;
+  if (dir !== null) {
+    for (const script of Object.keys(FONT_FILES) as Script[]) {
+      for (const style of Object.keys(STANDARD_FONTS) as Style[]) {
+        // A style the script lacks (e.g. Telugu italic) or a missing file uses the regular face.
+        const file = FONT_FILES[script][style];
+        const path = join(
+          dir,
+          file && existsSync(join(dir, file)) ? file : FONT_FILES[script].regular!,
+        );
+        doc.registerFont(fontName(script, style), path);
+      }
+    }
+  }
+  return (t, style, size, opts = {}) => {
+    doc.fontSize(size);
+    if (dir === null) return doc.font(STANDARD_FONTS[style]).text(pdfSafe(t), opts);
+    // Noto Sans has no arrow glyph.
+    const runs = scriptRuns(t.replaceAll('→', '->'));
+    doc.font(fontName('latin', style));
+    if (runs.length === 0) return doc.text('', opts);
+    // pdfkit places each call's baseline at its own font's ascent; pin every run to
+    // the Latin font's so mixed-script lines sit on one baseline.
+    const ascent =
+      ((doc as unknown as { _font: { ascender: number } })._font.ascender / 1000) * size;
+    runs.forEach((run, i) =>
+      doc
+        .font(fontName(run.script, style))
+        .text(run.text, { ...opts, baseline: -ascent, continued: i < runs.length - 1 }),
+    );
+    return doc;
+  };
+}
+
 const date = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '-');
 
 export interface RenderOptions {
@@ -206,40 +254,7 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const fontName = (script: Script, style: Style) => `${script}-${style}`;
-    if (dir !== null) {
-      for (const script of Object.keys(FONT_FILES) as Script[]) {
-        for (const style of Object.keys(STANDARD_FONTS) as Style[]) {
-          // A style the script lacks (e.g. Telugu italic) or a missing file uses the regular face.
-          const file = FONT_FILES[script][style];
-          const path = join(
-            dir,
-            file && existsSync(join(dir, file)) ? file : FONT_FILES[script].regular!,
-          );
-          doc.registerFont(fontName(script, style), path);
-        }
-      }
-    }
-
-    /** One paragraph: a run per script, chained with `continued` so lines still wrap. */
-    const write = (t: string, style: Style, size: number, opts: PDFKit.Mixins.TextOptions = {}) => {
-      doc.fontSize(size);
-      if (!embedded) return doc.font(STANDARD_FONTS[style]).text(pdfSafe(t), opts);
-      // Noto Sans has no arrow glyph.
-      const runs = scriptRuns(t.replaceAll('→', '->'));
-      doc.font(fontName('latin', style));
-      if (runs.length === 0) return doc.text('', opts);
-      // pdfkit places each call's baseline at its own font's ascent; pin every run to
-      // the Latin font's so mixed-script lines sit on one baseline.
-      const ascent =
-        ((doc as unknown as { _font: { ascender: number } })._font.ascender / 1000) * size;
-      runs.forEach((run, i) =>
-        doc
-          .font(fontName(run.script, style))
-          .text(run.text, { ...opts, baseline: -ascent, continued: i < runs.length - 1 }),
-      );
-      return doc;
-    };
+    const write = createTextWriter(doc, dir);
 
     const h1 = (t: string) => write(t, 'bold', 18).moveDown(0.3);
     const h2 = (t: string) => {

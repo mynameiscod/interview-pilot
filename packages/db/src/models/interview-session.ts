@@ -22,7 +22,7 @@ import type {
 import type { PlannerState } from '@cbi/interview-engine';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
-export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED' | 'SPONSORED';
+export type CreditStatus = 'NONE' | 'RESERVED' | 'CONSUMED' | 'REFUNDED' | 'SPONSORED' | 'FREE';
 
 /** A dimension scored by the pipeline, kept until the score revision is written. */
 export interface DraftDimensionScore {
@@ -58,9 +58,20 @@ export interface SessionClockRecord {
   held?: boolean;
 }
 
+/** A practice drill: one competency of the blueprint of an earlier interview. */
+export interface SessionDrillRecord {
+  competencyKey: string;
+  competencyName: string;
+  sourceSessionId: Types.ObjectId;
+}
+
 export interface InterviewSessionRecord {
   _id: Types.ObjectId;
   userId: Types.ObjectId;
+  /** INTERVIEW (default; absent on older sessions) or DRILL. */
+  kind: 'INTERVIEW' | 'DRILL';
+  /** Set for drills. */
+  drill: SessionDrillRecord | null;
   jobTargetId: Types.ObjectId;
   resumeId: Types.ObjectId | null;
   /** Exact versions this session uses (§59); set at creation/analysis and never changed. */
@@ -164,6 +175,18 @@ const voiceSchema = new Schema<SessionVoiceRecord>(
 const sessionSchema = new Schema<InterviewSessionRecord>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    kind: { type: String, enum: ['INTERVIEW', 'DRILL'], required: true, default: 'INTERVIEW' },
+    drill: {
+      type: new Schema<SessionDrillRecord>(
+        {
+          competencyKey: { type: String, required: true },
+          competencyName: { type: String, required: true },
+          sourceSessionId: { type: Schema.Types.ObjectId, ref: 'InterviewSession', required: true },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
     jobTargetId: { type: Schema.Types.ObjectId, ref: 'JobTarget', required: true },
     resumeId: { type: Schema.Types.ObjectId, ref: 'Resume', default: null },
     templateId: { type: Schema.Types.ObjectId, ref: 'InterviewTemplate', required: true },
@@ -225,7 +248,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
         {
           status: {
             type: String,
-            enum: ['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED', 'SPONSORED'],
+            enum: ['NONE', 'RESERVED', 'CONSUMED', 'REFUNDED', 'SPONSORED', 'FREE'],
             required: true,
           },
           lotId: { type: Schema.Types.ObjectId, default: null },
@@ -289,6 +312,9 @@ sessionSchema.index(
 );
 
 sessionSchema.index({ campaignId: 1, state: 1 });
+// Drill quotas (drills started today) and practice days (finished sessions).
+sessionSchema.index({ userId: 1, kind: 1, startedAt: -1 });
+sessionSchema.index({ userId: 1, endedAt: -1 });
 sessionSchema.index({ 'review.flagged': 1, updatedAt: -1 });
 
 export const InterviewSessionModel: Model<InterviewSessionRecord> =

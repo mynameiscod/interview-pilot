@@ -2,6 +2,7 @@ import { beginEvaluation, FIRST_STAGE, type Redis } from '@cbi/db';
 import {
   AnalysisJob,
   campaignPackageJobId,
+  certificatePdfJobId,
   DocumentJob,
   EvaluationJob,
   evaluationJobId,
@@ -9,6 +10,7 @@ import {
   jobId,
   QueueName,
   type CampaignPackageJobData,
+  type CertificatePdfJobData,
   type EvaluationStageJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
@@ -33,6 +35,8 @@ export interface JobQueues {
   evaluateInterview(sessionId: string, opts?: { rerun?: boolean }): Promise<number | null>;
   /** Renders the PDF of a report revision created by a manual review. */
   renderReportPdf(sessionId: string, revision: number): Promise<void>;
+  /** Renders a readiness certificate's PDF (once per certificate). */
+  renderCertificatePdf(certificateId: string): Promise<void>;
   /** Builds a campaign package ZIP for a campaignExports record. */
   exportCampaignPackage(exportId: string): Promise<void>;
   close(): Promise<void>;
@@ -97,6 +101,12 @@ export function createBullJobQueues(connection: Redis): JobQueues {
       const data: ReportPdfJobData = { sessionId, revision };
       await evaluation.add(EvaluationJob.REPORT_PDF, data, {
         jobId: `report-pdf-${sessionId}-${revision}`,
+      });
+    },
+    async renderCertificatePdf(certificateId) {
+      const data: CertificatePdfJobData = { certificateId };
+      await evaluation.add(EvaluationJob.CERTIFICATE_PDF, data, {
+        jobId: certificatePdfJobId(certificateId),
       });
     },
     async exportCampaignPackage(exportId) {

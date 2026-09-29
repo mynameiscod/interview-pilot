@@ -20,6 +20,7 @@ export * from './media.js';
 export * from './payments.js';
 export * from './permissions.js';
 export * from './privacy.js';
+export * from './progress.js';
 export * from './queues.js';
 export * from './resume-tools.js';
 export * from './review.js';

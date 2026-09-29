@@ -48,5 +48,7 @@ export const ProofView = z.object({
   reviewed: z.boolean(),
   expiresAt: z.iso.datetime(),
   disclaimer: z.string(),
+  /** The readiness certificate issued for this interview, if any (its public check). */
+  certificate: z.object({ code: z.string(), verifyPath: z.string() }).nullable().optional(),
 });
 export type ProofView = z.infer<typeof ProofView>;

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  CertificateModel,
   InterviewReportModel,
   InterviewSessionModel,
   ShareLinkModel,
@@ -152,10 +153,14 @@ export function createProofService(deps: {
         { returnDocument: 'after' },
       ).lean();
       if (!link) throw notFound();
-      const [report, session, profile] = await Promise.all([
+      const [report, session, profile, certificate] = await Promise.all([
         visibleReport(link.userId, link.sessionId),
         InterviewSessionModel.findById(link.sessionId, { mode: 1 }).lean(),
         UserProfileModel.findOne({ userId: link.userId }, { displayName: 1 }).lean(),
+        CertificateModel.findOne(
+          { userId: link.userId, sessionId: link.sessionId },
+          { code: 1 },
+        ).lean(),
       ]);
       // A report hidden later (for example by a campaign) stops being shareable.
       if (!report || !session) throw notFound();
@@ -172,6 +177,9 @@ export function createProofService(deps: {
         reviewed: report.revision > 0,
         expiresAt: iso(link.expiresAt),
         disclaimer: c.disclaimer,
+        certificate: certificate
+          ? { code: certificate.code, verifyPath: `/verify/${certificate.code}` }
+          : null,
       };
     },
   };
