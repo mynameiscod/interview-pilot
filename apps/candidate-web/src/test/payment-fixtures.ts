@@ -59,6 +59,7 @@ export function makePurchase(overrides: Partial<PurchaseSummary> = {}): Purchase
     refundedMinor: 0,
     invoiceNumber: paid ? 'CPI/26-27/000001' : null,
     receiptAvailable: paid,
+    creditNotes: [],
     createdAt: NOW,
     updatedAt: NOW,
     ...overrides,

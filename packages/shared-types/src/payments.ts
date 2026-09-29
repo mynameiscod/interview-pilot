@@ -163,9 +163,6 @@ export const CheckoutOrder = z.object({
 });
 export type CheckoutOrder = z.infer<typeof CheckoutOrder>;
 
-export const CreateOrderBody = QuoteBody;
-export type CreateOrderBody = z.infer<typeof CreateOrderBody>;
-
 /** Razorpay Checkout's success handler fields, forwarded as-is. */
 export const VerifyPaymentBody = z.object({
   razorpay_order_id: z.string().trim().min(1).max(64),
@@ -176,6 +173,16 @@ export const VerifyPaymentBody = z.object({
     .regex(/^[a-f0-9]{64}$/i, 'invalid signature'),
 });
 export type VerifyPaymentBody = z.infer<typeof VerifyPaymentBody>;
+
+/** A processed refund's credit note (numbered at processing, or at first download for older refunds). */
+export const CreditNoteSummary = z.object({
+  /** Identifies the refund (the download path's last segment). */
+  key: z.string(),
+  number: z.string().nullable(),
+  amountMinor: z.number().int(),
+  processedAt: z.iso.datetime().nullable(),
+});
+export type CreditNoteSummary = z.infer<typeof CreditNoteSummary>;
 
 export const PurchaseSummary = z.object({
   id: z.string(),
@@ -198,6 +205,8 @@ export const PurchaseSummary = z.object({
   invoiceNumber: z.string().nullable(),
   /** A receipt PDF can be downloaded (the purchase was paid, even if later refunded). */
   receiptAvailable: z.boolean(),
+  /** One per processed refund; each can be downloaded as a PDF. */
+  creditNotes: z.array(CreditNoteSummary),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -348,6 +357,123 @@ export function formatInvoiceNumber(fyStart: number, seq: number): string {
   const yy = (n: number) => String(n % 100).padStart(2, '0');
   return `CPI/${yy(fyStart)}-${yy(fyStart + 1)}/${String(seq).padStart(6, '0')}`;
 }
+
+/**
+ * `CN/26-27/000007`: credit notes (refunds against tax invoices) have their
+ * own consecutive series per financial year, also at most 16 characters.
+ */
+export function formatCreditNoteNumber(fyStart: number, seq: number): string {
+  const yy = (n: number) => String(n % 100).padStart(2, '0');
+  return `CN/${yy(fyStart)}-${yy(fyStart + 1)}/${String(seq).padStart(6, '0')}`;
+}
+
+/**
+ * GST state and union territory codes (the first two digits of a GSTIN),
+ * with their names as printed on invoices.
+ */
+export const GST_STATES = [
+  { code: '01', name: 'Jammu and Kashmir' },
+  { code: '02', name: 'Himachal Pradesh' },
+  { code: '03', name: 'Punjab' },
+  { code: '04', name: 'Chandigarh' },
+  { code: '05', name: 'Uttarakhand' },
+  { code: '06', name: 'Haryana' },
+  { code: '07', name: 'Delhi' },
+  { code: '08', name: 'Rajasthan' },
+  { code: '09', name: 'Uttar Pradesh' },
+  { code: '10', name: 'Bihar' },
+  { code: '11', name: 'Sikkim' },
+  { code: '12', name: 'Arunachal Pradesh' },
+  { code: '13', name: 'Nagaland' },
+  { code: '14', name: 'Manipur' },
+  { code: '15', name: 'Mizoram' },
+  { code: '16', name: 'Tripura' },
+  { code: '17', name: 'Meghalaya' },
+  { code: '18', name: 'Assam' },
+  { code: '19', name: 'West Bengal' },
+  { code: '20', name: 'Jharkhand' },
+  { code: '21', name: 'Odisha' },
+  { code: '22', name: 'Chhattisgarh' },
+  { code: '23', name: 'Madhya Pradesh' },
+  { code: '24', name: 'Gujarat' },
+  { code: '26', name: 'Dadra and Nagar Haveli and Daman and Diu' },
+  { code: '27', name: 'Maharashtra' },
+  { code: '29', name: 'Karnataka' },
+  { code: '30', name: 'Goa' },
+  { code: '31', name: 'Lakshadweep' },
+  { code: '32', name: 'Kerala' },
+  { code: '33', name: 'Tamil Nadu' },
+  { code: '34', name: 'Puducherry' },
+  { code: '35', name: 'Andaman and Nicobar Islands' },
+  { code: '36', name: 'Telangana' },
+  { code: '37', name: 'Andhra Pradesh' },
+  { code: '38', name: 'Ladakh' },
+] as const;
+
+export const GstStateCode = z.enum(
+  GST_STATES.map((s) => s.code) as [
+    (typeof GST_STATES)[number]['code'],
+    ...(typeof GST_STATES)[number]['code'][],
+  ],
+);
+export type GstStateCode = z.infer<typeof GstStateCode>;
+
+/** `Telangana (36)`, or the bare code when it is not a known state. */
+export function gstStateLabel(code: string): string {
+  const state = GST_STATES.find((s) => s.code === code);
+  return state ? `${state.name} (${code})` : code;
+}
+
+/** The GST split of a GST-inclusive total (see {@link gstSplit}). */
+export interface GstSplit {
+  taxableMinor: number;
+  taxMinor: number;
+  /** INTRA: CGST + SGST (buyer in the seller's state). INTER: IGST. */
+  supply: 'INTRA' | 'INTER';
+  cgstMinor: number;
+  sgstMinor: number;
+  igstMinor: number;
+}
+
+/**
+ * Splits a GST-inclusive total by place of supply: a buyer in the seller's
+ * state pays CGST and SGST (half the rate each; an odd paisa goes to SGST),
+ * anyone else IGST. An unknown buyer state is treated as inter-state (IGST).
+ */
+export function gstSplit(
+  totalMinor: number,
+  ratePercent: number,
+  sellerState: string | null,
+  buyerState: string | null,
+): GstSplit {
+  const { taxableMinor, taxMinor } = gstBreakdown(totalMinor, ratePercent);
+  const intra = sellerState !== null && buyerState !== null && sellerState === buyerState;
+  const cgstMinor = intra ? Math.floor(taxMinor / 2) : 0;
+  return {
+    taxableMinor,
+    taxMinor,
+    supply: intra ? 'INTRA' : 'INTER',
+    cgstMinor,
+    sgstMinor: intra ? taxMinor - cgstMinor : 0,
+    igstMinor: intra ? 0 : taxMinor,
+  };
+}
+
+/** The buyer details kept for invoices (`GET /payments/checkout-profile`). */
+export const CheckoutProfile = z.object({
+  /** GST state code of the buyer (place of supply); null when not given (IGST applies). */
+  billingState: GstStateCode.nullable(),
+});
+export type CheckoutProfile = z.infer<typeof CheckoutProfile>;
+
+export const CreateOrderBody = QuoteBody.extend({
+  /**
+   * The buyer's state for the tax invoice, saved to the checkout profile.
+   * Omitted: the saved one is used; null clears it.
+   */
+  billingState: GstStateCode.nullable().optional(),
+});
+export type CreateOrderBody = z.infer<typeof CreateOrderBody>;
 
 /** Splits a GST-inclusive total into its taxable value and tax (rounded to the paisa). */
 export function gstBreakdown(

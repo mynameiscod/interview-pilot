@@ -56,6 +56,7 @@ export const purchase = (overrides: Partial<AdminPurchase> = {}): AdminPurchase 
   refundedMinor: 0,
   invoiceNumber: 'CPI/26-27/000042',
   receiptAvailable: true,
+  creditNotes: [],
   createdAt: now,
   updatedAt: now,
   userId: 'user-7',

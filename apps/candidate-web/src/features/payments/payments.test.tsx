@@ -304,6 +304,49 @@ describe('payment status', () => {
   });
 });
 
+describe('billing state', () => {
+  it('prefills the saved state and sends a changed one with the order', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'POST /payments/quote': quoteHandler,
+      'GET /payments/checkout-profile': () => ok({ billingState: '36' }),
+      'POST /payments/orders': () => ({ status: 201, body: { data: makeOrder() } }),
+    });
+    await renderRoute('/app/checkout/STARTER', { api });
+    const select = await screen.findByLabelText('Your state (for the GST invoice)', {}, LOAD);
+    await waitFor(() => expect(select).toHaveValue('36'));
+    expect(within(select).getByRole('option', { name: 'Telangana' })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.selectOptions(select, 'Karnataka');
+    await user.click(screen.getByRole('button', { name: 'Pay ₹499.00' }));
+    await screen.findByText('Test mode');
+    expect(api.calls.find((c) => c.key === 'POST /payments/orders')?.body).toEqual({
+      planCode: 'STARTER',
+      couponCode: null,
+      billingState: '29',
+    });
+  });
+
+  it('clears the state when "Not stated" is chosen', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'POST /payments/quote': quoteHandler,
+      'GET /payments/checkout-profile': () => ok({ billingState: '36' }),
+      'POST /payments/orders': () => ({ status: 201, body: { data: makeOrder() } }),
+    });
+    await renderRoute('/app/checkout/STARTER', { api });
+    const select = await screen.findByLabelText('Your state (for the GST invoice)', {}, LOAD);
+    await waitFor(() => expect(select).toHaveValue('36'));
+    const user = userEvent.setup();
+    await user.selectOptions(select, 'Not stated');
+    await user.click(screen.getByRole('button', { name: 'Pay ₹499.00' }));
+    await screen.findByText('Test mode');
+    expect(api.calls.find((c) => c.key === 'POST /payments/orders')?.body).toMatchObject({
+      billingState: null,
+    });
+  });
+});
+
 describe('purchases', () => {
   it('lists purchases with status and a link to each', async () => {
     const api = fakeApi({
@@ -349,7 +392,19 @@ describe('purchases', () => {
         ...signedIn,
         'GET /payments/purchases': () =>
           ok([
-            makePurchase({ id: 'p2', status: 'PAID', refundedMinor: 10_000 }),
+            makePurchase({
+              id: 'p2',
+              status: 'PAID',
+              refundedMinor: 10_000,
+              creditNotes: [
+                {
+                  key: 'r1',
+                  number: 'CN/26-27/000001',
+                  amountMinor: 10_000,
+                  processedAt: '2026-09-21T10:00:00.000Z',
+                },
+              ],
+            }),
             makePurchase({ id: 'p1', status: 'FAILED' }),
           ]),
       });
@@ -375,6 +430,16 @@ describe('purchases', () => {
       const [url] = fetchMock.mock.calls[0] as unknown as [string];
       expect(url).toMatch(/\/api\/v1\/payments\/purchases\/p2\/receipt$/);
       expect(downloaded).toBe('receipt-CPI-26-27-000001.pdf');
+
+      // Each processed refund has a credit note.
+      await user.click(
+        within(paid!).getByRole('button', {
+          name: /Download the credit note for the ₹100\.00 refund of the Starter/,
+        }),
+      );
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const [noteUrl] = fetchMock.mock.calls[1] as unknown as [string];
+      expect(noteUrl).toMatch(/\/api\/v1\/payments\/purchases\/p2\/credit-notes\/r1$/);
     } finally {
       vi.unstubAllGlobals();
       vi.restoreAllMocks();

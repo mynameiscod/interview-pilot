@@ -1,5 +1,6 @@
 import type {
   CheckoutOrder,
+  CheckoutProfile,
   CreateOrderBody,
   MockCheckoutBody,
   MockCheckoutResult,
@@ -33,6 +34,7 @@ function paymentsApi(api: ApiClient) {
       api.post<MockCheckoutResult>('/payments/mock/checkout', body),
     purchases: () => api.get<PurchaseSummary[]>('/payments/purchases'),
     purchase: (id: string) => api.get<PurchaseSummary>(`/payments/purchases/${enc(id)}`),
+    checkoutProfile: () => api.get<CheckoutProfile>('/payments/checkout-profile'),
   };
 }
 
@@ -49,7 +51,14 @@ export const paymentKeys = {
     ['payments', 'quote', planCode, couponCode] as const,
   purchases: ['payments', 'purchases'] as const,
   purchase: (id: string) => ['payments', 'purchases', id] as const,
+  checkoutProfile: ['payments', 'checkout-profile'] as const,
 };
+
+/** The buyer's saved state for GST invoices (prefills checkout). */
+export function useCheckoutProfile() {
+  const api = usePaymentsApi();
+  return useQuery({ queryKey: paymentKeys.checkoutProfile, queryFn: api.checkoutProfile });
+}
 
 export function usePlans() {
   const api = usePaymentsApi();

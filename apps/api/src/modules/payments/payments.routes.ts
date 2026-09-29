@@ -21,7 +21,7 @@ const noStore: RequestHandler = (_req, res, next) => {
   next();
 };
 
-/** A receipt download (the file name has only letters, digits and dashes). */
+/** A receipt or credit note download (the file name has only letters, digits and dashes). */
 function sendPdf(res: Response, file: { body: Buffer; fileName: string }) {
   res
     .set('Content-Type', 'application/pdf')
@@ -99,6 +99,21 @@ export function paymentsRouter(c: Container): Router {
 
   router.get('/purchases/:purchaseId/receipt', async (req, res) => {
     sendPdf(res, await c.payments.receipt(requireAuth(req).userId, String(req.params.purchaseId)));
+  });
+
+  router.get('/purchases/:purchaseId/credit-notes/:key', async (req, res) => {
+    sendPdf(
+      res,
+      await c.payments.creditNote(
+        requireAuth(req).userId,
+        String(req.params.purchaseId),
+        String(req.params.key),
+      ),
+    );
+  });
+
+  router.get('/checkout-profile', async (req, res) => {
+    res.json({ data: await c.payments.checkoutProfile(requireAuth(req).userId) });
   });
 
   return router;
@@ -206,6 +221,10 @@ export function paymentsAdminRouter(c: Container): Router {
 
   router.get('/purchases/:id/receipt', read, async (req, res) => {
     sendPdf(res, await c.payments.adminReceipt(String(req.params.id)));
+  });
+
+  router.get('/purchases/:id/credit-notes/:key', read, async (req, res) => {
+    sendPdf(res, await c.payments.adminCreditNote(String(req.params.id), String(req.params.key)));
   });
 
   router.get('/purchases/:id/refund-preview', read, async (req, res) => {

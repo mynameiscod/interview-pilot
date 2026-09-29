@@ -14,6 +14,8 @@ const userProfileSchema = new Schema(
     experienceLevel: { type: String, enum: ExperienceLevel.options },
     currentRole: { type: String, maxlength: 80 },
     productUpdatesOptIn: { type: Boolean, default: false, required: true },
+    /** GST state code for invoices (the checkout profile); absent = not given. */
+    billingState: { type: String, maxlength: 2 },
   },
   { timestamps: true, collection: 'userProfiles' },
 );

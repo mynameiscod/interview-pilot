@@ -1,5 +1,6 @@
 import {
   financialYearStart,
+  formatCreditNoteNumber,
   formatInvoiceNumber,
   PAYMENT_POLICY,
   type PaymentStatus,
@@ -260,6 +261,54 @@ export async function issueInvoiceNumber(
       { session: tx },
     );
     return invoiceNumber;
+  });
+}
+
+/** The next credit note number of the financial year `at` falls in (inside `session`). */
+async function nextCreditNoteNumber(at: Date, session: ClientSession): Promise<string> {
+  const fy = financialYearStart(at);
+  const counter = await InvoiceCounterModel.findOneAndUpdate(
+    { _id: `cn:${fy}` },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after', session },
+  ).lean();
+  return formatCreditNoteNumber(fy, counter!.seq);
+}
+
+/**
+ * The credit note number of a processed refund (`key` is the refund entry's
+ * key), issuing one for a refund processed before credit notes existed.
+ * Null when there is no such processed refund.
+ */
+export async function issueCreditNoteNumber(
+  purchaseId: Id,
+  key: string,
+  at = new Date(),
+): Promise<{ number: string; issuedAt: Date } | null> {
+  return inTransaction(undefined, async (tx) => {
+    const payment = await PaymentModel.findOne(
+      { purchaseId },
+      { refunds: 1 },
+      { session: tx },
+    ).lean<Pick<PaymentRecord, '_id' | 'refunds'>>();
+    const entry = payment?.refunds?.find((r) => r.key === key && r.status === 'processed');
+    if (!payment || !entry) return null;
+    if (entry.creditNoteNumber) {
+      return { number: entry.creditNoteNumber, issuedAt: entry.creditNoteIssuedAt ?? at };
+    }
+    const number = await nextCreditNoteNumber(at, tx);
+    // A concurrent issuer writes the same payment: one of the two transactions retries.
+    await PaymentModel.updateOne(
+      { _id: payment._id },
+      {
+        $set: {
+          'refunds.$[r].creditNoteNumber': number,
+          'refunds.$[r].creditNoteIssuedAt': at,
+        },
+      },
+      { session: tx, arrayFilters: [{ 'r.key': key, 'r.creditNoteNumber': null }] },
+    );
+    return { number, issuedAt: at };
   });
 }
 
@@ -599,6 +648,9 @@ export async function markPurchaseRefunded(input: {
       status: 'processed',
       processedAt: now,
       creditsWithdrawn,
+      // Numbered in the same transaction, so the series has no gaps.
+      creditNoteNumber: await nextCreditNoteNumber(now, tx),
+      creditNoteIssuedAt: now,
     });
     const stillOpen = refunds.some((r) => OPEN_REFUND.includes(r.status));
     const status: PaymentStatus = fully

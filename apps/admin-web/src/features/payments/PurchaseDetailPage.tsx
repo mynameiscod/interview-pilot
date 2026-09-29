@@ -182,32 +182,61 @@ function Summary({ purchase }: { purchase: AdminPurchase }) {
   );
 }
 
+/** The receipt (or tax invoice) and a credit note per processed refund. */
 function ReceiptButton({ purchase }: { purchase: AdminPurchase }) {
   const { t } = useTranslation();
   const { manager } = useAdminAuth();
   const [error, setError] = useState<string | null>(null);
+  const base = `/admin/purchases/${encodeURIComponent(purchase.id)}`;
   const download = useMutation({
-    mutationFn: () =>
-      downloadExport(
-        manager,
-        `/admin/purchases/${encodeURIComponent(purchase.id)}/receipt`,
-        `receipt-${purchase.id}.pdf`,
-      ),
+    mutationFn: (file: { path: string; name: string; error: string }) =>
+      downloadExport(manager, `${base}/${file.path}`, file.name).catch(() => {
+        throw new Error(file.error);
+      }),
     onSuccess: () => setError(null),
-    onError: () => setError(t('payments.detail.receiptError')),
+    onError: (err) => setError(err.message),
   });
   if (!purchase.receiptAvailable) return null;
   return (
     <div className="mb-3">
-      <button
-        type="button"
-        className="btn btn-sm btn-outline-secondary"
-        disabled={download.isPending}
-        onClick={() => download.mutate()}
-      >
-        <i className="bi bi-file-earmark-pdf me-1" aria-hidden="true" />
-        {t('payments.detail.receipt')}
-      </button>
+      <div className="d-flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          disabled={download.isPending}
+          onClick={() =>
+            download.mutate({
+              path: 'receipt',
+              name: `receipt-${purchase.id}.pdf`,
+              error: t('payments.detail.receiptError'),
+            })
+          }
+        >
+          <i className="bi bi-file-earmark-pdf me-1" aria-hidden="true" />
+          {t('payments.detail.receipt')}
+        </button>
+        {purchase.creditNotes.map((note) => (
+          <button
+            key={note.key}
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            disabled={download.isPending}
+            onClick={() =>
+              download.mutate({
+                path: `credit-notes/${encodeURIComponent(note.key)}`,
+                name: `credit-note-${(note.number ?? note.key).replaceAll('/', '-')}.pdf`,
+                error: t('payments.detail.creditNoteError'),
+              })
+            }
+          >
+            <i className="bi bi-file-earmark-pdf me-1" aria-hidden="true" />
+            {t('payments.detail.creditNote', {
+              number: note.number ?? t('payments.detail.creditNoteUnnumbered'),
+              amount: formatMoney(note.amountMinor, purchase.currency),
+            })}
+          </button>
+        ))}
+      </div>
       <ErrorAlert error={error} />
     </div>
   );

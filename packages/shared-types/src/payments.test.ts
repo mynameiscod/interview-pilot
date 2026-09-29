@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { CreditAdjustmentBody } from './credits.js';
 import {
+  CreateOrderBody,
   financialYearStart,
+  formatCreditNoteNumber,
   formatInvoiceNumber,
   gstBreakdown,
+  gstSplit,
+  gstStateLabel,
   proratedRefundMinor,
   RefundBody,
 } from './payments.js';
@@ -67,6 +71,56 @@ describe('invoice numbers', () => {
     expect(formatInvoiceNumber(2026, 42)).toBe('CPI/26-27/000042');
     expect(formatInvoiceNumber(2099, 999_999)).toBe('CPI/99-00/999999');
     expect(formatInvoiceNumber(2026, 1).length).toBeLessThanOrEqual(16);
+  });
+
+  it('numbers credit notes in their own series, also within 16 characters', () => {
+    expect(formatCreditNoteNumber(2026, 7)).toBe('CN/26-27/000007');
+    expect(formatCreditNoteNumber(2099, 999_999).length).toBeLessThanOrEqual(16);
+  });
+});
+
+describe('gstSplit', () => {
+  it('charges CGST and SGST within the seller state, the odd paisa to SGST', () => {
+    // 19,900 including 18%: 3,036 tax.
+    expect(gstSplit(19_900, 18, '36', '36')).toEqual({
+      taxableMinor: 16_864,
+      taxMinor: 3_036,
+      supply: 'INTRA',
+      cgstMinor: 1_518,
+      sgstMinor: 1_518,
+      igstMinor: 0,
+    });
+    const odd = gstSplit(15_920, 18, '36', '36');
+    expect(odd.taxMinor).toBe(2_428);
+    const oddTax = gstSplit(100, 18, '36', '36');
+    expect(oddTax.cgstMinor + oddTax.sgstMinor).toBe(oddTax.taxMinor);
+    expect(oddTax.sgstMinor - oddTax.cgstMinor).toBe(oddTax.taxMinor % 2);
+  });
+
+  it('charges IGST across states and when the buyer state is unknown', () => {
+    expect(gstSplit(19_900, 18, '36', '29')).toMatchObject({
+      supply: 'INTER',
+      cgstMinor: 0,
+      sgstMinor: 0,
+      igstMinor: 3_036,
+    });
+    expect(gstSplit(19_900, 18, '36', null)).toMatchObject({ supply: 'INTER', igstMinor: 3_036 });
+    expect(gstSplit(19_900, 0, '36', '36')).toMatchObject({ taxMinor: 0, cgstMinor: 0 });
+  });
+
+  it('labels states by name and code', () => {
+    expect(gstStateLabel('36')).toBe('Telangana (36)');
+    expect(gstStateLabel('99')).toBe('99');
+  });
+
+  it('accepts a known state (or null) on an order', () => {
+    expect(CreateOrderBody.parse({ planCode: 'SPRINT', billingState: '29' }).billingState).toBe(
+      '29',
+    );
+    expect(CreateOrderBody.parse({ planCode: 'SPRINT' }).billingState).toBeUndefined();
+    expect(CreateOrderBody.safeParse({ planCode: 'SPRINT', billingState: '25' }).success).toBe(
+      false,
+    );
   });
 });
 

@@ -96,6 +96,7 @@ import {
   AdminReconcileResult,
   AdminRefundResult,
   CheckoutOrder,
+  CheckoutProfile,
   CouponSummary,
   CreateOrderBody,
   CreatePlanVersionBody,
@@ -1282,10 +1283,24 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     tag: 'Payments',
     auth: 'bearer',
     summary:
-      'Download the receipt of a paid purchase (application/pdf; a GST tax invoice when a seller GSTIN is set); 409 before payment',
+      'Download the receipt of a paid purchase (application/pdf; a GST tax invoice when a seller GSTIN is set, CGST + SGST or IGST by place of supply); 409 before payment',
     response: null,
     status: 200,
     errors: [401, 404, 409],
+  });
+  route('get', '/payments/purchases/{purchaseId}/credit-notes/{key}', {
+    tag: 'Payments',
+    auth: 'bearer',
+    summary:
+      'Download the credit note of a processed refund (application/pdf); key is from creditNotes',
+    response: null,
+    status: 200,
+    errors: [401, 404],
+  });
+  candidate('get', '/payments/checkout-profile', {
+    tag: 'Payments',
+    summary: 'My buyer details for invoices (the state that sets the place of supply)',
+    response: CheckoutProfile,
   });
   const pay = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
     route(method, path, {
@@ -1345,6 +1360,12 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: null,
     status: 200,
     errors: [401, 403, 404, 409],
+  });
+  pay('get', '/admin/purchases/{id}/credit-notes/{key}', {
+    summary: 'Download the credit note of a processed refund (application/pdf) (payments.read)',
+    response: null,
+    status: 200,
+    errors: [401, 403, 404],
   });
   pay('get', '/admin/purchases/{id}/refund-preview', {
     summary:

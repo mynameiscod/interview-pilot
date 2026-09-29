@@ -1024,6 +1024,9 @@
       "invoiceNumber": "Invoice number",
       "receipt": "Download receipt",
       "receiptError": "The receipt could not be downloaded. Try again.",
+      "creditNote": "Credit note {{number}} ({{amount}})",
+      "creditNoteUnnumbered": "(numbered on download)",
+      "creditNoteError": "The credit note could not be downloaded. Try again.",
       "refunds": "Refunds",
       "refundLine": "{{amount}} · {{at}}",
       "refundCredits_one": "{{count}} credit withdrawn",
@@ -1927,7 +1930,7 @@
       },
       "billing": {
         "title": "Billing",
-        "explain": "The seller details printed on purchase receipts. With a GSTIN, receipts are GST tax invoices (prices include GST); without one they are plain receipts.",
+        "explain": "The seller details printed on purchase receipts and credit notes. With a GSTIN, receipts are GST tax invoices (prices include GST): CGST and SGST when the buyer's state (chosen at checkout) is the GSTIN's state, IGST otherwise or when the buyer did not give one. Without a GSTIN they are plain receipts.",
         "save": "Save billing settings",
         "fields": {
           "legalName": "Legal name",
