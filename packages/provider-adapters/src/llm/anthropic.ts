@@ -93,10 +93,13 @@ function usageOf(usage: {
   cache_read_input_tokens?: number | null;
   cache_creation_input_tokens?: number | null;
 }): UsageUnits {
+  // input_tokens counts only the uncached part; reads and writes are billed at their own rates.
   const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   return {
-    inputTokens: usage.input_tokens + cacheRead + (usage.cache_creation_input_tokens ?? 0),
+    inputTokens: usage.input_tokens + cacheRead + cacheWrite,
     cachedInputTokens: cacheRead,
+    cacheWriteInputTokens: cacheWrite,
     outputTokens: usage.output_tokens,
     requests: 1,
   };

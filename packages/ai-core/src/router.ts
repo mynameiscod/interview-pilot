@@ -141,6 +141,7 @@ function addUsage(a: UsageUnits, b: UsageUnits): UsageUnits {
   return {
     inputTokens: a.inputTokens + b.inputTokens,
     cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    cacheWriteInputTokens: (a.cacheWriteInputTokens ?? 0) + (b.cacheWriteInputTokens ?? 0),
     outputTokens: a.outputTokens + b.outputTokens,
     requests: a.requests + b.requests,
   };

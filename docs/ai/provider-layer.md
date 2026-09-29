@@ -48,7 +48,7 @@ SDK-level retries are disabled in every adapter, so the router is the only thing
 
 **Sampling parameters:** current Claude models (Opus 4.7+, Sonnet 5+, Fable/Mythos) and OpenAI reasoning models reject `temperature`, so one stale setting would fail every call on the route. The adapters drop it for those models (`samplingParamsSupported` in `@cbi/shared-types`), and the admin model editor refuses to set one for them with a clear message.
 
-**Prompt caching:** the Anthropic adapter marks the system prompt (instructions and rubric, the stable part of every template) with `cache_control: {type: "ephemeral"}`, so repeated calls on a feature read it from cache. Prefixes shorter than the model's minimum cacheable size are simply not cached. OpenAI and Gemini cache long prefixes automatically. Cached reads are billed with `PER_1M_CACHED_INPUT_TOKENS`.
+**Prompt caching:** the Anthropic adapter marks the system prompt (instructions and rubric, the stable part of every template) with `cache_control: {type: "ephemeral"}`, so repeated calls on a feature read it from cache. Prefixes shorter than the model's minimum cacheable size are simply not cached. OpenAI and Gemini cache long prefixes automatically. Cached reads are billed with `PER_1M_CACHED_INPUT_TOKENS` and cache writes with `PER_1M_CACHE_WRITE_INPUT_TOKENS`: the adapter reads `usage.cache_read_input_tokens` and `usage.cache_creation_input_tokens` (Anthropic's `input_tokens` is only the uncached part; `inputTokens` in our usage is the sum of all three, with reads and writes also reported as `cachedInputTokens` and `cacheWriteInputTokens`).
 
 **Concurrency:** a per-model semaphore in Redis (sorted-set leases that expire on their own) caps in-flight calls across all API and worker replicas at the model's `concurrency`.
 
@@ -69,20 +69,21 @@ Every provider call writes one row to `aiUsage` (append-only). This includes fai
 - **Money is stored in integer micro-units** (1/1,000,000 of the currency's major unit): `$5.00` is `5_000_000`. A typical call costs a fraction of a cent, so minor units (cents or paise) would round most calls to zero.
 - `calculateCost(units, priceSnapshot)` is pure and uses exact BigInt arithmetic. Each line is rounded half-up to the nearest micro-unit.
 
-| Unit                         | Bills                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| `PER_1M_INPUT_TOKENS`        | input tokens, excluding cached ones if a cached price exists              |
-| `PER_1M_CACHED_INPUT_TOKENS` | input tokens served from a prompt cache                                   |
-| `PER_1M_OUTPUT_TOKENS`       | output tokens (including thinking tokens, which providers bill as output) |
-| `PER_MINUTE`                 | session duration                                                          |
-| `PER_AUDIO_MINUTE`           | audio duration                                                            |
-| `PER_STT_HOUR`               | audio duration                                                            |
-| `PER_1M_CHARACTERS`          | characters (TTS)                                                          |
-| `PER_IMAGE`, `PER_REQUEST`   | count                                                                     |
+| Unit                              | Bills                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------- |
+| `PER_1M_INPUT_TOKENS`             | input tokens, excluding cache reads / writes that have their own price    |
+| `PER_1M_CACHED_INPUT_TOKENS`      | input tokens served from a prompt cache                                   |
+| `PER_1M_CACHE_WRITE_INPUT_TOKENS` | input tokens written to a prompt cache (Anthropic, 5-minute TTL)          |
+| `PER_1M_OUTPUT_TOKENS`            | output tokens (including thinking tokens, which providers bill as output) |
+| `PER_MINUTE`                      | session duration                                                          |
+| `PER_AUDIO_MINUTE`                | audio duration                                                            |
+| `PER_STT_HOUR`                    | audio duration                                                            |
+| `PER_1M_CHARACTERS`               | characters (TTS)                                                          |
+| `PER_IMAGE`, `PER_REQUEST`        | count                                                                     |
 
 - **Prices are effective-dated and append-only.** A change adds an entry with an `effectiveFrom` of now or later. Past dates are refused, so recorded usage is never re-priced. A model is priced in one currency.
 - A model with no price in force is still metered, at cost 0, and a warning is logged.
-- Anthropic prompt-cache _writes_ are billed by Anthropic at 1.25× the input price. They are metered here at the plain input price (there is no cache-write unit yet), so metered cost slightly understates the first call on a cold cache.
+- Anthropic prompt-cache _writes_ are billed at 1.25× the input price and metered with `PER_1M_CACHE_WRITE_INPUT_TOKENS`. A model without that price (or without a cached-input price) meters those tokens at the plain input price, as before. Like every price, both are effective-dated and snapshotted on each usage row, so adding them never re-prices history.
 
 The worker rolls `aiUsage` into `providerHealth` every minute (`WORKER_PROVIDER_HEALTH_INTERVAL_MS`). Each row covers one model and one 5-minute window: calls, provider failures, error rate, p50/p95 latency, and a status (`HEALTHY` below 10 % errors, `DEGRADED` below 50 %, `DOWN` otherwise, `IDLE` with no calls). Rows expire after 30 days. `admin.test` calls are excluded.
 
@@ -115,7 +116,7 @@ The sampler prefers `null` for nullable strings that carry a regex `pattern` (su
 At boot the API inserts missing providers, models and routes. It never modifies existing ones, so admin changes always win.
 
 - Providers: Anthropic, OpenAI, Google Gemini (plus the mock in development).
-- Models (USD per 1M input / cached input / output tokens): Claude Opus 5.5 ($4 / $0.20 / $20), Claude Sonnet 5.5 ($2 / $0.20 / $10), Claude Haiku 4.5 ($1 / $0.10 / $5), OpenAI GPT-5.6 Terra (`gpt-5.6-terra`, $2.50 / $0.25 / $15) and Google Gemini 3.1 Pro (`gemini-3.1-pro-preview`, $2 / $0.20 / $12 for prompts under 200K tokens). None has a temperature (they reject or ignore it). **Check ids and prices against the providers' current lists before launch**; price changes go in as new effective-dated entries.
+- Models (USD per 1M input / cached input / output tokens): Claude Opus 5.5 ($4 / $0.20 / $20, cache writes $5), Claude Sonnet 5.5 ($2 / $0.20 / $10, cache writes $2.50), Claude Haiku 4.5 ($1 / $0.10 / $5, cache writes $1.25), OpenAI GPT-5.6 Terra (`gpt-5.6-terra`, $2.50 / $0.25 / $15) and Google Gemini 3.1 Pro (`gemini-3.1-pro-preview`, $2 / $0.20 / $12 for prompts under 200K tokens). None has a temperature (they reject or ignore it). **Check ids and prices against the providers' current lists before launch**; price changes go in as new effective-dated entries. The seed never changes an existing model, except that a catalog unit the model has never been priced in (such as cache writes, added later) gets the catalog price effective from that start (`pricesAdded`); units an admin has ever priced are left alone.
 - Routes: every LLM feature uses Claude Opus 5.5, then Claude Sonnet 5.5, then GPT-5.6 Terra, then Gemini 3.1 Pro (then the mock in development), with the seeded effort described above. The OpenAI and Gemini entries are skipped (`no_credentials`) until their keys are set, and then keep a single-provider outage from exhausting the route.
 - Existing databases keep their models and routes (the seed only inserts): the new models appear, but admins add them to routes and set effort themselves. Older model ids (Opus 5, Sonnet 5) stay usable.
 

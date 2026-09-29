@@ -7,18 +7,25 @@ import type { PriceSnapshot, RuntimePrice, UsageUnits } from './types.js';
  * = quantity × pricePerUnitMicros ÷ divisor.
  */
 const UNIT_RULES: Readonly<
-  Record<
-    PricingUnit,
-    { quantity: (u: UsageUnits, hasCachedPrice: boolean) => number; divisor: number }
-  >
+  Record<PricingUnit, { quantity: (u: UsageUnits, priced: PricedCache) => number; divisor: number }>
 > = {
-  // Cached input tokens are billed separately only when the model has a cached-input price.
+  // Cache reads and writes are billed separately only when the model has a price for them;
+  // otherwise they stay in the plain input line.
   PER_1M_INPUT_TOKENS: {
-    quantity: (u, hasCachedPrice) =>
-      hasCachedPrice ? Math.max(0, u.inputTokens - u.cachedInputTokens) : u.inputTokens,
+    quantity: (u, priced) =>
+      Math.max(
+        0,
+        u.inputTokens -
+          (priced.reads ? u.cachedInputTokens : 0) -
+          (priced.writes ? (u.cacheWriteInputTokens ?? 0) : 0),
+      ),
     divisor: 1_000_000,
   },
   PER_1M_CACHED_INPUT_TOKENS: { quantity: (u) => u.cachedInputTokens, divisor: 1_000_000 },
+  PER_1M_CACHE_WRITE_INPUT_TOKENS: {
+    quantity: (u) => u.cacheWriteInputTokens ?? 0,
+    divisor: 1_000_000,
+  },
   PER_1M_OUTPUT_TOKENS: { quantity: (u) => u.outputTokens, divisor: 1_000_000 },
   // Durations are measured in milliseconds so fractional seconds are not lost.
   PER_MINUTE: { quantity: (u) => Math.round((u.durationSec ?? 0) * 1000), divisor: 60_000 },
@@ -28,6 +35,12 @@ const UNIT_RULES: Readonly<
   PER_IMAGE: { quantity: (u) => u.images ?? 0, divisor: 1 },
   PER_REQUEST: { quantity: (u) => u.requests, divisor: 1 },
 };
+
+/** Which cache quantities the price list bills on their own lines. */
+interface PricedCache {
+  reads: boolean;
+  writes: boolean;
+}
 
 /** Integer division rounding half away from zero (all inputs are non-negative). */
 function divRoundHalfUp(numerator: bigint, divisor: bigint): bigint {
@@ -53,10 +66,13 @@ export interface CostBreakdown {
  * micro-unit and lines are summed. Units without a price cost nothing.
  */
 export function calculateCost(units: UsageUnits, snapshot: PriceSnapshot): CostBreakdown {
-  const hasCachedPrice = snapshot.entries.some((e) => e.unit === 'PER_1M_CACHED_INPUT_TOKENS');
+  const priced: PricedCache = {
+    reads: snapshot.entries.some((e) => e.unit === 'PER_1M_CACHED_INPUT_TOKENS'),
+    writes: snapshot.entries.some((e) => e.unit === 'PER_1M_CACHE_WRITE_INPUT_TOKENS'),
+  };
   const lines: CostLine[] = snapshot.entries.map((entry) => {
     const rule = UNIT_RULES[entry.unit];
-    const quantity = Math.max(0, Math.trunc(rule.quantity(units, hasCachedPrice)));
+    const quantity = Math.max(0, Math.trunc(rule.quantity(units, priced)));
     const costMicros = Number(
       divRoundHalfUp(BigInt(quantity) * BigInt(entry.pricePerUnitMicros), BigInt(rule.divisor)),
     );

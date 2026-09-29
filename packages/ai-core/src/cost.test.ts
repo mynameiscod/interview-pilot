@@ -69,6 +69,35 @@ describe('calculateCost', () => {
     expect(withoutCached.costMicros).toBe(50_000);
   });
 
+  it('bills cache writes at their own price, and at the input price when there is none', () => {
+    // Anthropic: 1,000 uncached + 8,000 read + 2,000 written = 11,000 input tokens.
+    const units = usage({
+      inputTokens: 11_000,
+      cachedInputTokens: 8_000,
+      cacheWriteInputTokens: 2_000,
+    });
+    const all = calculateCost(
+      units,
+      snapshot(
+        price('PER_1M_INPUT_TOKENS', 4_000_000),
+        price('PER_1M_CACHED_INPUT_TOKENS', 400_000),
+        price('PER_1M_CACHE_WRITE_INPUT_TOKENS', 5_000_000),
+      ),
+    );
+    // 1,000 × $4 = 4,000 µ; 8,000 × $0.40 = 3,200 µ; 2,000 × $5 = 10,000 µ.
+    expect(all.costMicros).toBe(17_200);
+    expect(all.lines.find((l) => l.unit === 'PER_1M_INPUT_TOKENS')!.quantity).toBe(1_000);
+    // No write price: writes stay in the input line (3,000 × $4 + 3,200).
+    const noWrite = calculateCost(
+      units,
+      snapshot(
+        price('PER_1M_INPUT_TOKENS', 4_000_000),
+        price('PER_1M_CACHED_INPUT_TOKENS', 400_000),
+      ),
+    );
+    expect(noWrite.costMicros).toBe(15_200);
+  });
+
   it('supports per-minute, per-audio-minute, per-STT-hour, per-character, per-image and per-request pricing', () => {
     const units = usage({
       durationSec: 90,

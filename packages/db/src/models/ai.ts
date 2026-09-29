@@ -107,6 +107,7 @@ export interface AiUsageDoc {
   units: {
     inputTokens: number;
     cachedInputTokens: number;
+    cacheWriteInputTokens?: number;
     outputTokens: number;
     requests: number;
     durationSec?: number;
@@ -285,6 +286,7 @@ const aiUsageSchema = new Schema<AiUsageDoc>(
     units: {
       inputTokens: { type: Number, required: true },
       cachedInputTokens: { type: Number, required: true },
+      cacheWriteInputTokens: { type: Number, default: 0 },
       outputTokens: { type: Number, required: true },
       requests: { type: Number, required: true },
       durationSec: { type: Number },
