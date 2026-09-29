@@ -34,7 +34,38 @@ export function buildPdf(pages: string[][]): Buffer {
   objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
   objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
   for (const [id, body] of pageObjects) objects[id] = body;
+  return serialisePdf(objects);
+}
 
+/**
+ * A "scanned" PDF: every page is one image (a 2x2 grey bitmap scaled to the
+ * page) and there is no text layer at all.
+ */
+export function buildScannedPdf(pageCount: number): Buffer {
+  const objects: string[] = [];
+  const pageIds: number[] = [];
+  let next = 4;
+  const pageObjects: [number, string][] = [];
+  const ops = 'q 495 0 0 742 50 50 cm /Im1 Do Q';
+  for (let i = 0; i < pageCount; i++) {
+    const pageId = next++;
+    const contentId = next++;
+    pageIds.push(pageId);
+    pageObjects.push([
+      pageId,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im1 3 0 R >> >> /Contents ${contentId} 0 R >>`,
+    ]);
+    pageObjects.push([contentId, `<< /Length ${ops.length} >>\nstream\n${ops}\nendstream`]);
+  }
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  const pixels = '\x80\x40\x40\x80';
+  objects[3] = `<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${pixels.length} >>\nstream\n${pixels}\nendstream`;
+  for (const [id, body] of pageObjects) objects[id] = body;
+  return serialisePdf(objects);
+}
+
+function serialisePdf(objects: string[]): Buffer {
   let out = '%PDF-1.4\n';
   const offsets: number[] = [];
   for (let id = 1; id < objects.length; id++) {
@@ -49,7 +80,7 @@ export function buildPdf(pages: string[][]): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+const CONTENT_TYPES =`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>

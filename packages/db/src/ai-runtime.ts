@@ -204,7 +204,7 @@ const MODELS: CatalogModel[] = [
     provider: 'anthropic',
     modelId: 'claude-sonnet-5-5',
     displayName: 'Claude Sonnet 5.5',
-    capabilities: ['LLM'],
+    capabilities: ['LLM', 'OCR'],
     params: {
       temperature: null,
       maxOutputTokens: 16_000,
@@ -240,7 +240,7 @@ const MODELS: CatalogModel[] = [
     provider: 'openai',
     modelId: 'gpt-5.6-terra',
     displayName: 'OpenAI GPT-5.6 Terra',
-    capabilities: ['LLM'],
+    capabilities: ['LLM', 'OCR'],
     params: {
       // A reasoning model: only the default temperature is accepted.
       temperature: null,
@@ -259,7 +259,7 @@ const MODELS: CatalogModel[] = [
     provider: 'gemini',
     modelId: 'gemini-3.1-pro-preview',
     displayName: 'Google Gemini 3.1 Pro (preview)',
-    capabilities: ['LLM'],
+    capabilities: ['LLM', 'OCR'],
     params: {
       temperature: null,
       maxOutputTokens: 16_000,
@@ -321,9 +321,17 @@ const SPEECH_CHAINS: Record<'stt.live' | 'tts.live', string[]> = {
   'tts.live': ['eleven_flash_v2_5', 'gpt-4o-mini-tts'],
 };
 
+/**
+ * Scanned-document OCR: Claude Sonnet 5.5 (PDF input), then Gemini and OpenAI
+ * file input as fallbacks once their keys are set. Transcription does not
+ * need the largest model.
+ */
+export const OCR_CHAIN = ['claude-sonnet-5-5', 'gemini-3.1-pro-preview', 'gpt-5.6-terra'];
+
 export const MOCK_CATALOG_MODEL_ID = 'mock-llm';
 export const MOCK_STT_MODEL_ID = 'mock-stt';
 export const MOCK_TTS_MODEL_ID = 'mock-tts';
+export const MOCK_OCR_MODEL_ID = 'mock-ocr';
 
 /**
  * LLM features routed by default: Opus 5.5 first, Sonnet 5.5, then the other
@@ -390,6 +398,14 @@ export async function ensureAiCatalog(opts: {
             displayName: 'Mock TTS (tone)',
             capabilities: ['TTS'] as AiCapability[],
             params: speechParams(5000),
+            prices: {},
+          },
+          {
+            provider: 'mock' as const,
+            modelId: MOCK_OCR_MODEL_ID,
+            displayName: 'Mock OCR (fixed text)',
+            capabilities: ['OCR'] as AiCapability[],
+            params: { ...speechParams(5000), maxOutputTokens: 4096 },
             prices: {},
           },
         ]
@@ -486,5 +502,32 @@ export async function ensureAiCatalog(opts: {
     );
     result.routesCreated += res.upsertedCount;
   }
+
+  // OCR: created once. Databases seeded before OCR existed get the capability on the
+  // chain's models at the same moment (the only time the seed touches an existing model).
+  const ocrIds = [...OCR_CHAIN, ...(opts.mockMode ? [MOCK_OCR_MODEL_ID] : [])]
+    .map((id) => modelIds.get(id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
+  const ocrRoute = await AiRouteModel.updateOne(
+    { feature: 'ocr.document' },
+    {
+      $setOnInsert: {
+        feature: 'ocr.document',
+        active: true,
+        chain: ocrIds.map((modelId, i) => ({
+          modelId,
+          priority: i === ocrIds.length - 1 && opts.mockMode ? 99 : i,
+        })),
+      },
+    },
+    { upsert: true },
+  );
+  if (ocrRoute.upsertedCount > 0) {
+    await AiModelModel.updateMany(
+      { _id: { $in: ocrIds } },
+      { $addToSet: { capabilities: 'OCR' } },
+    );
+  }
+  result.routesCreated += ocrRoute.upsertedCount;
   return result;
 }

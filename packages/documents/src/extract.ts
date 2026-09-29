@@ -30,11 +30,16 @@ export interface ExtractedText {
 }
 
 /**
- * Optional OCR for scanned PDFs. No OCR provider is configured in Phase 3;
- * when one is (an `ocr.document` route), the worker passes a hook that
- * returns recognised text, or null to fall back.
+ * Optional OCR for scanned PDFs. The worker passes a hook backed by the
+ * `ocr.document` AI route; it returns recognised text, or null to fall back
+ * (NO_TEXT with the OCR_NEEDED warning). Only called when the text layer is
+ * below DOCUMENT_LIMITS.minTextChars.
  */
-export type OcrHook = (file: Buffer, mime: DocumentMime) => Promise<string | null>;
+export type OcrHook = (
+  file: Buffer,
+  mime: DocumentMime,
+  info: { pages: number | null },
+) => Promise<string | null>;
 
 export interface ExtractOptions {
   maxTextChars?: number;
@@ -147,7 +152,7 @@ export async function extractDocumentText(
       parser = 'unpdf';
       if (cleanText(raw).length < DOCUMENT_LIMITS.minTextChars) {
         warnings.push('OCR_NEEDED');
-        const ocrText = opts.ocr ? await opts.ocr(buf, mime).catch(() => null) : null;
+        const ocrText = opts.ocr ? await opts.ocr(buf, mime, { pages }).catch(() => null) : null;
         if (ocrText && cleanText(ocrText).length >= DOCUMENT_LIMITS.minTextChars) {
           raw = ocrText;
           ocrUsed = true;

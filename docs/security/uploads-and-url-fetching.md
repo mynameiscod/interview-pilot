@@ -23,6 +23,7 @@ Parsing never runs in the API process. The `documents` queue has its own concurr
 | Encrypted PDFs                | Reported as `ENCRYPTED`; the candidate is asked to remove the password                                                                                                                                                           |
 | Runaway text                  | Output is cleaned (control characters removed) and capped at 200,000 characters                                                                                                                                                  |
 | Prompt injection in documents | Text reaches prompts only through `untrusted()` `<data>` blocks with the data-only instruction; outputs are schema-validated                                                                                                     |
+| Scanned PDFs (OCR)            | Only PDFs with almost no text layer, within `OCR_MAX_PAGES`/`OCR_MAX_MB`, are sent (whole) to the `ocr.document` route. The OCR prompt treats the document as data; the result is plain text, capped and cleaned like any extraction, then masked before structuring. The Privacy Notice discloses that a scan cannot be masked |
 
 Parsing fixtures are generated in code (`@cbi/documents/testing`) so no binary files are committed and every fixture's contents are visible in review.
 

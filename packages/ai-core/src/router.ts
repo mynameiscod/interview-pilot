@@ -36,6 +36,9 @@ import {
   type LlmCallInput,
   type LlmCallResult,
   type LlmRequest,
+  type OcrAdapter,
+  type OcrCallResult,
+  type OcrRequest,
   type RuntimeModel,
   type RuntimeProvider,
   type SttAdapter,
@@ -244,7 +247,7 @@ export function createAiRouter(deps: AiRouterDeps) {
     return Math.round(random() * cap);
   }
 
-  type AnyAdapter = LlmAdapter | SttAdapter | TtsAdapter;
+  type AnyAdapter = LlmAdapter | SttAdapter | TtsAdapter | OcrAdapter;
 
   interface Candidate {
     model: RuntimeModel;
@@ -261,6 +264,8 @@ export function createAiRouter(deps: AiRouterDeps) {
         return deps.adapters.stt?.(key);
       case 'TTS':
         return deps.adapters.tts?.(key);
+      case 'OCR':
+        return deps.adapters.ocr?.(key);
       default:
         return undefined;
     }
@@ -908,6 +913,37 @@ export function createAiRouter(deps: AiRouterDeps) {
         };
       });
 
+  const ocrExec =
+    (request: OcrRequest, ctx: AiCallContext) => (c: Candidate, attempts: AttemptSummary[]) =>
+      callSpeech<OcrCallResult>('ocr.document', c, ctx, attempts, async (cand, signal) => {
+        const result = await (cand.adapter as OcrAdapter).recognize({
+          model: {
+            providerKey: cand.provider.key,
+            modelId: cand.model.modelId,
+            params: cand.model.params,
+          },
+          request: {
+            ...request,
+            maxOutputTokens: Math.min(
+              request.maxOutputTokens ?? cand.model.params.maxOutputTokens,
+              cand.model.params.maxOutputTokens,
+            ),
+          },
+          credentials: { apiKey: cand.apiKey, baseUrl: cand.provider.baseUrl ?? undefined },
+          signal,
+        });
+        // A declined document moves on to the next model like any other failure.
+        if (result.finishReason === 'refusal') {
+          throw new AiProviderError(cand.provider.key, 'REFUSED', 'refusal', 'model declined');
+        }
+        return {
+          result,
+          // Billed by tokens like any LLM call; pages are recorded for per-image pricing.
+          usage: { ...result.usage, images: request.pages ?? 0 },
+          servedModel: result.servedModel,
+        };
+      });
+
   return {
     /**
      * Serve `feature` through its configured chain. Throws
@@ -1030,6 +1066,18 @@ export function createAiRouter(deps: AiRouterDeps) {
       return opts.modelRef
         ? onModel(opts.modelRef, 'tts.live', ctx, exec)
         : throughChain('tts.live', ctx, exec, (r) => r.model.modelId);
+    },
+
+    /**
+     * Text recognition for a scanned document through the `ocr.document`
+     * chain (fallback, retries, breaker; metered by tokens, with pages
+     * recorded as images). A refusal falls through to the next model.
+     */
+    async recognize(
+      request: OcrRequest,
+      ctx: AiCallContext = {},
+    ): Promise<AiSpeechResult<OcrCallResult>> {
+      return throughChain('ocr.document', ctx, ocrExec(request, ctx), (r) => r.model.modelId);
     },
 
     /**

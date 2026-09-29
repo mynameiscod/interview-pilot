@@ -8,6 +8,7 @@ import {
   parseMasterKey,
   type AdapterRegistry,
   type LlmAdapter,
+  type OcrAdapter,
   type SttAdapter,
   type TtsAdapter,
   type UsageSink,
@@ -17,13 +18,17 @@ import { observeAiCall, type Logger } from '@cbi/config';
 import { createMongoUsageSink, loadActivePrompt, loadAiRuntimeConfig, type Redis } from '@cbi/db';
 import {
   createAnthropicLlmAdapter,
+  createAnthropicOcrAdapter,
   createDeepgramSttAdapter,
   createElevenLabsTtsAdapter,
   createGeminiLlmAdapter,
+  createGeminiOcrAdapter,
   createMockLlmAdapter,
+  createMockOcrAdapter,
   createMockSttAdapter,
   createMockTtsAdapter,
   createOpenAiLlmAdapter,
+  createOpenAiOcrAdapter,
   createOpenAiSttAdapter,
   createOpenAiTtsAdapter,
 } from '@cbi/provider-adapters';
@@ -61,15 +66,23 @@ export function buildAdapterRegistry(env: AiRuntimeSettings): AdapterRegistry {
     ['elevenlabs', createElevenLabsTtsAdapter()],
     ['openai', createOpenAiTtsAdapter()],
   ]);
+  // Document-capable models read scanned PDFs (the `ocr.document` route picks which).
+  const ocr = new Map<AiProviderKey, OcrAdapter>([
+    ['anthropic', createAnthropicOcrAdapter()],
+    ['gemini', createGeminiOcrAdapter()],
+    ['openai', createOpenAiOcrAdapter()],
+  ]);
   if (mockAllowed(env)) {
     adapters.set('mock', createMockLlmAdapter());
     stt.set('mock', createMockSttAdapter());
     tts.set('mock', createMockTtsAdapter());
+    ocr.set('mock', createMockOcrAdapter());
   }
   return {
     llm: (key) => adapters.get(key),
     stt: (key) => stt.get(key),
     tts: (key) => tts.get(key),
+    ocr: (key) => ocr.get(key),
   };
 }
 

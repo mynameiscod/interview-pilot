@@ -540,6 +540,12 @@ export const workerEnvSchema = baseEnvSchema
       .min(64 * 1024)
       .max(10 * 1024 * 1024)
       .default(2 * 1024 * 1024),
+    /** Scanned PDFs are sent to the `ocr.document` route; `false` keeps them failing with NO_TEXT. */
+    OCR_ENABLED: booleanString.default(true),
+    /** Scanned PDFs with more pages than this are not sent for OCR (cost control). */
+    OCR_MAX_PAGES: z.coerce.number().int().min(1).max(30).default(10),
+    /** Largest scanned PDF sent for OCR, in MB. */
+    OCR_MAX_MB: z.coerce.number().int().min(1).max(25).default(8),
   })
   .superRefine((env, ctx) => {
     const issue = (path: string, message: string) =>

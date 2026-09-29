@@ -23,6 +23,22 @@ export function splitSystem(messages: readonly ChatMessage[]) {
 }
 
 /**
+ * Replaces the content of the last user turn with `attach(text)` (OCR puts the
+ * document before the instruction text there). Adds a user turn if there is none.
+ */
+export function attachToLastUser<T>(
+  turns: readonly (ChatMessage & { role: 'user' | 'assistant' })[],
+  attach: (text: string) => T,
+): ({ role: 'user' | 'assistant'; content: string } | { role: 'user'; content: T })[] {
+  const last = turns.findLastIndex((m) => m.role === 'user');
+  if (last === -1) return [...turns, { role: 'user', content: attach('') }];
+  return turns.map((m, i) => (i === last ? { role: 'user' as const, content: attach(m.content) } : m));
+}
+
+/** Instruction used when a rendered OCR prompt has no user text. */
+export const OCR_DEFAULT_INSTRUCTION = 'Transcribe all text in the attached document.';
+
+/**
  * Converts an SDK or network failure into an AiProviderError. `status` is
  * read from the SDK error when present. Messages stay generic: provider error
  * bodies can echo prompt fragments.

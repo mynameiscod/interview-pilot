@@ -3,11 +3,19 @@ import {
   toJsonSchema,
   type FinishReason,
   type LlmAdapter,
+  type LlmCallResult,
+  type OcrAdapter,
   type ProviderCredentials,
 } from '@cbi/ai-core';
 import { effortSupported, samplingParamsSupported } from '@cbi/shared-types';
 import OpenAI from 'openai';
-import { splitSystem, toProviderError } from './shared.js';
+import type { Response, ResponseInput } from 'openai/resources/responses/responses';
+import {
+  attachToLastUser,
+  OCR_DEFAULT_INSTRUCTION,
+  splitSystem,
+  toProviderError,
+} from './shared.js';
 
 type OpenAiClient = Pick<OpenAI, 'responses'>;
 
@@ -24,6 +32,51 @@ function defaultClient(credentials: ProviderCredentials, timeoutMs: number): Ope
     maxRetries: 0,
     timeout: timeoutMs,
   });
+}
+
+function resultOf(response: Response): LlmCallResult {
+  const refused = response.output.some(
+    (item) => item.type === 'message' && item.content.some((part) => part.type === 'refusal'),
+  );
+  const reason = response.incomplete_details?.reason;
+  const finishReason: FinishReason =
+    refused || reason === 'content_filter'
+      ? 'refusal'
+      : reason === 'max_output_tokens'
+        ? 'length'
+        : response.status === 'completed'
+          ? 'stop'
+          : 'other';
+  return {
+    text: response.output_text,
+    servedModel: response.model,
+    finishReason,
+    usage: {
+      inputTokens: response.usage?.input_tokens ?? 0,
+      cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      requests: 1,
+    },
+  };
+}
+
+function mapError(err: unknown, signal: AbortSignal): AiProviderError {
+  if (err instanceof OpenAI.APIUserAbortError || err instanceof OpenAI.APIConnectionTimeoutError) {
+    return new AiProviderError('openai', 'TIMEOUT', 'timeout', 'request timed out', {
+      cause: err,
+    });
+  }
+  if (err instanceof OpenAI.APIConnectionError) {
+    return new AiProviderError('openai', 'NETWORK_ERROR', 'network', 'connection failed', {
+      cause: err,
+    });
+  }
+  return toProviderError(
+    'openai',
+    err,
+    err instanceof OpenAI.APIError ? err.status : undefined,
+    signal,
+  );
 }
 
 /** OpenAI via the official SDK (Responses API). Responses are not stored by OpenAI. */
@@ -65,49 +118,43 @@ export function createOpenAiLlmAdapter(opts: OpenAiAdapterOptions = {}): LlmAdap
           },
           { signal },
         );
-        const refused = response.output.some(
-          (item) => item.type === 'message' && item.content.some((part) => part.type === 'refusal'),
-        );
-        const reason = response.incomplete_details?.reason;
-        const finishReason: FinishReason =
-          refused || reason === 'content_filter'
-            ? 'refusal'
-            : reason === 'max_output_tokens'
-              ? 'length'
-              : response.status === 'completed'
-                ? 'stop'
-                : 'other';
-        return {
-          text: response.output_text,
-          servedModel: response.model,
-          finishReason,
-          usage: {
-            inputTokens: response.usage?.input_tokens ?? 0,
-            cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
-            outputTokens: response.usage?.output_tokens ?? 0,
-            requests: 1,
-          },
-        };
+        return resultOf(response);
       } catch (err) {
-        if (
-          err instanceof OpenAI.APIUserAbortError ||
-          err instanceof OpenAI.APIConnectionTimeoutError
-        ) {
-          throw new AiProviderError('openai', 'TIMEOUT', 'timeout', 'request timed out', {
-            cause: err,
-          });
-        }
-        if (err instanceof OpenAI.APIConnectionError) {
-          throw new AiProviderError('openai', 'NETWORK_ERROR', 'network', 'connection failed', {
-            cause: err,
-          });
-        }
-        throw toProviderError(
-          'openai',
-          err,
-          err instanceof OpenAI.APIError ? err.status : undefined,
-          signal,
+        throw mapError(err, signal);
+      }
+    },
+  };
+}
+
+/**
+ * OCR for scanned PDFs through the Responses API file input (the PDF is sent
+ * inline as a data URL; nothing is uploaded or stored by OpenAI).
+ */
+export function createOpenAiOcrAdapter(opts: OpenAiAdapterOptions = {}): OcrAdapter {
+  const factory = opts.clientFactory ?? defaultClient;
+  return {
+    providerKey: 'openai',
+    async recognize({ model, request, credentials, signal }) {
+      const client = factory(credentials, model.params.timeoutMs);
+      const { system, turns } = splitSystem(request.messages);
+      const fileData = `data:${request.mimeType};base64,${Buffer.from(request.document).toString('base64')}`;
+      try {
+        const response = await client.responses.create(
+          {
+            model: model.modelId,
+            ...(system ? { instructions: system } : {}),
+            input: attachToLastUser(turns, (text) => [
+              { type: 'input_file' as const, filename: 'document.pdf', file_data: fileData },
+              { type: 'input_text' as const, text: text || OCR_DEFAULT_INSTRUCTION },
+            ]).map((m) => ({ role: m.role, content: m.content })) as ResponseInput,
+            max_output_tokens: request.maxOutputTokens ?? model.params.maxOutputTokens,
+            store: false,
+          },
+          { signal },
         );
+        return resultOf(response);
+      } catch (err) {
+        throw mapError(err, signal);
       }
     },
   };

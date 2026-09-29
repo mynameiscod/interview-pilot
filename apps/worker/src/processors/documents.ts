@@ -2,7 +2,7 @@ import { renderPrompt, untrusted, type PromptValue } from '@cbi/ai-core';
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import { JobTargetModel, ResumeModel, type ExtractionRecord } from '@cbi/db';
-import { cleanText, ExtractionError, extractDocumentText, type OcrHook } from '@cbi/documents';
+import { cleanText, ExtractionError, extractDocumentText } from '@cbi/documents';
 import {
   extractReadableText,
   safeFetchText,
@@ -20,6 +20,7 @@ import {
   type ExtractionWarning,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
+import type { DocumentOcr, OcrContext } from './ocr.js';
 import { knownNames, redactForAi } from './pii.js';
 
 export interface DocumentProcessorDeps {
@@ -28,11 +29,19 @@ export interface DocumentProcessorDeps {
   logger: Logger;
   fetch: Pick<SafeFetchOptions, 'timeoutMs' | 'maxBytes'> &
     Partial<Pick<SafeFetchOptions, 'resolve' | 'isAllowedAddress' | 'extraPorts'>>;
-  ocr?: OcrHook;
+  /** Scanned-PDF OCR (the `ocr.document` route); absent: scanned PDFs fail with NO_TEXT. */
+  ocr?: DocumentOcr;
 }
 
 /** How much input text is sent to structuring prompts (cost control). */
 export const STRUCTURE_INPUT_CHARS = 24_000;
+
+/** The extractor's OCR hook for one input (null when OCR is not configured). */
+const ocrFor = (deps: DocumentProcessorDeps, ctx: OcrContext) =>
+  deps.ocr
+    ? (file: Buffer, mime: Parameters<DocumentOcr>[1], info: { pages: number | null }) =>
+        deps.ocr!(file, mime, info, ctx)
+    : undefined;
 
 /** Thrown for failures that retrying cannot fix; the input is marked FAILED with the code. */
 class InputFailure extends Error {
@@ -153,7 +162,9 @@ export async function processResumeExtract(
     finalAttempt,
     async () => {
       const file = await deps.storage.get(resume.storageKey);
-      const extracted = await extractDocumentText(file, { ocr: deps.ocr });
+      const extracted = await extractDocumentText(file, {
+        ocr: ocrFor(deps, { userId: String(resume.userId), kind: 'resume' }),
+      });
       // Contact details and the candidate's name never leave for the model.
       const forAi = redactForAi(deps.logger, extracted.text.slice(0, STRUCTURE_INPUT_CHARS), {
         what: 'resume.structure',
@@ -237,7 +248,7 @@ export async function processJdExtract(
           break;
         case 'UPLOAD': {
           const extracted = await extractDocumentText(await deps.storage.get(target.storageKey!), {
-            ocr: deps.ocr,
+            ocr: ocrFor(deps, { userId: String(target.userId), kind: 'job description' }),
           });
           text = extracted.text;
           parser = extracted.parser;
