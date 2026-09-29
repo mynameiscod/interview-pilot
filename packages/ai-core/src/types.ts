@@ -1,6 +1,7 @@
 import type {
   AiCallOutcome,
   AiCapability,
+  AiEffort,
   AiFeature,
   AiModelParams,
   AiProviderKey,
@@ -29,6 +30,11 @@ export interface LlmRequest<T = unknown> {
   output?: StructuredOutput<T>;
   /** Lowers the model's configured maximum for this call; never raises it. */
   maxOutputTokens?: number;
+  /**
+   * Reasoning effort for this call. The router fills it from the route when
+   * absent; adapters drop it for models without an effort control.
+   */
+  effort?: AiEffort | null;
 }
 
 /**
@@ -93,7 +99,16 @@ export interface LlmCallResult {
 export interface LlmAdapter {
   readonly providerKey: AiProviderKey;
   generate(input: LlmCallInput): Promise<LlmCallResult>;
+  /**
+   * Optional incremental output: text deltas as they arrive, then exactly one
+   * `done` event carrying what `generate` would have returned. Adapters
+   * without it are served through `generate` (one delta with the full text).
+   */
+  stream?(input: LlmCallInput): AsyncIterable<LlmStreamEvent>;
 }
+
+export type LlmStreamEvent =
+  { type: 'delta'; text: string } | { type: 'done'; result: LlmCallResult };
 
 // ---- Speech ------------------------------------------------------------------
 
@@ -193,6 +208,8 @@ export interface RuntimeRoute {
   feature: AiFeature;
   active: boolean;
   chain: { modelId: string; priority: number }[];
+  /** Null or absent: the provider default. */
+  effort?: AiEffort | null;
 }
 
 export interface AiRuntimeConfig {

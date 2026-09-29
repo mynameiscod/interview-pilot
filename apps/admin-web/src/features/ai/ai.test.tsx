@@ -233,6 +233,7 @@ describe('routing', () => {
         { modelId: 'm1', priority: 0, label: 'Claude Opus 5 (Anthropic)' },
         { modelId: 'm2', priority: 1, label: 'Claude Sonnet 5 (Anthropic)' },
       ],
+      effort: 'low',
       updatedAt: now,
     };
     const api = await renderAt('/ai/routes', ['SUPER_ADMIN'], {
@@ -247,6 +248,8 @@ describe('routing', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: 'Move Claude Sonnet 5 (Anthropic) up' }));
+    expect(screen.getByLabelText('Reasoning effort')).toHaveValue('low');
+    await user.selectOptions(screen.getByLabelText('Reasoning effort'), 'medium');
     await user.type(
       screen.getByLabelText('Reason (recorded in the audit log)'),
       'Faster first answer',
@@ -261,6 +264,7 @@ describe('routing', () => {
         { modelId: 'm2', priority: 0 },
         { modelId: 'm1', priority: 1 },
       ],
+      effort: 'medium',
       reason: 'Faster first answer',
     });
   });
@@ -460,6 +464,7 @@ describe('voice (speech models)', () => {
       capability: 'TTS',
       active: true,
       chain: [],
+      effort: null,
       updatedAt: null,
     };
     await renderAt('/ai/routes', ['SUPER_ADMIN'], {

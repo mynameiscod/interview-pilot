@@ -3,6 +3,7 @@ import {
   CreateBlueprintVersionBody,
   CreateTemplateVersionBody,
   LibraryReasonBody,
+  PatternVerificationBody,
   PromoteBlueprintBody,
   UpsertCompanyBody,
   UpsertRoleBody,
@@ -83,6 +84,18 @@ export function libraryAdminRouter(c: Container): Router {
     const body = UpsertCompanyBody.parse(req.body);
     res.json({
       data: await svc.updateCompany(id(req.params.id), body, actor(req), clientContext(req)),
+    });
+  });
+  router.post('/companies/:id/patterns/verify', manage, async (req, res) => {
+    const body = PatternVerificationBody.parse(req.body);
+    res.json({
+      data: await svc.verifyPattern(id(req.params.id), body, actor(req), clientContext(req)),
+    });
+  });
+  router.post('/companies/:id/patterns/unverify', manage, async (req, res) => {
+    const body = PatternVerificationBody.parse(req.body);
+    res.json({
+      data: await svc.unverifyPattern(id(req.params.id), body, actor(req), clientContext(req)),
     });
   });
 

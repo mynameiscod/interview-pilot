@@ -4,6 +4,7 @@ import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger } from '@cbi/config';
 import {
   CampaignModel,
+  CompanyModel,
   AiRouteModel,
   connectMongo,
   createRedis,
@@ -18,13 +19,14 @@ import {
   ResumeModel,
   RoleBlueprintModel,
   RoleModel,
+  UserProfileModel,
   type ExtractionRecord,
   type JobTargetRecord,
 } from '@cbi/db';
 import { buildDocx, buildDocxBomb, buildPdf, SAMPLE_RESUME_LINES } from '@cbi/documents/testing';
 import { createMemoryStorage } from '@cbi/provider-adapters/testing';
 import { DOCUMENT_MIME } from '@cbi/shared-types';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { processInterviewAnalyze } from './analysis.js';
 import { processJdExtract, processResumeExtract, type DocumentProcessorDeps } from './documents.js';
 
@@ -403,6 +405,111 @@ describe('interview analysis', () => {
     expect((await InterviewSessionModel.findById(s._id).lean())!.failure!.code).toBe(
       'INPUT_FAILED',
     );
+  });
+
+  it('is idempotent: concurrent or retried attempts share one generated blueprint', async () => {
+    const target = await readyTarget({ source: 'PASTE', rawText: JD_TEXT });
+    const s = await session(target);
+    await Promise.all([analyze(s._id), analyze(s._id)]);
+    const generated = await RoleBlueprintModel.find({ origin: 'AI_GENERATED' }).lean();
+    expect(generated).toHaveLength(1);
+    expect(String(generated[0]!.sourceSessionId)).toBe(String(s._id));
+    const saved = await InterviewSessionModel.findById(s._id).lean();
+    expect(String(saved!.blueprintId)).toBe(String(generated[0]!._id));
+  });
+
+  it('reuses the blueprint an earlier attempt generated without calling the model again', async () => {
+    const target = await readyTarget({ source: 'PASTE', rawText: JD_TEXT });
+    const s = await session(target);
+    const role = await RoleModel.findOne({ slug: 'backend-engineer' }).lean();
+    const canonical = await RoleBlueprintModel.findById(role!.activeBlueprintId).lean();
+    // An earlier attempt inserted this, then failed before the state change.
+    const [earlier] = await RoleBlueprintModel.create([
+      {
+        roleId: null,
+        origin: 'AI_GENERATED',
+        version: 1,
+        status: 'ACTIVE',
+        content: canonical!.content,
+        contentHash: canonical!.contentHash,
+        generatedBy: { model: 'mock-llm', promptVersion: 1 },
+        sourceJobTargetId: target._id,
+        sourceSessionId: s._id,
+        userId,
+        activatedAt: new Date(),
+      },
+    ]);
+    const run = vi.spyOn(ai.router, 'run');
+    try {
+      await analyze(s._id);
+      expect(run.mock.calls.map((c) => c[0])).toEqual(['role.analyze']);
+    } finally {
+      run.mockRestore();
+    }
+    const saved = await InterviewSessionModel.findById(s._id).lean();
+    expect(String(saved!.blueprintId)).toBe(String(earlier!._id));
+    expect(await RoleBlueprintModel.countDocuments({ origin: 'AI_GENERATED' })).toBe(1);
+  });
+
+  it('masks personal data and adds company settings to the analysis prompts', async () => {
+    await UserProfileModel.create({ userId, displayName: 'Priya Sharma' });
+    const company = await CompanyModel.create({
+      name: 'Acme',
+      slug: 'acme',
+      roleFamilies: ['ENGINEERING'],
+      allowedQuestionCategories: ['TECHNICAL', 'PROBLEM_SOLVING'],
+      verifiedPatterns: [
+        {
+          note: 'Two technical rounds with a system design discussion.',
+          sourceType: 'COMPANY_PUBLISHED',
+          sourceUrl: null,
+          verifiedBy: userId,
+          verifiedAt: new Date(),
+        },
+        {
+          note: 'Unverified rumour about puzzles.',
+          sourceType: 'OTHER',
+          sourceUrl: null,
+          verifiedBy: null,
+          verifiedAt: null,
+        },
+      ],
+    });
+    const resume = await ResumeModel.create({
+      userId,
+      storageKey: 'resumes/x.pdf',
+      originalName: 'resume.pdf',
+      mime: DOCUMENT_MIME.PDF,
+      size: 1,
+      sha256: 'x'.repeat(64),
+      rawText: `Priya Sharma\npriya@example.com | +91 98765 43210\n${SAMPLE_RESUME_LINES.join('\n')}`,
+      extraction: extraction('READY'),
+    });
+    const target = await readyTarget({
+      source: 'PASTE',
+      rawText: `${JD_TEXT} Questions? Mail hr@acme.example.`,
+      companyId: company._id,
+    });
+    const s = await session(target, { resumeId: resume._id });
+    const run = vi.spyOn(ai.router, 'run');
+    try {
+      await analyze(s._id);
+      const sent = run.mock.calls.map((c) => c[1].messages.map((m) => m.content).join('\n'));
+      expect(sent).toHaveLength(2);
+      for (const text of sent) {
+        expect(text).not.toMatch(/Priya|Sharma|priya@example\.com|98765|hr@acme/);
+        expect(text).toContain('[EMAIL]');
+        expect(text).toContain('Two technical rounds');
+        expect(text).not.toContain('Unverified rumour');
+        expect(text).toContain('only cover these question categories: TECHNICAL, PROBLEM_SOLVING');
+        expect(text).toContain('role families: ENGINEERING');
+      }
+      expect(sent[0]).toContain('[NAME]');
+    } finally {
+      run.mockRestore();
+    }
+    // The stored resume text is unchanged.
+    expect((await ResumeModel.findById(resume._id).lean())!.rawText).toContain('Priya Sharma');
   });
 
   it('ignores sessions that already left ROLE_ANALYSIS', async () => {

@@ -39,6 +39,8 @@ export interface FixtureRun {
   overall: number | null;
   band: ReadinessBand;
   claims: string[];
+  /** Quotes the extractor returned that were not found in the answers (and were removed). */
+  unverifiedQuotes: number;
   /** AI steps that returned nothing (model unavailable or invalid output). */
   unavailable: string[];
 }
@@ -58,6 +60,8 @@ export interface FixtureResult {
   /** Largest max − min of any dimension's score across repeats. */
   spread: number;
   durationMs: number;
+  /** Human label for calibration fixtures. */
+  label?: EvalFixture['label'];
 }
 
 export interface EvalReport {
@@ -66,6 +70,16 @@ export interface EvalReport {
   passed: boolean;
   fixtures: FixtureResult[];
   summary: { fixtures: number; failed: number; checks: number; failedChecks: number };
+  /** Agreement with human labels, when calibration fixtures ran. */
+  calibration: CalibrationSummary | null;
+}
+
+export interface CalibrationSummary {
+  examples: number;
+  /** Mean absolute difference between the final score and the human score. */
+  meanAbsError: number;
+  /** Share of examples whose score fell inside the labelled range. */
+  withinRange: number;
 }
 
 /** Repeats of the same fixture whose scores differ more than this are flagged. */
@@ -77,6 +91,7 @@ export async function runFixture(
   categoryWeights: CategoryWeights = EVAL_CATEGORY_WEIGHTS,
 ): Promise<FixtureRun> {
   const unavailable: string[] = [];
+  let unverifiedQuotes = 0;
   const evidence: (ExtractedEvidence & { id: string })[] = [];
   const rounds = [...new Set(fixture.turns.map((t) => t.roundType))];
   for (const roundType of rounds) {
@@ -96,6 +111,7 @@ export async function runFixture(
       unavailable.push(`extract:${roundType}`);
       continue;
     }
+    unverifiedQuotes += result.unverifiedQuotes;
     for (const item of result.items) evidence.push({ ...item, id: `e${evidence.length + 1}` });
   }
 
@@ -138,6 +154,7 @@ export async function runFixture(
     overall: agg.overall,
     band: readinessBand(agg.overall),
     claims: evidence.flatMap((e) => [e.claim, e.quote ?? '']).filter(Boolean),
+    unverifiedQuotes,
     unavailable,
   };
 }
@@ -203,6 +220,15 @@ export function checkExpectations(
           name: `no evidence mentions: ${e.reason}`,
           passed: offending.length === 0,
           detail: offending.length ? `found: ${offending.slice(0, 2).join(' | ')}` : 'none',
+        });
+        break;
+      }
+      case 'quotesGrounded': {
+        const max = e.maxUnverified ?? 0;
+        checks.push({
+          name: `quotes not found in the answers <= ${max}`,
+          passed: run.unverifiedQuotes <= max,
+          detail: `got ${run.unverifiedQuotes}`,
         });
         break;
       }
@@ -286,6 +312,7 @@ export async function runEvalSuite(
       runs,
       spread,
       durationMs: Date.now() - started,
+      ...(fixture.label ? { label: fixture.label } : {}),
     });
   }
   const allChecks = results.flatMap((r) => r.checks);
@@ -300,6 +327,30 @@ export async function runEvalSuite(
       checks: allChecks.length,
       failedChecks: allChecks.filter((c) => !c.passed).length,
     },
+    calibration: calibrationSummary(results),
+  };
+}
+
+/** How closely scores agree with the human labels (first labelled dimension of each run). */
+export function calibrationSummary(results: readonly FixtureResult[]): CalibrationSummary | null {
+  const pairs = results.flatMap((r) =>
+    r.label
+      ? r.runs.map((run) => ({
+          label: r.label!,
+          score: run.dimensions.find((d) => d.key === r.label!.competencyKey)?.score ?? null,
+        }))
+      : [],
+  );
+  if (pairs.length === 0) return null;
+  // An unscored answer counts as 0 against the label.
+  const errors = pairs.map((p) => Math.abs((p.score ?? 0) - p.label.score));
+  const inside = pairs.filter(
+    (p) => p.score !== null && p.score >= p.label.range[0] && p.score <= p.label.range[1],
+  );
+  return {
+    examples: pairs.length,
+    meanAbsError: Math.round((errors.reduce((a, b) => a + b, 0) / errors.length) * 10) / 10,
+    withinRange: Math.round((inside.length / pairs.length) * 100) / 100,
   };
 }
 
@@ -314,5 +365,11 @@ export function formatReport(report: EvalReport): string {
   lines.push(
     `${s.fixtures - s.failed}/${s.fixtures} fixtures passed, ${s.checks - s.failedChecks}/${s.checks} checks passed`,
   );
+  if (report.calibration) {
+    const c = report.calibration;
+    lines.push(
+      `calibration: ${c.examples} labelled answers, mean absolute error ${c.meanAbsError}, ${Math.round(c.withinRange * 100)}% within the labelled range`,
+    );
+  }
   return lines.join('\n');
 }

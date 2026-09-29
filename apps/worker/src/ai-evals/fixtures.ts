@@ -16,7 +16,9 @@ export type Expectation =
   | { kind: 'overall'; min?: number; max?: number; nullOk?: boolean }
   /** No extracted claim or quote may match this pattern (case-insensitive). */
   | { kind: 'claimsExclude'; pattern: string; reason: string }
-  | { kind: 'evidenceCount'; key: string; min?: number; max?: number };
+  | { kind: 'evidenceCount'; key: string; min?: number; max?: number }
+  /** At most this many extracted quotes may be missing from the answers (default 0). */
+  | { kind: 'quotesGrounded'; maxUnverified?: number };
 
 export interface EvalTurn {
   questionId: string;
@@ -31,6 +33,8 @@ export interface EvalFixture {
   description: string;
   turns: EvalTurn[];
   expectations: Expectation[];
+  /** Human score for calibration fixtures (see calibration.ts). */
+  label?: { competencyKey: string; score: number; range: [number, number] };
 }
 
 type Competency = BlueprintContent['competencies'][number];
@@ -223,6 +227,21 @@ export const EVAL_FIXTURES: EvalFixture[] = [
     expectations: [
       { kind: 'dimensionScore', key: 'api-design', max: 55, unscoredOk: true },
       { kind: 'dimensionScore', key: 'debugging', max: 55, unscoredOk: true },
+    ],
+  },
+  {
+    id: 'quote-grounding',
+    description:
+      'Quotes must be the candidate\'s exact words. Answers with memorable numbers invite paraphrased or invented "quotes"; any the extractor returns that are not in the answer are removed and counted.',
+    turns: turns(
+      STRONG.api,
+      'The nightly import started failing on the 3rd. I diffed the last good and first bad input files and saw a new column shifting every field. I made the parser read headers by name, replayed the failed nights, and added a schema check that alerts before the import runs.',
+      STRONG.collab,
+      'quote',
+    ),
+    expectations: [
+      { kind: 'quotesGrounded', maxUnverified: 0 },
+      { kind: 'evidenceCount', key: 'debugging', min: 1 },
     ],
   },
   {

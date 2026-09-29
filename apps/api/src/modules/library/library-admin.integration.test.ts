@@ -215,13 +215,36 @@ describe('companies', () => {
     ],
   };
 
-  it('records who verified each pattern and keeps it for unchanged notes', async () => {
+  it('starts patterns unverified, verifies each explicitly and keeps it for unchanged notes', async () => {
     const first = await adminAs(['CONTENT_ADMIN']);
     const created = CompanySummary.parse(
       (await first.call('post', '/companies').send(body).expect(201)).body.data,
     );
-    expect(created.verifiedPatterns[0]).toMatchObject({ verifiedBy: first.userId });
+    // Saving never verifies: an unverified pattern never reaches prompts.
+    expect(created.verifiedPatterns[0]).toMatchObject({ verifiedBy: null, verifiedAt: null });
     expect(created.allowedQuestionCategories).toHaveLength(5);
+    const note = body.verifiedPatterns[0]!.note;
+    const verified = CompanySummary.parse(
+      (
+        await first
+          .call('post', `/companies/${created.id}/patterns/verify`)
+          .send({ index: 0, note, reason: 'Checked the careers page' })
+          .expect(200)
+      ).body.data,
+    );
+    expect(verified.verifiedPatterns[0]).toMatchObject({ verifiedBy: first.userId });
+    expect(verified.verifiedPatterns[0]!.verifiedAt).not.toBeNull();
+    await first
+      .call('post', `/companies/${created.id}/patterns/verify`)
+      .send({ index: 0, note, reason: 'again' })
+      .expect(409);
+    // A stale screen (different note at that index) cannot verify.
+    await first
+      .call('post', `/companies/${created.id}/patterns/verify`)
+      .send({ index: 0, note: 'Something else', reason: 'stale' })
+      .expect(409);
+    const audit = await AuditLogModel.findOne({ action: 'company.pattern_verified' }).lean();
+    expect(audit!.details).toMatchObject({ index: 0, note, reason: 'Checked the careers page' });
 
     const second = await adminAs(['OPERATIONS_ADMIN']);
     const updated = CompanySummary.parse(
@@ -242,10 +265,19 @@ describe('companies', () => {
           .expect(200)
       ).body.data,
     );
-    expect(updated.verifiedPatterns.map((p) => p.verifiedBy)).toEqual([
-      first.userId,
-      second.userId,
-    ]);
+    // The unchanged note keeps its verifier; the new one waits for verification.
+    expect(updated.verifiedPatterns.map((p) => p.verifiedBy)).toEqual([first.userId, null]);
+
+    const unverified = CompanySummary.parse(
+      (
+        await second
+          .call('post', `/companies/${created.id}/patterns/unverify`)
+          .send({ index: 0, note, reason: 'Careers page changed' })
+          .expect(200)
+      ).body.data,
+    );
+    expect(unverified.verifiedPatterns[0]).toMatchObject({ verifiedBy: null, verifiedAt: null });
+    expect(await AuditLogModel.countDocuments({ action: 'company.pattern_unverified' })).toBe(1);
 
     // Candidates only ever see the name.
     const search = await request(t.app)

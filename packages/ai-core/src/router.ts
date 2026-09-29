@@ -2,6 +2,7 @@ import {
   AI_FEATURE_CAPABILITY,
   type AiCallOutcome,
   type AiCapability,
+  type AiEffort,
   type AiFeature,
   type BreakerState,
   type SpeechServiceStatus,
@@ -32,6 +33,7 @@ import {
   type AiRuntimeConfig,
   type ChatMessage,
   type LlmAdapter,
+  type LlmCallInput,
   type LlmCallResult,
   type LlmRequest,
   type RuntimeModel,
@@ -227,6 +229,16 @@ export function createAiRouter(deps: AiRouterDeps) {
     }
   }
 
+  /** Adapter failures that are not AiProviderErrors become one (timeout or unexpected). */
+  function asProviderError(err: unknown, c: Candidate, timeout: AbortSignal): AiProviderError {
+    if (err instanceof AiProviderError) return err;
+    return timeout.aborted
+      ? new AiProviderError(c.provider.key, 'TIMEOUT', 'timeout', 'timed out', { cause: err })
+      : new AiProviderError(c.provider.key, 'PROVIDER_ERROR', 'unexpected', 'adapter error', {
+          cause: err,
+        });
+  }
+
   function backoff(attempt: number): number {
     const cap = Math.min(policy.backoffMaxMs, policy.backoffBaseMs * 2 ** (attempt - 1));
     return Math.round(random() * cap);
@@ -327,12 +339,11 @@ export function createAiRouter(deps: AiRouterDeps) {
     request: LlmRequest<T>,
     ctx: AiCallContext,
     attempts: AttemptSummary[],
+    routeEffort: AiEffort | null,
   ): Promise<AiRunResult<T> | null> {
     const maxAttempts = 1 + c.model.params.retries;
-    const maxOutputTokens = Math.min(
-      request.maxOutputTokens ?? c.model.params.maxOutputTokens,
-      c.model.params.maxOutputTokens,
-    );
+    const maxOutputTokens = outputCap(request, c);
+    const effort = request.effort !== undefined ? request.effort : routeEffort;
     let messages: ChatMessage[] = request.messages;
     let failures = 0;
     let callNumber = 0;
@@ -349,7 +360,7 @@ export function createAiRouter(deps: AiRouterDeps) {
       try {
         result = await (c.adapter as LlmAdapter).generate({
           model: { providerKey: c.provider.key, modelId: c.model.modelId, params: c.model.params },
-          request: { ...request, messages, maxOutputTokens },
+          request: { ...request, messages, maxOutputTokens, effort },
           credentials: { apiKey: c.apiKey, baseUrl: c.provider.baseUrl ?? undefined },
           signal,
         });
@@ -365,22 +376,7 @@ export function createAiRouter(deps: AiRouterDeps) {
           });
           throw new AiAbortedError(feature);
         }
-        const error =
-          err instanceof AiProviderError
-            ? err
-            : timeout.aborted
-              ? new AiProviderError(c.provider.key, 'TIMEOUT', 'timeout', 'timed out', {
-                  cause: err,
-                })
-              : new AiProviderError(
-                  c.provider.key,
-                  'PROVIDER_ERROR',
-                  'unexpected',
-                  'adapter error',
-                  {
-                    cause: err,
-                  },
-                );
+        const error = asProviderError(err, c, timeout);
         await record(feature, c, ctx, error.outcome, {
           attempt: callNumber,
           latencyMs,
@@ -484,6 +480,145 @@ export function createAiRouter(deps: AiRouterDeps) {
         detail: outcome === 'REFUSED' ? 'refusal' : 'schema',
       });
       return null;
+    }
+  }
+
+  const outputCap = (request: LlmRequest<unknown>, c: Candidate) =>
+    Math.min(
+      request.maxOutputTokens ?? c.model.params.maxOutputTokens,
+      c.model.params.maxOutputTokens,
+    );
+
+  /**
+   * Streams one model's reply through `emit`, with the same retry, breaker
+   * and metering rules as `callModel`. A failure before the first delta
+   * retries or falls back as usual; once text has been emitted it cannot be
+   * taken back, so a later failure ends the stream with `AiUnavailableError`.
+   */
+  async function streamModel(
+    feature: AiFeature,
+    c: Candidate,
+    request: LlmRequest,
+    ctx: AiCallContext,
+    attempts: AttemptSummary[],
+    routeEffort: AiEffort | null,
+    emit: (text: string) => void,
+  ): Promise<AiRunResult<undefined> | null> {
+    const maxAttempts = 1 + c.model.params.retries;
+    const effort = request.effort !== undefined ? request.effort : routeEffort;
+    const adapter = c.adapter as LlmAdapter;
+    let failures = 0;
+    for (let callNumber = 1; ; callNumber++) {
+      const timeout = AbortSignal.timeout(c.model.params.timeoutMs);
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+      const input: LlmCallInput = {
+        model: { providerKey: c.provider.key, modelId: c.model.modelId, params: c.model.params },
+        request: { ...request, maxOutputTokens: outputCap(request, c), effort },
+        credentials: { apiKey: c.apiKey, baseUrl: c.provider.baseUrl ?? undefined },
+        signal,
+      };
+      const started = performance.now();
+      let emitted = false;
+      try {
+        let result: LlmCallResult | null = null;
+        if (adapter.stream) {
+          for await (const event of adapter.stream(input)) {
+            if (event.type === 'done') result = event.result;
+            else if (event.text) {
+              emitted = true;
+              emit(event.text);
+            }
+          }
+          if (!result) {
+            throw new AiProviderError(
+              c.provider.key,
+              'PROVIDER_ERROR',
+              'stream_incomplete',
+              'the stream ended without a final message',
+            );
+          }
+        } else {
+          // No streaming support: one delta with the whole reply.
+          result = await adapter.generate(input);
+          if (result.finishReason !== 'refusal' && result.text) {
+            emitted = true;
+            emit(result.text);
+          }
+        }
+        const outcome: AiCallOutcome = result.finishReason === 'refusal' ? 'REFUSED' : 'SUCCESS';
+        const costMicros = await record(feature, c, ctx, outcome, {
+          attempt: callNumber,
+          latencyMs: Math.round(performance.now() - started),
+          units: result.usage,
+          servedModel: result.servedModel,
+          errorCode: outcome === 'REFUSED' ? 'refusal' : null,
+        });
+        await recordBreaker(c.model.id, 'success');
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome,
+          detail: outcome === 'REFUSED' ? 'refusal' : null,
+        });
+        if (outcome === 'REFUSED') {
+          if (emitted) throw new AiUnavailableError(feature, attempts, 'The reply was refused');
+          return null;
+        }
+        return {
+          text: result.text,
+          data: undefined,
+          feature,
+          model: { id: c.model.id, providerKey: c.provider.key, modelId: c.model.modelId },
+          servedModel: result.servedModel,
+          attempts,
+          usage: result.usage,
+          costMicros,
+        };
+      } catch (err) {
+        if (err instanceof AiUnavailableError) throw err;
+        const latencyMs = Math.round(performance.now() - started);
+        if (ctx.signal?.aborted) {
+          await record(feature, c, ctx, 'ABORTED', {
+            attempt: callNumber,
+            latencyMs,
+            units: ZERO_USAGE,
+            servedModel: null,
+            errorCode: 'aborted',
+          });
+          throw new AiAbortedError(feature);
+        }
+        const error = asProviderError(err, c, timeout);
+        await record(feature, c, ctx, error.outcome, {
+          attempt: callNumber,
+          latencyMs,
+          units: ZERO_USAGE,
+          servedModel: null,
+          errorCode: error.code,
+        });
+        if (countsAgainstBreaker(error.outcome)) await recordBreaker(c.model.id, 'failure');
+        log.warn(
+          { feature, model: c.model.modelId, outcome: error.outcome, code: error.code, emitted },
+          'ai stream failed',
+        );
+        const summary = {
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: error.outcome,
+          detail: error.code,
+        };
+        if (emitted) {
+          attempts.push(summary);
+          throw new AiUnavailableError(feature, attempts, 'The stream was interrupted');
+        }
+        failures += 1;
+        if (error.retryable && failures < maxAttempts) {
+          await sleep(backoff(failures), ctx.signal).catch(() => undefined);
+          if (ctx.signal?.aborted) throw new AiAbortedError(feature);
+          continue;
+        }
+        attempts.push(summary);
+        return null;
+      }
     }
   }
 
@@ -591,22 +726,7 @@ export function createAiRouter(deps: AiRouterDeps) {
           });
           throw new AiAbortedError(feature);
         }
-        const error =
-          err instanceof AiProviderError
-            ? err
-            : timeout.aborted
-              ? new AiProviderError(c.provider.key, 'TIMEOUT', 'timeout', 'timed out', {
-                  cause: err,
-                })
-              : new AiProviderError(
-                  c.provider.key,
-                  'PROVIDER_ERROR',
-                  'unexpected',
-                  'adapter error',
-                  {
-                    cause: err,
-                  },
-                );
+        const error = asProviderError(err, c, timeout);
         await record(feature, c, ctx, error.outcome, {
           attempt: callNumber,
           latencyMs,
@@ -646,7 +766,11 @@ export function createAiRouter(deps: AiRouterDeps) {
   async function throughChain<R>(
     feature: AiFeature,
     ctx: AiCallContext,
-    exec: (c: Candidate, attempts: AttemptSummary[]) => Promise<R | null>,
+    exec: (
+      c: Candidate,
+      attempts: AttemptSummary[],
+      routeEffort: AiEffort | null,
+    ) => Promise<R | null>,
     describe: (r: R) => string,
   ): Promise<R> {
     const config = await deps.config.get();
@@ -704,7 +828,7 @@ export function createAiRouter(deps: AiRouterDeps) {
         }
       }
       const result = await withCandidate(feature, resolved.candidate, ctx, attempts, (c) =>
-        exec(c, attempts),
+        exec(c, attempts, route.effort ?? null),
       );
       if (result) {
         if (attempts.length > 1) {
@@ -798,9 +922,71 @@ export function createAiRouter(deps: AiRouterDeps) {
       return throughChain(
         feature,
         ctx,
-        (c, attempts) => callModel(feature, c, request, ctx, attempts),
+        (c, attempts, effort) => callModel(feature, c, request, ctx, attempts, effort),
         (r) => r.model.modelId,
       );
+    },
+
+    /**
+     * Streams a text reply for `feature` through its chain: yields text
+     * deltas and returns the final result (metered like `run`). Models whose
+     * adapter cannot stream reply in one delta. Fallback to the next model
+     * only happens before the first delta; structured output is not
+     * streamable. Stopping iteration early aborts the call.
+     */
+    async *stream(
+      feature: AiFeature,
+      request: LlmRequest,
+      ctx: AiCallContext = {},
+    ): AsyncGenerator<string, AiRunResult<undefined>, void> {
+      if (request.output) throw new Error('structured output cannot be streamed; use run()');
+      const controller = new AbortController();
+      const signal = ctx.signal
+        ? AbortSignal.any([ctx.signal, controller.signal])
+        : controller.signal;
+      const callCtx: AiCallContext = { ...ctx, signal };
+      const queue: string[] = [];
+      const state: {
+        settled: { ok: true; value: AiRunResult<undefined> } | { ok: false; error: unknown } | null;
+        wake: (() => void) | null;
+      } = { settled: null, wake: null };
+      const notify = () => {
+        state.wake?.();
+        state.wake = null;
+      };
+      void throughChain(
+        feature,
+        callCtx,
+        (c, attempts, effort) =>
+          streamModel(feature, c, request, callCtx, attempts, effort, (text) => {
+            queue.push(text);
+            notify();
+          }),
+        (r) => r.model.modelId,
+      ).then(
+        (value) => {
+          state.settled = { ok: true, value };
+          notify();
+        },
+        (error: unknown) => {
+          state.settled = { ok: false, error };
+          notify();
+        },
+      );
+      try {
+        for (;;) {
+          while (queue.length > 0) yield queue.shift()!;
+          const settled = state.settled;
+          if (settled) {
+            if (!settled.ok) throw settled.error;
+            return settled.value;
+          }
+          await new Promise<void>((resolve) => (state.wake = resolve));
+        }
+      } finally {
+        // The consumer stopped early: stop the provider call too.
+        if (!state.settled) controller.abort(new Error('stream consumer stopped'));
+      }
     },
 
     /**
@@ -814,7 +1000,7 @@ export function createAiRouter(deps: AiRouterDeps) {
       ctx: AiCallContext = {},
     ): Promise<AiRunResult<T>> {
       return onModel(modelRef, feature, ctx, (c, attempts) =>
-        callModel(feature, c, request, ctx, attempts),
+        callModel(feature, c, request, ctx, attempts, null),
       );
     },
 

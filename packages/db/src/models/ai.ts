@@ -1,6 +1,7 @@
 import {
   AiCallOutcome,
   AiCapability,
+  AiEffort,
   AiFeature,
   AiProviderKey,
   Currency,
@@ -13,6 +14,7 @@ import mongoose, { Schema, type Model, type Types } from 'mongoose';
 import type {
   AiCallOutcome as AiCallOutcomeT,
   AiCapability as AiCapabilityT,
+  AiEffort as AiEffortT,
   AiFeature as AiFeatureT,
   AiProviderKey as AiProviderKeyT,
   Currency as CurrencyT,
@@ -82,6 +84,8 @@ export interface AiRouteRecord {
   feature: AiFeatureT;
   active: boolean;
   chain: { modelId: Types.ObjectId; priority: number }[];
+  /** Reasoning effort sent with every call on this route (null: provider default). */
+  effort?: AiEffortT | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -254,6 +258,7 @@ const aiRouteSchema = new Schema<AiRouteRecord>(
       ],
       default: [],
     },
+    effort: { type: String, enum: [...AiEffort.options, null], default: null },
   },
   { timestamps: true, collection: 'aiRoutes' },
 );

@@ -24,15 +24,21 @@ import {
   type AiFeature,
   type AnalysisFailureCode,
   type BlueprintContent,
+  type CompetencyCategory,
   type RoleAnalysis,
+  type RoleFamily,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
 import {
   analysisFromBlueprint,
+  companyGuidance,
   matchRoleByTitle,
   normalizeBlueprintDraft,
   planRounds,
+  restrictCategories,
+  shortlistRoles,
 } from '../analysis/blueprint.js';
+import { knownNames, redactForAi } from './pii.js';
 
 export interface AnalysisProcessorDeps {
   ai: AiRuntime;
@@ -90,16 +96,50 @@ async function fail(session: InterviewSessionRecord, code: AnalysisFailureCode, 
   });
 }
 
-/** Verified company notes only: unverified notes never influence interviews. */
-async function companyNotes(companyId: unknown): Promise<string[]> {
-  if (!companyId) return [];
+interface CompanyContext {
+  /** Verified notes only: unverified notes never influence interviews. */
+  notes: string[];
+  roleFamilies: RoleFamily[];
+  allowedQuestionCategories: CompetencyCategory[];
+}
+
+const NO_COMPANY: CompanyContext = { notes: [], roleFamilies: [], allowedQuestionCategories: [] };
+
+async function companyContext(companyId: unknown): Promise<CompanyContext> {
+  if (!companyId) return NO_COMPANY;
   const company = await CompanyModel.findOne({ _id: companyId, active: true }).lean();
-  return (company?.verifiedPatterns ?? []).filter((p) => p.verifiedAt).map((p) => p.note);
+  if (!company) return NO_COMPANY;
+  return {
+    notes: company.verifiedPatterns.filter((p) => p.verifiedAt).map((p) => p.note),
+    roleFamilies: company.roleFamilies,
+    allowedQuestionCategories: company.allowedQuestionCategories,
+  };
 }
 
 async function activeBlueprint(role: RoleRecord | null): Promise<RoleBlueprintRecord | null> {
   if (!role?.activeBlueprintId) return null;
   return RoleBlueprintModel.findOne({ _id: role.activeBlueprintId, status: 'ACTIVE' }).lean();
+}
+
+/**
+ * Inserts the session's generated blueprint, or returns the one a concurrent
+ * attempt already inserted (unique on sourceSessionId), so retries never
+ * leave duplicates or orphans.
+ */
+async function createSessionBlueprint(
+  doc: Omit<RoleBlueprintRecord, '_id' | 'createdAt' | 'createdBy' | 'retiredAt'>,
+): Promise<RoleBlueprintRecord> {
+  try {
+    const [created] = await RoleBlueprintModel.create([doc]);
+    return created!.toObject();
+  } catch (err) {
+    if ((err as { code?: number }).code !== 11000) throw err;
+    const winner = await RoleBlueprintModel.findOne({
+      sourceSessionId: doc.sourceSessionId,
+    }).lean();
+    if (!winner) throw err;
+    return winner;
+  }
 }
 
 /**
@@ -164,15 +204,36 @@ async function analyze(
     return { status: 'done' };
   }
 
-  const jdText = target.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '';
-  const resumeText = resume?.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '';
-  const [roles, notes, chosenRole] = await Promise.all([
+  // Personal data is masked before any AI call; the stored text is unchanged.
+  const names = await knownNames(session.userId);
+  const jdText = redactForAi(deps.logger, target.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '', {
+    what: 'analysis.jd',
+    userId: ctx.userId,
+    names,
+    addresses: false,
+  });
+  const resumeText = redactForAi(
+    deps.logger,
+    resume?.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '',
+    { what: 'analysis.resume', userId: ctx.userId, names },
+  );
+  const [roles, company, chosenRole] = await Promise.all([
     RoleModel.find({ active: true }).lean(),
-    companyNotes(target.companyId),
+    companyContext(target.companyId),
     target.roleId ? RoleModel.findOne({ _id: target.roleId, active: true }).lean() : null,
   ]);
+  const notes = company.notes;
   const roleTitle = target.roleTitle?.trim() || chosenRole?.title || target.structured?.title || '';
-  const notesText = notes.map((n) => `- ${n}`).join('\n');
+  const notesText = [
+    ...notes.map((n) => `- ${n}`),
+    ...companyGuidance(company).map((line) => `- ${line}`),
+  ].join('\n');
+  // Only the likeliest library roles go into the prompt, not the whole library.
+  const candidateRoles = shortlistRoles(roles, {
+    title: roleTitle,
+    jd: jdText,
+    families: company.roleFamilies,
+  });
 
   // ---- Role analysis -----------------------------------------------------------
   const analyzed = await runPrompt(
@@ -180,7 +241,7 @@ async function analyze(
     'role.analyze',
     RoleAnalysisAi,
     {
-      libraryRoles: roles.map((r) => `${r.slug}: ${r.title}`).join('\n'),
+      libraryRoles: candidateRoles.map((r) => `${r.slug}: ${r.title}`).join('\n'),
       roleTitle: untrusted(roleTitle),
       jd: untrusted(jdText),
       resume: untrusted(resumeText),
@@ -227,8 +288,12 @@ async function analyze(
         .then((c) => (c ? RoleBlueprintModel.findById(c.blueprintId).lean() : null))
     : null;
   const hasContext = Boolean(jdText || resumeText);
+  // A retried job reuses the blueprint an earlier attempt generated for this session.
+  const existing = pinned
+    ? null
+    : await RoleBlueprintModel.findOne({ sourceSessionId: session._id }).lean();
   const generated =
-    !pinned && (hasContext || !canonical)
+    !pinned && !existing && (hasContext || !canonical)
       ? await runPrompt(
           deps,
           'blueprint.generate',
@@ -245,7 +310,17 @@ async function analyze(
   let generatedContent: BlueprintContent | null = null;
   if (generated) {
     try {
-      generatedContent = normalizeBlueprintDraft(generated.data);
+      const restricted = restrictCategories(
+        normalizeBlueprintDraft(generated.data),
+        company.allowedQuestionCategories,
+      );
+      if (restricted.removed.length) {
+        deps.logger.info(
+          { sessionId: ctx.sessionId, removed: restricted.removed },
+          'competencies outside the company categories removed',
+        );
+      }
+      generatedContent = restricted.content;
     } catch (err) {
       deps.logger.warn({ err, sessionId: ctx.sessionId }, 'generated blueprint rejected');
     }
@@ -258,27 +333,37 @@ async function analyze(
       version: pinned.version,
       content: pinned.content,
     };
-  } else if (generated && generatedContent) {
-    const [doc] = await RoleBlueprintModel.create([
-      {
-        roleId: null,
-        origin: 'AI_GENERATED',
-        version: 1,
-        status: 'ACTIVE',
-        content: generatedContent,
-        contentHash: contentHash(generatedContent),
-        generatedBy: { model: generated.model, promptVersion: generated.promptVersion },
-        sourceJobTargetId: target._id,
-        userId: session.userId,
-        activatedAt: now,
-      },
-    ]);
-    promptVersions['blueprint.generate'] = generated.promptVersion;
+  } else if (existing) {
+    if (existing.generatedBy?.promptVersion) {
+      promptVersions['blueprint.generate'] = existing.generatedBy.promptVersion;
+    }
     blueprint = {
-      id: String(doc!._id),
+      id: String(existing._id),
+      origin: 'AI_GENERATED',
+      version: existing.version,
+      content: existing.content,
+    };
+  } else if (generated && generatedContent) {
+    const doc = await createSessionBlueprint({
+      roleId: null,
       origin: 'AI_GENERATED',
       version: 1,
+      status: 'ACTIVE',
       content: generatedContent,
+      contentHash: contentHash(generatedContent),
+      generatedBy: { model: generated.model, promptVersion: generated.promptVersion },
+      sourceJobTargetId: target._id,
+      sourceSessionId: session._id,
+      userId: session.userId,
+      activatedAt: now,
+    });
+    promptVersions['blueprint.generate'] =
+      doc.generatedBy?.promptVersion ?? generated.promptVersion;
+    blueprint = {
+      id: String(doc._id),
+      origin: 'AI_GENERATED',
+      version: doc.version,
+      content: doc.content,
     };
   } else if (canonical) {
     blueprint = {

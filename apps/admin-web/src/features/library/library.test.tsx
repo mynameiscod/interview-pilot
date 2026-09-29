@@ -402,6 +402,61 @@ describe('companies', () => {
     expect(bodyOf(api, 'PUT /admin/companies/c1')).toMatchObject({ verifiedPatterns: [] });
   });
 
+  it('verifies and withdraws verification of a saved pattern with a reason', async () => {
+    const pattern = company().verifiedPatterns[0]!;
+    const unverified = company({
+      verifiedPatterns: [{ ...pattern, verifiedBy: null, verifiedAt: null }],
+    });
+    const { api } = await renderAt('/companies', ['CONTENT_ADMIN'], {
+      'GET /admin/companies': () => ok([unverified]),
+      'POST /admin/companies/c1/patterns/verify': () => ok(company()),
+      'POST /admin/companies/c1/patterns/unverify': () => ok(unverified),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit Globex' }));
+    expect(
+      screen.getByText('Not verified: this note does not shape interviews'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Verify note 1' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm verification' });
+    expect(confirm).toBeDisabled();
+    await user.type(
+      screen.getByLabelText('Reason for note 1 (recorded in the audit log)'),
+      'Checked the careers page',
+    );
+    await user.click(confirm);
+    expect(await screen.findByText(/^Verified by admin-9 on /)).toBeInTheDocument();
+    expect(bodyOf(api, 'POST /admin/companies/c1/patterns/verify')).toEqual({
+      index: 0,
+      note: pattern.note,
+      reason: 'Checked the careers page',
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Withdraw verification of note 1' }));
+    await user.type(
+      screen.getByLabelText('Reason for note 1 (recorded in the audit log)'),
+      'Source removed',
+    );
+    await user.click(screen.getByRole('button', { name: 'Confirm withdrawal' }));
+    expect(
+      await screen.findByText('Not verified: this note does not shape interviews'),
+    ).toBeInTheDocument();
+  });
+
+  it('does not offer verification for a note edited since the last save', async () => {
+    await renderAt('/companies', ['CONTENT_ADMIN'], {
+      'GET /admin/companies': () => ok([company()]),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Edit Globex' }));
+    await user.type(screen.getByLabelText('Pattern 1 note'), ' Updated.');
+    expect(screen.getByText('Not verified yet: save, then verify it')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Withdraw verification of note 1' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('hides management controls without library.manage', async () => {
     await renderAt('/companies', ['library.read'], {
       'GET /admin/companies': () => ok([company()]),

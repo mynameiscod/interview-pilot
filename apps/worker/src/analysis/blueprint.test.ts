@@ -1,11 +1,15 @@
-import { BlueprintContent, type BlueprintDraftAi } from '@cbi/shared-types';
+import { BlueprintContent, CompetencyCategory, type BlueprintDraftAi } from '@cbi/shared-types';
 import { describe, expect, it } from 'vitest';
 import {
   analysisFromBlueprint,
+  companyGuidance,
   distributeWeights,
   matchRoleByTitle,
   normalizeBlueprintDraft,
   planRounds,
+  restrictCategories,
+  ROLE_SHORTLIST_SIZE,
+  shortlistRoles,
   slugify,
 } from './blueprint.js';
 
@@ -236,5 +240,99 @@ describe('analysisFromBlueprint', () => {
       focusSkills: [{ name: 'Node.js', weight: 40, source: 'ROLE' }],
     });
     expect(analysisFromBlueprint(blueprint).skills.map((s) => s.name)).toEqual(['Node.js']);
+  });
+});
+
+describe('shortlistRoles', () => {
+  const filler = Array.from({ length: 60 }, (_, i) => ({
+    slug: `role-${i}`,
+    title: `Generic Role ${i}`,
+    aliases: [],
+    family: 'OTHER' as const,
+  }));
+  const roles = [
+    ...filler,
+    {
+      slug: 'backend-engineer',
+      title: 'Backend Engineer',
+      aliases: ['Node.js Developer'],
+      family: 'ENGINEERING' as const,
+    },
+    { slug: 'data-analyst', title: 'Data Analyst', aliases: [], family: 'DATA' as const },
+    {
+      slug: 'frontend-engineer',
+      title: 'Frontend Engineer',
+      aliases: [],
+      family: 'ENGINEERING' as const,
+    },
+  ];
+
+  it('returns every role when the library is small', () => {
+    expect(shortlistRoles(roles.slice(0, 5), { title: 'x' })).toHaveLength(5);
+  });
+
+  it('caps the list and ranks exact, title-word, JD-word and family matches first', () => {
+    const list = shortlistRoles(roles, {
+      title: 'Senior Backend Engineer',
+      jd: 'You will work with our data analyst team.',
+      families: ['ENGINEERING'],
+    });
+    expect(list).toHaveLength(ROLE_SHORTLIST_SIZE);
+    expect(list.slice(0, 3).map((r) => r.slug)).toEqual([
+      'backend-engineer',
+      'frontend-engineer',
+      'data-analyst',
+    ]);
+  });
+
+  it('keeps library order when nothing matches', () => {
+    const list = shortlistRoles(roles, { title: 'Astronaut' }, 3);
+    expect(list.map((r) => r.slug)).toEqual(['role-0', 'role-1', 'role-2']);
+  });
+});
+
+describe('company settings', () => {
+  const blueprint = normalizeBlueprintDraft(
+    draft([
+      { key: 'api', category: 'TECHNICAL', weight: 40 },
+      { key: 'debug', category: 'PROBLEM_SOLVING', weight: 30 },
+      { key: 'talk', category: 'COMMUNICATION', weight: 20 },
+      { key: 'team', category: 'BEHAVIORAL', weight: 10 },
+    ]),
+  );
+
+  it('keeps only competencies in the allowed categories, re-weighted to 100', () => {
+    const { content, removed } = restrictCategories(blueprint, [
+      'TECHNICAL',
+      'PROBLEM_SOLVING',
+      'COMMUNICATION',
+    ]);
+    expect(removed).toEqual(['team']);
+    expect(content.competencies.map((c) => c.key)).toEqual(['api', 'debug', 'talk']);
+    expect(sum(content.competencies.map((c) => c.weight))).toBe(100);
+  });
+
+  it('leaves the blueprint alone without a restriction or when fewer than three would remain', () => {
+    expect(restrictCategories(blueprint, []).content).toBe(blueprint);
+    expect(restrictCategories(blueprint, ['TECHNICAL']).removed).toEqual([]);
+  });
+
+  it('describes categories and role families for the prompt', () => {
+    expect(
+      companyGuidance({
+        allowedQuestionCategories: ['TECHNICAL', 'PROBLEM_SOLVING'],
+        roleFamilies: ['ENGINEERING'],
+      }),
+    ).toEqual([
+      expect.stringContaining('only cover these question categories: TECHNICAL, PROBLEM_SOLVING'),
+      expect.stringContaining('role families: ENGINEERING'),
+    ]);
+    // Allowing every category is no restriction.
+    expect(
+      companyGuidance({
+        allowedQuestionCategories: [...CompetencyCategory.options],
+        roleFamilies: [],
+      }),
+    ).toEqual([]);
   });
 });

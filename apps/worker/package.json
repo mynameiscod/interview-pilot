@@ -6,7 +6,8 @@
   "description": "BullMQ background workers for CareerPilot Interview",
   "main": "dist/index.js",
   "files": [
-    "dist"
+    "dist",
+    "assets"
   ],
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env --conditions=@cbi/source src/index.ts",

@@ -97,7 +97,10 @@ describe('Anthropic adapter', () => {
     expect(params).toMatchObject({
       model: 'claude-opus-5',
       max_tokens: 1000,
-      system: 'You are an interviewer.',
+      // The static system prompt is marked for prompt caching.
+      system: [
+        { type: 'text', text: 'You are an interviewer.', cache_control: { type: 'ephemeral' } },
+      ],
       messages: [
         { role: 'user', content: 'Hello' },
         { role: 'assistant', content: 'Hi' },
@@ -127,6 +130,83 @@ describe('Anthropic adapter', () => {
     expect(t.calls[0]!.params).not.toHaveProperty('fallbacks');
     expect(t.calls[0]!.params).not.toHaveProperty('output_config');
     expect(t.calls[0]!.params.temperature).toBe(0.2);
+  });
+
+  it('drops sampling parameters the model rejects and sends effort only where supported', async () => {
+    const t = fake(message);
+    const withParams = (modelId: string): LlmCallInput => {
+      const base = input(modelId);
+      return {
+        ...base,
+        model: { ...base.model, params: { ...base.model.params, temperature: 0.7 } },
+        request: { ...base.request, effort: 'high' },
+      };
+    };
+    await t.adapter.generate(withParams('claude-opus-5-5'));
+    await t.adapter.generate(withParams('claude-haiku-4-5'));
+    await t.adapter.generate(withParams('claude-sonnet-4-6'));
+    const [opus, haiku, sonnet46] = t.calls.map((c) => c.params);
+    expect(opus).not.toHaveProperty('temperature');
+    expect(opus!.output_config).toEqual({ effort: 'high' });
+    expect(haiku!.temperature).toBe(0.7);
+    expect(haiku).not.toHaveProperty('output_config');
+    expect(sonnet46).toMatchObject({ temperature: 0.7, output_config: { effort: 'high' } });
+  });
+
+  it('asks for server-side fallbacks on the models that support them', async () => {
+    const t = fake(message);
+    for (const id of [
+      'claude-opus-5-5',
+      'claude-sonnet-5-5',
+      'claude-fable-5-1',
+      'claude-sonnet-5',
+    ]) {
+      await t.adapter.generate(input(id));
+    }
+    expect(t.calls.map((c) => c.params.fallbacks ?? null)).toEqual([
+      'default',
+      'default',
+      'default',
+      null,
+    ]);
+  });
+
+  it('streams text deltas and ends with the full result', async () => {
+    const events = [
+      {
+        type: 'message_start',
+        message: {
+          model: 'claude-opus-5-5',
+          usage: { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 1 },
+        },
+      },
+      { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Tell me ' } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'more.' } },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 7 } },
+      { type: 'message_stop' },
+    ];
+    const t = fake({
+      async *[Symbol.asyncIterator]() {
+        yield* events;
+      },
+    });
+    const out: unknown[] = [];
+    for await (const e of t.adapter.stream!(input('claude-opus-5-5'))) out.push(e);
+    expect(t.calls[0]!.params.stream).toBe(true);
+    expect(out).toEqual([
+      { type: 'delta', text: 'Tell me ' },
+      { type: 'delta', text: 'more.' },
+      {
+        type: 'done',
+        result: {
+          text: 'Tell me more.',
+          servedModel: 'claude-opus-5-5',
+          finishReason: 'stop',
+          usage: { inputTokens: 100, cachedInputTokens: 90, outputTokens: 7, requests: 1 },
+        },
+      },
+    ]);
   });
 
   it('reports refusals and truncation', async () => {
@@ -205,6 +285,22 @@ describe('OpenAI adapter', () => {
       requests: 1,
     });
     expect(result.servedModel).toBe('gpt-5.1-2026-01-01');
+  });
+
+  it('sends reasoning effort to reasoning models and drops their unsupported temperature', async () => {
+    const t = fake(response);
+    const base = input('gpt-5.1');
+    const tuned = (modelId: string): LlmCallInput => ({
+      ...base,
+      model: { ...base.model, modelId, params: { ...base.model.params, temperature: 0.3 } },
+      request: { ...base.request, effort: 'low' },
+    });
+    await t.adapter.generate(tuned('gpt-5.1'));
+    await t.adapter.generate(tuned('gpt-4.1'));
+    expect(t.calls[0]).toMatchObject({ reasoning: { effort: 'low' } });
+    expect(t.calls[0]).not.toHaveProperty('temperature');
+    expect(t.calls[1]).toMatchObject({ temperature: 0.3 });
+    expect(t.calls[1]).not.toHaveProperty('reasoning');
   });
 
   it('detects refusals and truncation', async () => {

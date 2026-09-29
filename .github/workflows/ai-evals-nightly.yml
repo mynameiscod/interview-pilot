@@ -1,0 +1,109 @@
+name: AI evals (nightly)
+
+# Runs the AI regression and calibration suites against the real models in
+# `full` mode (CI only runs `structure` mode against the mock). Real calls
+# are billed, so it runs nightly and on demand, and only when a provider key
+# secret is configured: AI_EVAL_ANTHROPIC_API_KEY (and optionally
+# AI_EVAL_OPENAI_API_KEY / AI_EVAL_GEMINI_API_KEY for the fallback models).
+# Without a key the job is skipped with a notice.
+
+on:
+  schedule:
+    # 02:30 IST.
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'regression, calibration or all'
+        default: all
+      repeat:
+        description: 'Runs per fixture (score stability check when > 1)'
+        default: '2'
+
+concurrency:
+  group: ai-evals-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ai-evals:
+    name: AI evals (full mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: test
+      AI_MOCK_MODE: 'false'
+      MONGODB_URI: mongodb://localhost:27017/cbi_ai_eval?directConnection=true
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - name: Check for a provider key
+        id: key
+        env:
+          ANTHROPIC: ${{ secrets.AI_EVAL_ANTHROPIC_API_KEY }}
+          OPENAI: ${{ secrets.AI_EVAL_OPENAI_API_KEY }}
+          GEMINI: ${{ secrets.AI_EVAL_GEMINI_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC$OPENAI$GEMINI" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No AI_EVAL_*_API_KEY secret is configured; skipping the full-mode AI evals."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/checkout@v4
+      - if: steps.key.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - if: steps.key.outputs.present == 'true'
+        run: corepack enable
+      - if: steps.key.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Start MongoDB single-node replica set
+        if: steps.key.outputs.present == 'true'
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:8.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval \
+              "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }" \
+              && break
+            sleep 2
+          done
+          for i in $(seq 1 30); do
+            docker exec mongo mongosh --quiet --eval "db.hello().isWritablePrimary" | grep -q true && exit 0
+            sleep 2
+          done
+          echo "MongoDB replica set did not become primary" && exit 1
+
+      - name: Run the AI evals
+        if: steps.key.outputs.present == 'true'
+        env:
+          AI_EVAL_ANTHROPIC_API_KEY: ${{ secrets.AI_EVAL_ANTHROPIC_API_KEY }}
+          AI_EVAL_OPENAI_API_KEY: ${{ secrets.AI_EVAL_OPENAI_API_KEY }}
+          AI_EVAL_GEMINI_API_KEY: ${{ secrets.AI_EVAL_GEMINI_API_KEY }}
+          SUITE: ${{ inputs.suite || 'all' }}
+          REPEAT: ${{ inputs.repeat || '2' }}
+        run: |
+          # A throwaway master key: the database only lives for this job.
+          export AI_SECRETS_MASTER_KEY="$(openssl rand -base64 32)"
+          pnpm --filter @cbi/worker ai:eval --seed --mode=full \
+            --suite="$SUITE" --repeat="$REPEAT" --out="$GITHUB_WORKSPACE/ai-eval-report.json"
+
+      - name: Upload the report
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-eval-report
+          path: ai-eval-report.json
+          if-no-files-found: ignore
+          retention-days: 30

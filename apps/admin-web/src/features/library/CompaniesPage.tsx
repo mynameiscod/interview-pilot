@@ -9,7 +9,7 @@ import {
 import { ApiClientError } from '@cbi/web-core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
-import { useFieldArray, useForm, type FieldPath } from 'react-hook-form';
+import { useFieldArray, useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useAdminAuth, useCan } from '../../app/session';
@@ -138,6 +138,98 @@ function FieldError({ id, message }: { id: string; message: string | undefined }
   );
 }
 
+/**
+ * Verify or withdraw verification of one saved pattern (audited, with a
+ * reason). Only offered for notes unchanged since the last save, because the
+ * server checks the note at that position.
+ */
+function PatternVerification({
+  companyId,
+  index,
+  pattern,
+  onChanged,
+}: {
+  companyId: string;
+  index: number;
+  pattern: CompanySummary['verifiedPatterns'][number];
+  onChanged: (company: CompanySummary) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const { manager } = useAdminAuth();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const verified = Boolean(pattern.verifiedAt);
+  const n = index + 1;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className={`btn btn-sm ${verified ? 'btn-outline-secondary' : 'btn-outline-success'}`}
+        aria-label={t(
+          verified ? 'library.companies.unverifyLabel' : 'library.companies.verifyLabel',
+          {
+            n,
+          },
+        )}
+        onClick={() => setOpen(true)}
+      >
+        {t(verified ? 'library.companies.unverify' : 'library.companies.verify')}
+      </button>
+    );
+  }
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2">
+      <label htmlFor={`${id}-reason`} className="visually-hidden">
+        {t('library.companies.verificationReason', { n })}
+      </label>
+      <input
+        id={`${id}-reason`}
+        className="form-control form-control-sm"
+        style={{ maxWidth: '18rem' }}
+        placeholder={t('library.companies.verificationReason', { n })}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+      />
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        disabled={pending || reason.trim().length < 3}
+        onClick={async () => {
+          setPending(true);
+          setError(null);
+          try {
+            const saved = await manager.api.post<CompanySummary>(
+              `/admin/companies/${companyId}/patterns/${verified ? 'unverify' : 'verify'}`,
+              { index, note: pattern.note, reason: reason.trim() },
+            );
+            setOpen(false);
+            setReason('');
+            onChanged(saved);
+          } catch (err) {
+            setError(libraryError(t, err));
+          } finally {
+            setPending(false);
+          }
+        }}
+      >
+        {t(verified ? 'library.companies.confirmUnverify' : 'library.companies.confirmVerify')}
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-outline-secondary"
+        onClick={() => setOpen(false)}
+      >
+        {t('ai.cancel')}
+      </button>
+      <ErrorAlert error={error} />
+    </div>
+  );
+}
+
 function CompanyEditor({
   company,
   onDone,
@@ -164,6 +256,20 @@ function CompanyEditor({
     defaultValues: toForm(company),
   });
   const patterns = useFieldArray({ control, name: 'patterns' });
+  // Patterns as last saved on the server (verification changes them without a form save).
+  const [saved, setSaved] = useState(company?.verifiedPatterns ?? []);
+  const current = useWatch({ control, name: 'patterns' });
+  const savedAt = (index: number) => {
+    const s = saved[index];
+    const c = current[index];
+    return s &&
+      c &&
+      s.note === c.note.trim() &&
+      s.sourceType === c.sourceType &&
+      (s.sourceUrl ?? '') === c.sourceUrl.trim()
+      ? s
+      : null;
+  };
   const nameField = register('name');
   const slugField = register('slug');
 
@@ -408,13 +514,28 @@ function CompanyEditor({
               </div>
               <div className="d-flex flex-wrap justify-content-between align-items-center mt-2 gap-2">
                 <span className="small cb-text-secondary">
-                  {field.verifiedAt
-                    ? t('library.companies.verifiedBy', {
-                        by: field.verifiedBy ?? '—',
-                        date: formatDateTime(field.verifiedAt, i18n.language),
-                      })
-                    : t('library.companies.verifiedOnSave')}
+                  {(() => {
+                    const stored = savedAt(index);
+                    if (!stored) return t('library.companies.verifiedOnSave');
+                    return stored.verifiedAt
+                      ? t('library.companies.verifiedBy', {
+                          by: stored.verifiedBy ?? '—',
+                          date: formatDateTime(stored.verifiedAt, i18n.language),
+                        })
+                      : t('library.companies.notVerified');
+                  })()}
                 </span>
+                {company && savedAt(index) && (
+                  <PatternVerification
+                    companyId={company.id}
+                    index={index}
+                    pattern={savedAt(index)!}
+                    onChanged={(updated) => {
+                      setSaved(updated.verifiedPatterns);
+                      void queryClient.invalidateQueries({ queryKey: ['library', 'companies'] });
+                    }}
+                  />
+                )}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-danger"

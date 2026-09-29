@@ -1,4 +1,4 @@
-import type { AiModelSummary, AiRouteSummary } from '@cbi/shared-types';
+import { AiEffort, type AiModelSummary, type AiRouteSummary } from '@cbi/shared-types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +21,7 @@ function RouteEditor({
   const queryClient = useQueryClient();
   const [active, setActive] = useState(route.active);
   const [chain, setChain] = useState(route.chain.map((c) => c.modelId));
+  const [effort, setEffort] = useState<AiEffort | null>(route.effort);
   const [adding, setAdding] = useState('');
   const [error, setError] = useState<string | null>(null);
   const eligible = models.filter((m) => m.capabilities.includes(route.capability));
@@ -38,6 +39,7 @@ function RouteEditor({
       manager.api.put(`/admin/ai/routes/${route.feature}`, {
         active,
         chain: chain.map((modelId, priority) => ({ modelId, priority })),
+        effort,
         reason,
       }),
     onSuccess: async () => {
@@ -149,6 +151,27 @@ function RouteEditor({
           })}
         </p>
       )}
+      {route.capability === 'LLM' && (
+        <div className="mb-3">
+          <label htmlFor={`${id}-effort`} className="form-label small">
+            {t('ai.routes.effort')}
+          </label>
+          <select
+            id={`${id}-effort`}
+            className="form-select form-select-sm"
+            value={effort ?? ''}
+            onChange={(e) => setEffort(e.target.value ? (e.target.value as AiEffort) : null)}
+          >
+            <option value="">{t('ai.routes.effortDefault')}</option>
+            {AiEffort.options.map((level) => (
+              <option key={level} value={level}>
+                {t(`ai.routes.effortLevels.${level}`)}
+              </option>
+            ))}
+          </select>
+          <div className="form-text">{t('ai.routes.effortHint')}</div>
+        </div>
+      )}
       <p className="small cb-text-secondary">{t('ai.routes.hint')}</p>
     </ReasonForm>
   );
@@ -242,6 +265,13 @@ function FeatureRow({
                 <li key={c.modelId}>{c.label}</li>
               ))}
             </ol>
+          )}
+          {route.effort && (
+            <div className="small cb-text-secondary">
+              {t('ai.routes.effortSummary', {
+                effort: t(`ai.routes.effortLevels.${route.effort}`),
+              })}
+            </div>
           )}
         </td>
         <td className="text-end">

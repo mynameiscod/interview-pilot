@@ -16,6 +16,7 @@ There are no passwords. Signing in with a new email/mobile/Google account on the
 
 - 6 digits from `crypto.randomInt`. Stored only as `HMAC-SHA256(OTP_HMAC_SECRET, challengeId:code)`; the code never touches the database or logs.
 - Expires after `OTP_TTL_SEC` (default 5 min); at most `OTP_MAX_ATTEMPTS` (default 5) guesses per code, counted atomically _before_ the comparison; single use.
+- The code email (and dev-mailbox SMS) is sent in English, Hindi or Telugu: the request's optional `lang` (the web apps send the current UI locale), else the first supported `Accept-Language` entry, else English. Production SMS via MSG91 uses the fixed DLT template, so its wording is set in that template.
 - Per destination: `OTP_RESEND_COOLDOWN_SEC` (30 s) between sends and `OTP_MAX_PER_DESTINATION_PER_HOUR` (5). Keys are HMACs of the destination, not the address itself.
 - Per IP (Redis-backed, shared across API replicas): 10 requests / 15 min and 15 verifications / min.
 - **No account enumeration on the admin app:** a code request for an address that is not an active admin returns the same response and creates a challenge that can never verify, and no message is sent.

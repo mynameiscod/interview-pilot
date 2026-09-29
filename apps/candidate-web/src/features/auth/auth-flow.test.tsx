@@ -153,6 +153,7 @@ describe('sign-in flow', () => {
     expect(api.calls.find((c) => c.key === 'POST /auth/otp/request')!.body).toEqual({
       channel: 'MOBILE',
       destination: '98765 43210',
+      lang: 'en',
     });
   });
 });

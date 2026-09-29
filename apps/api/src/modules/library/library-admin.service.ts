@@ -17,6 +17,7 @@ import {
   type CompanySummary,
   type CreateBlueprintVersionBody,
   type CreateTemplateVersionBody,
+  type PatternVerificationBody,
   type PromoteBlueprintBody,
   type RoleSummary,
   type TemplateSummary,
@@ -143,20 +144,67 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
     return role;
   }
 
-  /** Patterns are verified by the admin who saves them; unchanged ones keep their verifier. */
-  function verifyPatterns(
+  /**
+   * Saving a company never verifies a pattern: new or edited patterns start
+   * unverified (and so never reach prompts) until an admin verifies each one
+   * explicitly. Unchanged patterns keep their verification.
+   */
+  function mergePatterns(
     incoming: UpsertCompanyBody['verifiedPatterns'],
     previous: VerifiedPatternRecord[],
-    actorId: string,
   ): VerifiedPatternRecord[] {
-    const at = now();
     return incoming.map((p) => {
       const same = previous.find(
         (old) =>
           old.note === p.note && old.sourceType === p.sourceType && old.sourceUrl === p.sourceUrl,
       );
-      return same ?? { ...p, verifiedBy: objectId(actorId, 'User'), verifiedAt: at };
+      return same ?? { ...p, verifiedBy: null, verifiedAt: null };
     });
+  }
+
+  /** Marks one pattern verified or unverified, audited with the admin's reason. */
+  async function setPatternVerification(
+    id: string,
+    body: PatternVerificationBody,
+    verified: boolean,
+    actorId: string,
+    ctx: ClientContext,
+  ) {
+    return audited(
+      ctx,
+      actorId,
+      {
+        action: verified ? 'company.pattern_verified' : 'company.pattern_unverified',
+        resourceType: 'company',
+        resourceId: id,
+      },
+      async (session) => {
+        const company = await CompanyModel.findById(objectId(id, 'Company'), null, { session });
+        if (!company) throw AppError.notFound('Company not found');
+        const pattern = company.verifiedPatterns[body.index];
+        // The note guards against verifying a pattern that changed since the admin read it.
+        if (!pattern || pattern.note !== body.note) {
+          throw AppError.conflict('That pattern has changed; reload the company and try again.');
+        }
+        if (Boolean(pattern.verifiedAt) === verified) {
+          throw AppError.conflict(
+            verified ? 'That pattern is already verified.' : 'That pattern is not verified.',
+          );
+        }
+        pattern.verifiedBy = verified ? objectId(actorId, 'User') : null;
+        pattern.verifiedAt = verified ? now() : null;
+        await company.save({ session });
+        return {
+          result: companySummary(company.toObject()),
+          details: {
+            index: body.index,
+            note: pattern.note,
+            sourceType: pattern.sourceType,
+            reason: body.reason,
+          },
+        };
+      },
+    );
   }
 
   return {
@@ -375,7 +423,7 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
         { action: 'company.created', resourceType: 'company' },
         async (session) => {
           const [company] = await CompanyModel.create(
-            [{ ...body, verifiedPatterns: verifyPatterns(body.verifiedPatterns, [], actorId) }],
+            [{ ...body, verifiedPatterns: mergePatterns(body.verifiedPatterns, []) }],
             { session },
           );
           return {
@@ -402,11 +450,7 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
             {
               $set: {
                 ...body,
-                verifiedPatterns: verifyPatterns(
-                  body.verifiedPatterns,
-                  before.verifiedPatterns,
-                  actorId,
-                ),
+                verifiedPatterns: mergePatterns(body.verifiedPatterns, before.verifiedPatterns),
               },
             },
             { returnDocument: 'after', session },
@@ -423,6 +467,20 @@ export function createLibraryAdminService(deps: { audit: AuditService; now?: () 
         },
       );
     },
+
+    verifyPattern: (
+      id: string,
+      body: PatternVerificationBody,
+      actorId: string,
+      ctx: ClientContext,
+    ) => setPatternVerification(id, body, true, actorId, ctx),
+
+    unverifyPattern: (
+      id: string,
+      body: PatternVerificationBody,
+      actorId: string,
+      ctx: ClientContext,
+    ) => setPatternVerification(id, body, false, actorId, ctx),
 
     // ---- Templates -----------------------------------------------------------------------
     async listTemplates() {

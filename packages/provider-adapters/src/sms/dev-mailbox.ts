@@ -9,11 +9,13 @@ import type { OtpSms, OtpSmsProvider } from './types.js';
 export function createDevMailboxSmsProvider(mailbox: EmailProvider): OtpSmsProvider {
   return {
     name: 'dev-mailbox',
-    async sendOtp({ to, code, ttlMinutes }: OtpSms) {
+    async sendOtp({ to, code, ttlMinutes, text }: OtpSms) {
       return mailbox.send({
         to: `sms-${to.replace(/\D/g, '')}@dev-sms.local`,
         subject: `[DEV SMS] to ${to}`,
-        text: `Development SMS (not sent to a phone).\n\nYour CareerPilot Interview code is ${code}. It expires in ${ttlMinutes} minutes.`,
+        text: `Development SMS (not sent to a phone).\n\n${
+          text ?? `Your CareerPilot Interview code is ${code}. It expires in ${ttlMinutes} minutes.`
+        }`,
       });
     },
   };

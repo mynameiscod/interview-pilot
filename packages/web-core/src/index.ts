@@ -25,3 +25,4 @@ export {
   type BrowserErrorSdk,
   type BrowserErrorTrackingConfig,
 } from './error-tracking';
+export { toUiLocale } from './i18n/ui-locale';
