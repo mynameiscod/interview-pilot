@@ -88,7 +88,7 @@ const models = async (as: Awaited<ReturnType<typeof adminAs>>) =>
 
 const opusReply = (text: string): LlmCallResult => ({
   text,
-  servedModel: 'claude-opus-5',
+  servedModel: 'claude-opus-5-5',
   finishReason: 'stop',
   usage: { inputTokens: 2000, cachedInputTokens: 0, outputTokens: 400, requests: 1 },
 });
@@ -99,16 +99,21 @@ describe('catalog bootstrap', () => {
     expect(await AiProviderModel.countDocuments()).toBe(6);
     const stt = await AiRouteModel.findOne({ feature: 'stt.live' }).lean();
     expect(stt!.chain).toHaveLength(3); // nova-3, gpt-4o-mini-transcribe, mock-stt
-    const opus = await AiModelModel.findOne({ modelId: 'claude-opus-5' }).lean();
+    const opus = await AiModelModel.findOne({ modelId: 'claude-opus-5-5' }).lean();
     expect(opus!.pricing.map((p) => [p.unit, p.pricePerUnitMicros]).sort()).toEqual([
-      ['PER_1M_CACHED_INPUT_TOKENS', 500_000],
-      ['PER_1M_INPUT_TOKENS', 5_000_000],
-      ['PER_1M_OUTPUT_TOKENS', 25_000_000],
+      ['PER_1M_CACHED_INPUT_TOKENS', 200_000],
+      ['PER_1M_INPUT_TOKENS', 4_000_000],
+      ['PER_1M_OUTPUT_TOKENS', 20_000_000],
     ]);
     const route = await AiRouteModel.findOne({ feature: 'interview.question' }).lean();
-    expect(route!.chain).toHaveLength(3);
+    // Opus 5.5, Sonnet 5.5, GPT-5.6 Terra, Gemini 3.1 Pro, mock.
+    expect(route!.chain).toHaveLength(5);
+    expect(route!.effort).toBe('low');
+    expect(
+      (await AiRouteModel.findOne({ feature: 'evaluation.scoreDimension' }).lean())!.effort,
+    ).toBe('high');
     await AiModelModel.updateOne(
-      { modelId: 'claude-opus-5' },
+      { modelId: 'claude-opus-5-5' },
       { $set: { displayName: 'Renamed' } },
     );
     const again = await bootstrapAi({
@@ -118,7 +123,7 @@ describe('catalog bootstrap', () => {
       logger: t.container.logger,
     });
     expect(again).toMatchObject({ providersCreated: 0, modelsCreated: 0, routesCreated: 0 });
-    expect((await AiModelModel.findOne({ modelId: 'claude-opus-5' }).lean())!.displayName).toBe(
+    expect((await AiModelModel.findOne({ modelId: 'claude-opus-5-5' }).lean())!.displayName).toBe(
       'Renamed',
     );
   });
@@ -278,8 +283,10 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     );
     expect(result.text).toMatch(/^\[mock\]/);
     expect(result.attempts.map((a) => [a.model, a.detail])).toEqual([
-      ['claude-opus-5', 'no_credentials'],
-      ['claude-sonnet-5', 'no_credentials'],
+      ['claude-opus-5-5', 'no_credentials'],
+      ['claude-sonnet-5-5', 'no_credentials'],
+      ['gpt-5.6-terra', 'no_credentials'],
+      ['gemini-3.1-pro-preview', 'no_credentials'],
       ['mock-llm', null],
     ]);
     const rows = await AiUsageModel.find().lean();
@@ -298,15 +305,16 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     const served = await t.container.ai.router.run('interview.question', {
       messages: [{ role: 'user', content: 'Q' }],
     });
-    expect(served.model.modelId).toBe('claude-opus-5');
-    // 2,000 × $5/1M + 400 × $25/1M = $0.02 = 20,000 micro-USD.
-    expect(served.costMicros).toBe(20_000);
+    expect(served.model.modelId).toBe('claude-opus-5-5');
+    // 2,000 × $4/1M + 400 × $20/1M = $0.016 = 16,000 micro-USD.
+    expect(served.costMicros).toBe(16_000);
     const row = await AiUsageModel.findOne({ outcome: 'SUCCESS' }).lean();
     expect(
       row!.priceSnapshot!.entries.map((e) => e.pricePerUnitMicros).sort((a, b) => a - b),
-    ).toEqual([500_000, 5_000_000, 25_000_000]);
+    ).toEqual([200_000, 4_000_000, 20_000_000]);
 
-    // Opus overloaded twice (1 retry), Sonnet overloaded twice, the mock serves.
+    // Opus overloaded twice (1 retry), Sonnet overloaded twice, OpenAI and
+    // Gemini have no keys, the mock serves.
     const fallback = await t.container.ai.router.run('interview.question', {
       messages: [{ role: 'user', content: 'Q' }],
     });
@@ -314,6 +322,8 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     expect(fallback.attempts.map((a) => a.outcome)).toEqual([
       'PROVIDER_ERROR',
       'PROVIDER_ERROR',
+      'SKIPPED',
+      'SKIPPED',
       'SUCCESS',
     ]);
 
@@ -322,7 +332,7 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     );
     expect(report.totals.calls).toBe(6);
     expect(report.totals.failures).toBe(4);
-    expect(report.totals.costMicros).toEqual({ USD: 20_000 });
+    expect(report.totals.costMicros).toEqual({ USD: 16_000 });
     expect(report.rows.find((r) => r.key.startsWith('Claude Opus 5'))).toMatchObject({
       calls: 3,
       failures: 2,
@@ -381,8 +391,22 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     }).lean();
     expect(audit!.details).toMatchObject({
       reason: 'Paused for review',
-      to: { active: false, chain: [] },
+      // Effort is kept when the body leaves it out.
+      to: { active: false, chain: [], effort: 'low' },
     });
+
+    const tuned = await root('put', '/ai/routes/report.recommendations')
+      .send({
+        active: true,
+        chain: [{ modelId: mock.id, priority: 0 }],
+        effort: 'high',
+        reason: 'Deeper plans',
+      })
+      .expect(200);
+    expect(AiRouteSummary.parse(tuned.body.data).effort).toBe('high');
+    expect((await t.container.ai.config.get()).routes.get('report.recommendations')!.effort).toBe(
+      'high',
+    );
   });
 
   it('propagates changes to other API processes through Redis pub/sub', async () => {
@@ -409,7 +433,7 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
 describe('models and pricing', () => {
   it('adds effective-dated prices, refusing past dates and mixed currencies', async () => {
     const root = await adminAs(['SUPER_ADMIN']);
-    const sonnet = (await models(root)).find((m) => m.modelId === 'claude-sonnet-5')!;
+    const sonnet = (await models(root)).find((m) => m.modelId === 'claude-sonnet-5-5')!;
     const future = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
     const res = await root('post', `/ai/models/${sonnet.id}/prices`)
       .send({
@@ -441,7 +465,7 @@ describe('models and pricing', () => {
 
   it('validates model parameters and blocks duplicates', async () => {
     const root = await adminAs(['SUPER_ADMIN']);
-    const opus = (await models(root)).find((m) => m.modelId === 'claude-opus-5')!;
+    const opus = (await models(root)).find((m) => m.modelId === 'claude-opus-5-5')!;
     await root('patch', `/ai/models/${opus.id}`)
       .send({ params: { retries: 9 } })
       .expect(400);
@@ -449,10 +473,28 @@ describe('models and pricing', () => {
       .send({ params: { concurrency: 5 } })
       .expect(200);
     expect(ok.body.data.params).toMatchObject({ concurrency: 5, retries: 1, timeoutMs: 120_000 });
+    // Current Claude models reject sampling parameters: a temperature would 400 every call.
+    const refused = await root('patch', `/ai/models/${opus.id}`)
+      .send({ params: { temperature: 0.2 } })
+      .expect(400);
+    expect(JSON.stringify(refused.body)).toMatch(/does not accept a temperature/);
+    const haiku = (await models(root)).find((m) => m.modelId === 'claude-haiku-4-5')!;
+    await root('patch', `/ai/models/${haiku.id}`)
+      .send({ params: { temperature: 0.2 } })
+      .expect(200);
     await root('post', '/ai/models')
       .send({
         providerId: opus.providerId,
-        modelId: 'claude-opus-5',
+        modelId: 'claude-sonnet-5',
+        displayName: 'Sonnet 5 with temperature',
+        capabilities: ['LLM'],
+        params: { temperature: 0.5 },
+      })
+      .expect(400);
+    await root('post', '/ai/models')
+      .send({
+        providerId: opus.providerId,
+        modelId: 'claude-opus-5-5',
         displayName: 'Dup',
         capabilities: ['LLM'],
       })
@@ -465,7 +507,7 @@ describe('models and pricing', () => {
     const mock = all.find((m) => m.modelId === 'mock-llm')!;
     const ok = await root('post', `/ai/models/${mock.id}/test`).expect(200);
     expect(ok.body.data).toMatchObject({ ok: true, outcome: 'SUCCESS', servedModel: 'mock-llm' });
-    const opus = all.find((m) => m.modelId === 'claude-opus-5')!;
+    const opus = all.find((m) => m.modelId === 'claude-opus-5-5')!;
     const noKey = await root('post', `/ai/models/${opus.id}/test`).expect(200);
     expect(noKey.body.data).toMatchObject({ ok: false, message: 'Not called: no_credentials' });
     expect(await AiUsageModel.countDocuments({ feature: 'admin.test' })).toBe(1);

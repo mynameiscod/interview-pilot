@@ -10,6 +10,7 @@ import type {
 import {
   AI_FEATURE_CAPABILITY,
   AiFeature,
+  DEFAULT_ROUTE_EFFORT,
   type AiCapability,
   type AiModelParams,
   type AiProviderKey,
@@ -86,6 +87,7 @@ export async function loadAiRuntimeConfig(): Promise<AiRuntimeConfig> {
           feature: r.feature as AiFeature,
           active: r.active,
           chain: r.chain.map((c) => ({ modelId: String(c.modelId), priority: c.priority })),
+          effort: r.effort ?? null,
         },
       ]),
     ),
@@ -172,17 +174,20 @@ const speechParams = (timeoutMs: number): AiModelParams => ({
 });
 
 /**
- * Seeded models. Prices are Anthropic's first-party list prices at the time
- * of writing and are editable (effective-dated) in Admin. OpenAI and Gemini
- * models are added by admins with their current ids and prices.
+ * Seeded models. Prices are the providers' first-party list prices at the
+ * time of writing (USD) and are editable (effective-dated) in Admin. Claude
+ * models first; one OpenAI and one Gemini model are seeded as cross-provider
+ * fallbacks so a single-provider outage does not exhaust a route. They are
+ * skipped (no_credentials) until an admin stores that provider's key.
  */
 const MODELS: CatalogModel[] = [
   {
     provider: 'anthropic',
-    modelId: 'claude-opus-5',
-    displayName: 'Claude Opus 5',
+    modelId: 'claude-opus-5-5',
+    displayName: 'Claude Opus 5.5',
     capabilities: ['LLM'],
     params: {
+      // Current Claude models reject sampling parameters.
       temperature: null,
       maxOutputTokens: 16_000,
       timeoutMs: 120_000,
@@ -190,15 +195,15 @@ const MODELS: CatalogModel[] = [
       concurrency: 20,
     },
     prices: {
-      PER_1M_INPUT_TOKENS: 5_000_000,
-      PER_1M_CACHED_INPUT_TOKENS: 500_000,
-      PER_1M_OUTPUT_TOKENS: 25_000_000,
+      PER_1M_INPUT_TOKENS: 4_000_000,
+      PER_1M_CACHED_INPUT_TOKENS: 200_000,
+      PER_1M_OUTPUT_TOKENS: 20_000_000,
     },
   },
   {
     provider: 'anthropic',
-    modelId: 'claude-sonnet-5',
-    displayName: 'Claude Sonnet 5',
+    modelId: 'claude-sonnet-5-5',
+    displayName: 'Claude Sonnet 5.5',
     capabilities: ['LLM'],
     params: {
       temperature: null,
@@ -229,6 +234,44 @@ const MODELS: CatalogModel[] = [
       PER_1M_INPUT_TOKENS: 1_000_000,
       PER_1M_CACHED_INPUT_TOKENS: 100_000,
       PER_1M_OUTPUT_TOKENS: 5_000_000,
+    },
+  },
+  {
+    provider: 'openai',
+    modelId: 'gpt-5.6-terra',
+    displayName: 'OpenAI GPT-5.6 Terra',
+    capabilities: ['LLM'],
+    params: {
+      // A reasoning model: only the default temperature is accepted.
+      temperature: null,
+      maxOutputTokens: 16_000,
+      timeoutMs: 120_000,
+      retries: 1,
+      concurrency: 20,
+    },
+    prices: {
+      PER_1M_INPUT_TOKENS: 2_500_000,
+      PER_1M_CACHED_INPUT_TOKENS: 250_000,
+      PER_1M_OUTPUT_TOKENS: 15_000_000,
+    },
+  },
+  {
+    provider: 'gemini',
+    modelId: 'gemini-3.1-pro-preview',
+    displayName: 'Google Gemini 3.1 Pro (preview)',
+    capabilities: ['LLM'],
+    params: {
+      temperature: null,
+      maxOutputTokens: 16_000,
+      timeoutMs: 120_000,
+      retries: 1,
+      concurrency: 20,
+    },
+    // Prompts up to 200K tokens (ours are far smaller).
+    prices: {
+      PER_1M_INPUT_TOKENS: 2_000_000,
+      PER_1M_CACHED_INPUT_TOKENS: 200_000,
+      PER_1M_OUTPUT_TOKENS: 12_000_000,
     },
   },
 ];
@@ -282,8 +325,16 @@ export const MOCK_CATALOG_MODEL_ID = 'mock-llm';
 export const MOCK_STT_MODEL_ID = 'mock-stt';
 export const MOCK_TTS_MODEL_ID = 'mock-tts';
 
-/** LLM features routed by default: Opus 5 first, Sonnet 5 as fallback (and the mock last in dev). */
-const DEFAULT_CHAIN = ['claude-opus-5', 'claude-sonnet-5'];
+/**
+ * LLM features routed by default: Opus 5.5 first, Sonnet 5.5, then the other
+ * providers (used only once their keys are set), and the mock last in dev.
+ */
+export const DEFAULT_CHAIN = [
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
+  'gpt-5.6-terra',
+  'gemini-3.1-pro-preview',
+];
 
 export interface EnsureAiCatalogResult {
   providersCreated: number;
@@ -403,6 +454,7 @@ export async function ensureAiCatalog(opts: {
             modelId,
             priority: i === chainIds.length - 1 && opts.mockMode ? 99 : i,
           })),
+          effort: DEFAULT_ROUTE_EFFORT[feature] ?? null,
         },
       },
       { upsert: true },

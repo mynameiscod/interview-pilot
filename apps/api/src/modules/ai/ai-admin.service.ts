@@ -22,7 +22,9 @@ import {
   AI_FEATURE_CAPABILITY,
   AiFeature,
   AiModelParams,
+  samplingParamsSupported,
   type AddAiModelPriceBody,
+  type AiProviderKey,
   type AiCallOutcome,
   type AiModelHealth,
   type AiModelSummary,
@@ -131,6 +133,22 @@ function diff(before: Record<string, unknown>, after: Record<string, unknown>) {
 
 const plainChain = (chain: readonly { modelId: unknown; priority: number }[]) =>
   chain.map((c) => ({ modelId: String(c.modelId), priority: c.priority }));
+
+/**
+ * Refuses a temperature for models that reject sampling parameters: the
+ * provider would answer every call with a 400 and exhaust the route.
+ */
+function assertSamplingParams(
+  providerKey: AiProviderKey,
+  modelId: string,
+  temperature: number | null,
+) {
+  if (temperature !== null && !samplingParamsSupported(providerKey, modelId)) {
+    throw AppError.validation(
+      `${modelId} does not accept a temperature (the provider rejects sampling parameters for this model). Leave temperature empty.`,
+    );
+  }
+}
 
 type Audited<T> = { result: T; details: Record<string, unknown> };
 
@@ -268,6 +286,7 @@ export function createAiAdminService(deps: Deps) {
             priority: c.priority,
             label: labels.get(String(c.modelId)) ?? 'Deleted model',
           })),
+        effort: route?.effort ?? null,
         updatedAt: route ? iso(route.updatedAt) : null,
       };
     });
@@ -385,6 +404,7 @@ export function createAiAdminService(deps: Deps) {
           if (!available(provider.key)) {
             throw AppError.validation('This provider cannot run in this environment.');
           }
+          assertSamplingParams(provider.key, body.modelId, params.temperature);
           const exists = await AiModelModel.exists({
             providerId: provider._id,
             modelId: body.modelId,
@@ -442,7 +462,17 @@ export function createAiAdminService(deps: Deps) {
           if (body.displayName !== undefined) doc.displayName = body.displayName;
           if (body.enabled !== undefined) doc.enabled = body.enabled;
           if (body.languages !== undefined) doc.languages = body.languages;
-          if (body.params) doc.params = AiModelParams.parse({ ...before.params, ...body.params });
+          if (body.params) {
+            const params = AiModelParams.parse({ ...before.params, ...body.params });
+            // Only a newly set value is refused, so a legacy value can still be cleared.
+            if (body.params.temperature !== undefined) {
+              const provider = await AiProviderModel.findById(doc.providerId, { key: 1 })
+                .session(session)
+                .lean();
+              if (provider) assertSamplingParams(provider.key, doc.modelId, params.temperature);
+            }
+            doc.params = params;
+          }
           await doc.save({ session });
           return {
             result: doc._id,
@@ -616,17 +646,24 @@ export function createAiAdminService(deps: Deps) {
           }
           const before = await AiRouteModel.findOne({ feature }).session(session).lean();
           const chain = body.chain.map((c, i) => ({ modelId: ids[i]!, priority: c.priority }));
+          const effort = body.effort !== undefined ? body.effort : (before?.effort ?? null);
           await AiRouteModel.updateOne(
             { feature },
-            { $set: { active: body.active, chain }, $setOnInsert: { feature } },
+            { $set: { active: body.active, chain, effort }, $setOnInsert: { feature } },
             { upsert: true, session },
           );
           return {
             result: undefined,
             details: {
               reason: body.reason,
-              from: before ? { active: before.active, chain: plainChain(before.chain) } : null,
-              to: { active: body.active, chain: plainChain(chain) },
+              from: before
+                ? {
+                    active: before.active,
+                    chain: plainChain(before.chain),
+                    effort: before.effort ?? null,
+                  }
+                : null,
+              to: { active: body.active, chain: plainChain(chain), effort },
             },
           };
         },
