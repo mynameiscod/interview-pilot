@@ -10,6 +10,7 @@ import {
   mediaPrefix,
   missingSegments,
   noteOrphanedMediaKey,
+  requestMediaFileRebuild,
   UserModel,
   type InterviewSessionRecord,
   type MediaAssetRecord,
@@ -606,6 +607,40 @@ export function createMediaService(deps: Deps) {
       return (
         await decorate([(await MediaAssetModel.findById(a._id).lean<MediaAssetRecord>())!])
       )[0]!;
+    },
+
+    /**
+     * Queues the joined file to be built again (after a failure, while it was
+     * UNAVAILABLE, or to replace a bad one); audited. Meanwhile it plays part
+     * by part.
+     */
+    async adminRebuildFile(assetId: string, actorId: string, ctx: ClientContext) {
+      const id = objectId(assetId, 'Recording');
+      const a = await MediaAssetModel.findById(id).lean<MediaAssetRecord>();
+      if (!a) throw AppError.notFound('Recording not found');
+      const previous = a.playbackFile?.status ?? 'NONE';
+      const queued = await requestMediaFileRebuild(id, now());
+      if (!queued) {
+        throw new AppError(
+          409,
+          'INVALID_STATE',
+          previous === 'PENDING' || previous === 'PROCESSING'
+            ? 'The file is already being built.'
+            : 'This recording has no file to rebuild.',
+        );
+      }
+      await audit.record(
+        {
+          actorType: 'ADMIN',
+          actorId,
+          action: 'media.file_rebuild_requested',
+          resourceType: 'mediaAsset',
+          resourceId: assetId,
+          details: { sessionId: String(a.sessionId), previous },
+        },
+        ctx,
+      );
+      return (await decorate([queued]))[0]!;
     },
 
     async adminIntegrity(sessionId: string): Promise<AdminIntegrityEvent[]> {

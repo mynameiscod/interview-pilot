@@ -438,6 +438,24 @@ describe('recording upload resilience', () => {
     const head = await request(t.app).get(file.url).set('Range', 'bytes=0-3').expect(206);
     expect(head.headers['content-range']).toBe(`bytes 0-3/${joined.length}`);
 
+    // An admin rebuilds the file (audited); meanwhile it plays part by part again.
+    const support = await adminAs(['SUPPORT_ADMIN']);
+    await support('post', `/media/${String(asset._id)}/rebuild-file`).expect(403);
+    const ops = await adminAs(['OPERATIONS_ADMIN']);
+    const rebuilt = AdminMediaAsset.parse(
+      (await ops('post', `/media/${String(asset._id)}/rebuild-file`).expect(200)).body.data,
+    );
+    expect(rebuilt.playbackFile).toBe('PENDING');
+    const conflict = await ops('post', `/media/${String(asset._id)}/rebuild-file`).expect(409);
+    expect(conflict.body.error.message).toBe('The file is already being built.');
+    expect(
+      PlaybackUrl.parse((await call('get', `/interviews/${id}/media/playback-url`)).body.data)
+        .source,
+    ).toBe('PARTS');
+    expect(
+      await AuditLogModel.findOne({ action: 'media.file_rebuild_requested' }).lean(),
+    ).toMatchObject({ resourceId: String(asset._id), details: { previous: 'READY' } });
+
     // Deleting removes the joined file too.
     await call('delete', `/interviews/${id}/media`).expect(200);
     expect([...t.storage.objects.keys()].filter((k) => k.startsWith('media/'))).toEqual([]);

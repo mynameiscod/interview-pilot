@@ -6,10 +6,13 @@ import {
   completeMediaFileBuild,
   deleteMediaAsset,
   finalizeMediaAsset,
+  hasUnavailableMediaFiles,
   MEDIA_DELETE_SWEEP_DELAY_MS,
   MEDIA_FILE_MAX_ATTEMPTS,
   mediaParts,
   noteOrphanedMediaKey,
+  requestMediaFileRebuild,
+  requeueUnavailableMediaFiles,
   sweepMedia,
   type MediaStorage,
 } from './media.js';
@@ -268,5 +271,35 @@ describe('joined playback file', () => {
       status: 'FAILED',
       error: 'bad',
     });
+  });
+
+  it('rebuilds a file on request and requeues files given up for want of ffmpeg', async () => {
+    const { storage } = memoryStorage();
+    const id = await asset({ segments: [0, 1] });
+    // Still recording: nothing to rebuild.
+    expect(await requestMediaFileRebuild(id, NOW)).toBeNull();
+    await finalizeMediaAsset(id, storage, { now: NOW });
+    const claimed = (await claimMediaFileBuild(NOW))!;
+    // Being built: not again.
+    expect(await requestMediaFileRebuild(id, NOW)).toBeNull();
+    await completeMediaFileBuild(claimed, { status: 'UNAVAILABLE', error: 'no ffmpeg' });
+    expect(await hasUnavailableMediaFiles()).toBe(true);
+
+    expect(await requeueUnavailableMediaFiles(NOW)).toBe(1);
+    expect((await MediaAssetModel.findById(id).lean())!.playbackFile).toMatchObject({
+      status: 'PENDING',
+      attempts: 0,
+      error: null,
+    });
+    expect(await hasUnavailableMediaFiles()).toBe(false);
+
+    const again = (await claimMediaFileBuild(NOW))!;
+    await completeMediaFileBuild(again, { status: 'READY', key: 'k', bytes: 1 });
+    const rebuilt = (await requestMediaFileRebuild(id, NOW))!;
+    // The old file's key stays until it is overwritten (a delete still removes it).
+    expect(rebuilt.playbackFile).toMatchObject({ status: 'PENDING', key: 'k', attempts: 0 });
+
+    await deleteMediaAsset(id, storage, { reason: 'x', by: 'test', now: NOW });
+    expect(await requestMediaFileRebuild(id, NOW)).toBeNull();
   });
 });

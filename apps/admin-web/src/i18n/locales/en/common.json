@@ -1209,7 +1209,29 @@
       "videoLabel": "Interview recording",
       "expires": "This link expires at {{at}}. Close and watch again for a new one.",
       "deleted": "This recording was deleted and can no longer be watched.",
-      "nothingStored": "Nothing playable was stored for this recording."
+      "nothingStored": "Nothing playable was stored for this recording.",
+      "part": "Part {{current}} of {{total}}",
+      "partsNote": "The camera restarted during the interview, so the recording is in parts. The next part plays when one ends.",
+      "previousPart": "Previous part",
+      "nextPart": "Next part"
+    },
+    "file": {
+      "label": "Seekable file",
+      "status": {
+        "NONE": "Not started (still recording)",
+        "PENDING": "Waiting to be built",
+        "PROCESSING": "Being built",
+        "READY": "Ready",
+        "FAILED": "Could not be built; plays part by part",
+        "UNAVAILABLE": "Not built (the worker had no ffmpeg); plays part by part"
+      },
+      "parts_one": "{{count}} recorded part",
+      "parts_other": "{{count}} recorded parts",
+      "heading": "Seekable file",
+      "hintReady": "Build the joined file again from the stored parts, for example if it does not play. Until it is rebuilt the recording plays part by part. The request is recorded in the audit log.",
+      "hintMissing": "Try building the joined file again, for example after ffmpeg was installed on the worker. Until then the recording plays part by part. The request is recorded in the audit log.",
+      "rebuild": "Rebuild file",
+      "queued": "The file was queued to be rebuilt. It plays part by part until then."
     },
     "purge": {
       "heading": "Delete recording",

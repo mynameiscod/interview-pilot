@@ -1194,6 +1194,12 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: AdminMediaAsset,
     errors: [400, 401, 403, 404, 409, 503],
   });
+  media('post', '/admin/media/{id}/rebuild-file', {
+    summary:
+      'Queue the joined, seekable file to be built again (after FAILED or UNAVAILABLE, or to replace it); audited (media.manage)',
+    response: AdminMediaAsset,
+    errors: [401, 403, 404, 409],
+  });
   media('get', '/admin/interviews/{id}/integrity', {
     summary: 'Integrity observations of an interview, in order (media.read)',
     response: z.array(AdminIntegrityEvent),

@@ -42,7 +42,11 @@ import {
 } from './processors/documents.js';
 import { sweepLiveSessions } from './processors/live-sweep.js';
 import { reconcilePayments } from './processors/payment-reconcile.js';
-import { runMediaFileBuilds, type FfmpegRunner } from './processors/media-file.js';
+import {
+  createUnavailableRetry,
+  runMediaFileBuilds,
+  type FfmpegRunner,
+} from './processors/media-file.js';
 import { runMediaSweep } from './processors/media-sweep.js';
 import { runAccountErasure } from './processors/account-erasure.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
@@ -82,7 +86,7 @@ export interface WorkerRuntimeOptions {
   media?: { storage: MediaStorage; intervalMs: number };
   /** Joined, seekable recording files (ffmpeg); omit to disable (recordings play part by part). */
   mediaFiles?: {
-    storage: Pick<StorageProvider, 'get' | 'put'>;
+    storage: Pick<StorageProvider, 'get' | 'putFile'>;
     ffmpeg: FfmpegRunner;
     intervalMs: number;
   };
@@ -210,6 +214,10 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
   // Joining a long recording can take minutes: it runs beside the system queue (whose
   // jobs include the heartbeat), one run at a time per process.
   let mediaFileRun: Promise<unknown> | null = null;
+  // Files given up for want of ffmpeg are built once it answers again.
+  const retryUnavailable = opts.mediaFiles
+    ? createUnavailableRetry({ ffmpeg: opts.mediaFiles.ffmpeg, logger: opts.logger })
+    : undefined;
   if (opts.erasure) {
     await systemQueue.upsertJobScheduler(
       ACCOUNT_ERASURE_JOB,
@@ -267,7 +275,7 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
           case MEDIA_FILE_JOB: {
             const files = opts.mediaFiles;
             if (!files || mediaFileRun) return;
-            mediaFileRun = runMediaFileBuilds({ ...files, logger: opts.logger })
+            mediaFileRun = runMediaFileBuilds({ ...files, logger: opts.logger, retryUnavailable })
               .catch((err: unknown) => opts.logger.error({ err }, 'recording file builds failed'))
               .finally(() => {
                 mediaFileRun = null;

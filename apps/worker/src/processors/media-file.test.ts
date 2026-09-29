@@ -1,16 +1,28 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createLogger } from '@cbi/config';
-import { mongoose, type MediaAssetRecord } from '@cbi/db';
+import {
+  hasUnavailableMediaFiles,
+  mongoose,
+  requeueUnavailableMediaFiles,
+  type MediaAssetRecord,
+} from '@cbi/db';
 import { createMemoryStorage } from '@cbi/provider-adapters/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildMediaFile,
   createFfmpegRunner,
+  createUnavailableRetry,
   FfmpegMissingError,
   joinArgs,
   type FfmpegRunner,
 } from './media-file.js';
+
+vi.mock('@cbi/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@cbi/db')>()),
+  hasUnavailableMediaFiles: vi.fn(async () => true),
+  requeueUnavailableMediaFiles: vi.fn(async () => 2),
+}));
 
 const logger = createLogger({ service: 'test', level: 'silent' });
 const NOW = new Date('2026-09-29T10:00:00.000Z');
@@ -88,8 +100,13 @@ describe('joined recording file', () => {
       objects,
     );
     const ffmpeg = fakeFfmpeg();
+    const put = vi.spyOn(storage, 'put');
+    const putFile = vi.spyOn(storage, 'putFile');
     const outcome = await buildMediaFile(asset, { storage, ffmpeg: ffmpeg.run, logger });
 
+    // Uploaded from disk as a stream, never read into memory whole.
+    expect(put).not.toHaveBeenCalled();
+    expect(putFile).toHaveBeenCalledTimes(1);
     expect(ffmpeg.calls).toHaveLength(1);
     expect(ffmpeg.calls[0]!.list).toBe("file 'part-0.webm'\nfile 'part-2.webm'\n");
     expect(ffmpeg.calls[0]!.args).toEqual(
@@ -145,6 +162,31 @@ describe('joined recording file', () => {
   it('detects a machine without ffmpeg', async () => {
     const run = createFfmpegRunner({ path: 'cbi-no-such-ffmpeg-binary' });
     await expect(run(['-version'], process.cwd())).rejects.toBeInstanceOf(FfmpegMissingError);
+  });
+
+  it('requeues files marked UNAVAILABLE once ffmpeg answers, checking at most every interval', async () => {
+    vi.mocked(hasUnavailableMediaFiles).mockClear();
+    vi.mocked(requeueUnavailableMediaFiles).mockClear();
+    let installed = false;
+    const ffmpeg: FfmpegRunner = vi.fn(async () => {
+      if (!installed) throw new FfmpegMissingError(new Error('ENOENT'));
+    });
+    const retry = createUnavailableRetry({ ffmpeg, logger, intervalMs: 60_000 });
+    const at = (ms: number) => new Date(NOW.getTime() + ms);
+
+    expect(await retry(at(0))).toBe(0);
+    expect(ffmpeg).toHaveBeenCalledWith(['-hide_banner', '-version'], expect.any(String));
+    installed = true;
+    // Within the interval: not checked again.
+    expect(await retry(at(30_000))).toBe(0);
+    expect(ffmpeg).toHaveBeenCalledTimes(1);
+    expect(await retry(at(60_000))).toBe(2);
+    expect(requeueUnavailableMediaFiles).toHaveBeenCalledTimes(1);
+
+    // Nothing waiting: ffmpeg is not even started.
+    vi.mocked(hasUnavailableMediaFiles).mockResolvedValueOnce(false);
+    expect(await retry(at(200_000))).toBe(0);
+    expect(ffmpeg).toHaveBeenCalledTimes(2);
   });
 
   it('asks for a seekable container', () => {

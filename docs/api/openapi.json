@@ -66694,6 +66694,468 @@
         }
       }
     },
+    "/api/v1/admin/media/{id}/rebuild-file": {
+      "post": {
+        "tags": [
+          "Admin recordings"
+        ],
+        "summary": "Queue the joined, seekable file to be built again (after FAILED or UNAVAILABLE, or to replace it); audited (media.manage)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "CANDIDATE_VIDEO"
+                          ]
+                        },
+                        "mimeType": {
+                          "type": "string",
+                          "enum": [
+                            "video/webm",
+                            "video/mp4"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "RECORDING",
+                            "COMPLETE",
+                            "PARTIAL",
+                            "FAILED"
+                          ]
+                        },
+                        "segmentCount": {
+                          "type": "integer"
+                        },
+                        "expectedSegments": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "missingSegments": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          }
+                        },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
+                        "bytes": {
+                          "type": "integer"
+                        },
+                        "durationMs": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "retentionExpiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "deletion": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "NONE",
+                                "DELETED"
+                              ]
+                            },
+                            "at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            },
+                            "reason": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "at",
+                            "reason"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "userId": {
+                          "type": "string"
+                        },
+                        "userEmail": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "interviewTitle": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "kind",
+                        "mimeType",
+                        "status",
+                        "segmentCount",
+                        "expectedSegments",
+                        "missingSegments",
+                        "parts",
+                        "playbackFile",
+                        "bytes",
+                        "durationMs",
+                        "retentionExpiresAt",
+                        "deletion",
+                        "createdAt",
+                        "userId",
+                        "userEmail",
+                        "interviewTitle"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/interviews/{id}/integrity": {
       "get": {
         "tags": [

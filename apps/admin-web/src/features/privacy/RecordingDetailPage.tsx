@@ -1,6 +1,6 @@
 import type { AdminMediaAsset, PlaybackUrl } from '@cbi/shared-types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 import { useAdminAuth, useCan } from '../../app/session';
@@ -43,6 +43,15 @@ function Summary({ asset }: { asset: AdminMediaAsset }) {
         <dd className="col-sm-8 col-lg-9">{formatBytes(asset.bytes, i18n.language)}</dd>
         <dt className="col-sm-4 col-lg-3">{t('privacy.detail.format')}</dt>
         <dd className="col-sm-8 col-lg-9 font-monospace">{asset.mimeType}</dd>
+        <dt className="col-sm-4 col-lg-3">{t('privacy.file.label')}</dt>
+        <dd className="col-sm-8 col-lg-9">
+          {t(`privacy.file.status.${asset.playbackFile}`)}
+          {asset.parts > 1 && (
+            <div className="cb-text-secondary">
+              {t('privacy.file.parts', { count: asset.parts })}
+            </div>
+          )}
+        </dd>
         <dt className="col-sm-4 col-lg-3">{t('library.created')}</dt>
         <dd className="col-sm-8 col-lg-9">{date(asset.createdAt)}</dd>
         <dt className="col-sm-4 col-lg-3">{t('privacy.recordings.retention')}</dt>
@@ -74,22 +83,40 @@ function Summary({ asset }: { asset: AdminMediaAsset }) {
   );
 }
 
+/**
+ * Until the recording is joined into one file it plays part by part (each
+ * camera restart made a part), moving on at the end of one, like the
+ * candidate's player.
+ */
 function Player({ asset }: { asset: AdminMediaAsset }) {
   const { t, i18n } = useTranslation();
   const id = useId();
   const { manager } = useAdminAuth();
   const [playback, setPlayback] = useState<PlaybackUrl | null>(null);
+  const [partIndex, setPartIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   // Each open issues a fresh, short-lived link (and one audit entry).
   const watch = useMutation({
     mutationFn: () => manager.api.post<PlaybackUrl>(`/admin/media/${asset.id}/playback`),
     onSuccess: (result) => {
       setError(null);
+      setPartIndex(0);
       setPlayback(result);
     },
     onError: (err) => setError(consoleError(t, err)),
   });
   const playable = asset.deletion.status === 'NONE' && asset.segmentCount > 0;
+  const parts = playback ? (playback.parts.length > 0 ? playback.parts : [playback.url]) : [];
+  const src = parts[partIndex] ?? parts[0];
+
+  function showPart(index: number, autoplay: boolean) {
+    setPartIndex(index);
+    if (autoplay) {
+      // The element keeps its identity; play once the new source is set.
+      queueMicrotask(() => void videoRef.current?.play()?.catch(() => undefined));
+    }
+  }
 
   return (
     <section
@@ -126,13 +153,43 @@ function Player({ asset }: { asset: AdminMediaAsset }) {
           ) : (
             <>
               <video
+                ref={videoRef}
                 controls
                 preload="metadata"
                 className="w-100 rounded-2 bg-dark mb-2"
                 style={{ maxHeight: '28rem' }}
-                src={playbackSrc(playback.url)}
+                src={playbackSrc(src!)}
                 aria-label={t('privacy.player.videoLabel')}
+                onEnded={() => {
+                  if (partIndex < parts.length - 1) showPart(partIndex + 1, true);
+                }}
               />
+              {parts.length > 1 && (
+                <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                  <p className="small cb-text-secondary mb-0 me-auto" aria-live="polite">
+                    {t('privacy.player.part', { current: partIndex + 1, total: parts.length })}
+                    <span className="d-block">{t('privacy.player.partsNote')}</span>
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={partIndex === 0}
+                    onClick={() => showPart(partIndex - 1, false)}
+                  >
+                    <i className="bi bi-skip-backward-fill me-1" aria-hidden="true" />
+                    {t('privacy.player.previousPart')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-secondary"
+                    disabled={partIndex >= parts.length - 1}
+                    onClick={() => showPart(partIndex + 1, false)}
+                  >
+                    {t('privacy.player.nextPart')}
+                    <i className="bi bi-skip-forward-fill ms-1" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
               <div className="d-flex flex-wrap gap-2 align-items-center">
                 <button
                   type="button"
@@ -154,6 +211,56 @@ function Player({ asset }: { asset: AdminMediaAsset }) {
           </div>
         </>
       )}
+    </section>
+  );
+}
+
+/** File states that can be built again (not while a build is queued or running). */
+const REBUILDABLE = new Set<AdminMediaAsset['playbackFile']>(['READY', 'FAILED', 'UNAVAILABLE']);
+
+/** Queues the joined, seekable file to be built again (audited). */
+function RebuildFile({ asset, onQueued }: { asset: AdminMediaAsset; onQueued: () => void }) {
+  const { t } = useTranslation();
+  const id = useId();
+  const { manager } = useAdminAuth();
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const rebuild = useMutation({
+    mutationFn: () => manager.api.post<AdminMediaAsset>(`/admin/media/${asset.id}/rebuild-file`),
+    onSuccess: async (next) => {
+      setError(null);
+      queryClient.setQueryData(privacyKeys.mediaAsset(asset.id), next);
+      await queryClient.invalidateQueries({ queryKey: privacyKeys.media });
+      onQueued();
+    },
+    onError: (err) => setError(consoleError(t, err)),
+  });
+
+  if (asset.deletion.status === 'DELETED' || !REBUILDABLE.has(asset.playbackFile)) return null;
+  return (
+    <section
+      className="p-3 border cb-border rounded-3 bg-white mb-3"
+      aria-labelledby={`${id}-heading`}
+    >
+      <h2 id={`${id}-heading`} className="h6">
+        {t('privacy.file.heading')}
+      </h2>
+      <p id={`${id}-hint`} className="small cb-text-secondary">
+        {t(asset.playbackFile === 'READY' ? 'privacy.file.hintReady' : 'privacy.file.hintMissing')}
+      </p>
+      <button
+        type="button"
+        className="btn btn-sm btn-outline-primary"
+        disabled={rebuild.isPending}
+        aria-describedby={`${id}-hint`}
+        onClick={() => rebuild.mutate()}
+      >
+        <i className="bi bi-arrow-repeat me-1" aria-hidden="true" />
+        {t('privacy.file.rebuild')}
+      </button>
+      <div className="mt-2">
+        <ErrorAlert error={error} />
+      </div>
     </section>
   );
 }
@@ -273,6 +380,9 @@ export function RecordingDetailPage() {
           {/* Remounts after a purge so a stale player never outlives its recording. */}
           <Player key={asset.data.deletion.status} asset={asset.data} />
           <IntegrityTimeline sessionId={asset.data.sessionId} />
+          {canManage && (
+            <RebuildFile asset={asset.data} onQueued={() => setNotice(t('privacy.file.queued'))} />
+          )}
           {canManage && (
             <Purge asset={asset.data} onPurged={() => setNotice(t('privacy.purge.done'))} />
           )}

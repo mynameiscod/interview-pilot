@@ -158,6 +158,16 @@ export function mediaAdminRouter(c: Container): Router {
     });
   });
 
+  router.post('/media/:id/rebuild-file', manageMedia, async (req, res) => {
+    res.json({
+      data: await c.media.adminRebuildFile(
+        String(req.params.id),
+        requireAuth(req).userId,
+        clientContext(req),
+      ),
+    });
+  });
+
   router.get('/interviews/:id/integrity', readMedia, async (req, res) => {
     res
       .set('Cache-Control', 'no-store')
