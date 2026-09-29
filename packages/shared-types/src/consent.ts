@@ -16,6 +16,11 @@ export const ConsentType = z.enum([
   'INTEGRITY',
   /** A campaign interview: the report and results are shared with the inviting company. */
   'CAMPAIGN_SHARING',
+  /**
+   * A campaign with identity capture: a selfie and a photo of an ID are stored for the
+   * retention period and shown to the company's reviewers for manual verification.
+   */
+  'IDENTITY_CAPTURE',
 ]);
 export type ConsentType = z.infer<typeof ConsentType>;
 
@@ -96,10 +101,11 @@ export type UserConsentEntry = z.infer<typeof UserConsentEntry>;
 export function consentRequirements(
   mode: 'TEXT' | 'VOICE' | 'VIDEO',
   policy: { recording: 'OFF' | 'OPTIONAL' | 'REQUIRED'; tabSwitchTracking: boolean },
-  opts: { campaign?: boolean } = {},
+  opts: { campaign?: boolean; idCapture?: boolean } = {},
 ): { type: ConsentType; required: boolean }[] {
   const out: { type: ConsentType; required: boolean }[] = [];
   if (opts.campaign) out.push({ type: 'CAMPAIGN_SHARING', required: true });
+  if (opts.campaign && opts.idCapture) out.push({ type: 'IDENTITY_CAPTURE', required: true });
   if (mode !== 'TEXT') out.push({ type: 'VOICE_PROCESSING', required: true });
   if (mode === 'VIDEO' && policy.recording !== 'OFF') {
     out.push({ type: 'RECORDING', required: policy.recording === 'REQUIRED' });

@@ -70,6 +70,9 @@ export const ErrorCode = z.enum([
   'ACCOUNT_DELETION_PENDING',
   /** Too many inputs created recently; try again later. */
   'QUOTA_EXCEEDED',
+  // Organisation portal
+  /** The campaign only admits invited candidates, and this account's email was not invited. */
+  'INVITE_REQUIRED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

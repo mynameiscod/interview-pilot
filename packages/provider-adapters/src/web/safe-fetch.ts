@@ -252,3 +252,76 @@ export async function safeFetchText(
   }
   throw new UrlBlockedError('TOO_MANY_REDIRECTS');
 }
+
+export interface SafePostOptions {
+  timeoutMs: number;
+  headers: Record<string, string>;
+  userAgent?: string;
+  /** Injected in tests. */
+  resolve?: Resolver;
+  /** Injected in tests to allow a loopback test server; defaults to isPublicAddress. */
+  isAllowedAddress?: (address: string) => boolean;
+  /** Explicit ports allowed besides the scheme default. Tests only. */
+  extraPorts?: readonly string[];
+  /** Allow plain http (development only; webhooks require https elsewhere). */
+  allowHttp?: boolean;
+}
+
+/**
+ * SSRF-guarded JSON POST for outgoing webhooks to customer URLs: the same
+ * URL and address checks as `safeFetchText`, the connection pinned to the
+ * vetted address, and redirects are not followed (a 3xx is an HTTP failure).
+ * The response body is discarded. Resolves with the status for any response;
+ * throws `UrlBlockedError` or `SafeFetchError` (TIMEOUT, NETWORK).
+ */
+export async function safePostJson(
+  input: string,
+  body: string,
+  opts: SafePostOptions,
+): Promise<{ status: number }> {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new UrlBlockedError('SCHEME');
+  }
+  if (url.protocol !== 'https:' && !(opts.allowHttp && url.protocol === 'http:')) {
+    throw new UrlBlockedError('SCHEME');
+  }
+  validateUrl(url, opts.extraPorts ?? []);
+  const vetted = await vetHost(
+    url,
+    opts.resolve ?? systemResolver,
+    opts.isAllowedAddress ?? isPublicAddress,
+  );
+  const agent = pinnedAgent(vetted, opts.timeoutMs);
+  const deadline = AbortSignal.timeout(opts.timeoutMs);
+  try {
+    let res;
+    try {
+      res = await request(url, {
+        method: 'POST',
+        dispatcher: agent,
+        signal: deadline,
+        headersTimeout: opts.timeoutMs,
+        bodyTimeout: opts.timeoutMs,
+        body,
+        headers: {
+          'user-agent':
+            opts.userAgent ??
+            'CareerPilotInterview-Webhooks/1.0 (+https://interview.codebegun.com)',
+          'content-type': 'application/json',
+          ...opts.headers,
+        },
+      });
+    } catch (err) {
+      throw new SafeFetchError(deadline.aborted ? 'TIMEOUT' : 'NETWORK', undefined, {
+        cause: err,
+      });
+    }
+    await res.body.dump().catch(() => undefined);
+    return { status: res.statusCode };
+  } finally {
+    await agent.close().catch(() => undefined);
+  }
+}

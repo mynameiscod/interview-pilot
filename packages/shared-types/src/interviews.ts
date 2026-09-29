@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { EvidenceSource, InterviewMode, RoleFamily, RoundType, Seniority } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
 import { VoiceReadiness } from './voice.js';
+import { IdentityCaptureStatus } from './org.js';
 
 /**
  * Interview sessions. Phase 3 covers the pre-interview states (draft, role
@@ -134,6 +135,8 @@ export const InterviewSummary = z.object({
       reportVisible: z.boolean(),
       modes: z.array(InterviewMode),
       languages: z.array(InterviewLanguagePreference),
+      /** Identity capture before starting (a selfie and an ID photo); null when not asked. */
+      identity: IdentityCaptureStatus.nullable(),
     })
     .nullable(),
   createdAt: z.iso.datetime(),

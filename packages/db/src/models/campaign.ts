@@ -1,11 +1,17 @@
 import {
   CampaignExportStatus,
   CampaignStatus,
+  CandidateStage,
+  DEFAULT_INVITE_REMINDERS,
+  EmployerView,
   InterviewLanguagePreference,
   InterviewMode,
 } from '@cbi/shared-types';
 import type {
   CampaignExportStatus as CampaignExportStatusT,
+  CandidateStage as CandidateStageT,
+  EmployerView as EmployerViewT,
+  InviteReminders,
   CampaignProctoring,
   CampaignStatus as CampaignStatusT,
   InterviewLanguagePreference as InterviewLanguagePreferenceT,
@@ -46,6 +52,15 @@ export interface CampaignRecord {
   /** SHA-256 of the invite token (the token itself is never stored). */
   tokenHash: string;
   tokenHint: string;
+  /** The organisation that runs it (org portal); null for CodeBegun-run campaigns. */
+  orgId: Types.ObjectId | null;
+  /** Only invited emails may join. */
+  requireInvite: boolean;
+  /** What the organisation's reviewers see (scores only, or the full report). */
+  employerView: EmployerViewT;
+  /** A selfie and an ID photo are captured before the interview starts. */
+  idCapture: boolean;
+  reminders: InviteReminders;
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -97,11 +112,28 @@ const campaignSchema = new Schema<CampaignRecord>(
     },
     tokenHash: { type: String, required: true },
     tokenHint: { type: String, required: true },
+    orgId: { type: Schema.Types.ObjectId, ref: 'Org', default: null },
+    requireInvite: { type: Boolean, default: false },
+    employerView: { type: String, enum: EmployerView.options, default: 'FULL_REPORT' },
+    idCapture: { type: Boolean, default: false },
+    reminders: {
+      type: new Schema(
+        {
+          enabled: { type: Boolean, required: true },
+          max: { type: Number, required: true },
+          intervalHours: { type: Number, required: true },
+        },
+        { _id: false },
+      ),
+      default: () => ({ ...DEFAULT_INVITE_REMINDERS }),
+    },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true, collection: 'campaigns' },
 );
 campaignSchema.index({ tokenHash: 1 }, { unique: true });
+// The org portal lists an organisation's own campaigns, newest first.
+campaignSchema.index({ orgId: 1, createdAt: -1 });
 campaignSchema.index({ status: 1, 'window.endAt': 1 });
 
 export const CampaignModel = model<CampaignRecord>('Campaign', campaignSchema);
@@ -115,6 +147,19 @@ export interface CampaignApplicationRecord {
   sessionId: Types.ObjectId;
   joinedAt: Date;
   adminNotes: string | null;
+  /** Org portal pipeline stage (every application starts NEW). */
+  stage: CandidateStageT;
+  stageHistory: {
+    from: CandidateStageT;
+    to: CandidateStageT;
+    by: Types.ObjectId;
+    note: string | null;
+    at: Date;
+  }[];
+  /** The invite the candidate joined through (or whose email matched), if any. */
+  inviteId: Types.ObjectId | null;
+  /** Set once when the report is ready (the invite is completed and the webhook queued). */
+  completedNotifiedAt: Date | null;
 }
 
 const applicationSchema = new Schema<CampaignApplicationRecord>(
@@ -124,12 +169,32 @@ const applicationSchema = new Schema<CampaignApplicationRecord>(
     sessionId: { type: Schema.Types.ObjectId, ref: 'InterviewSession', required: true },
     joinedAt: { type: Date, required: true },
     adminNotes: { type: String, default: null },
+    stage: { type: String, enum: CandidateStage.options, default: 'NEW' },
+    stageHistory: {
+      type: [
+        new Schema(
+          {
+            from: { type: String, enum: CandidateStage.options, required: true },
+            to: { type: String, enum: CandidateStage.options, required: true },
+            by: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            note: { type: String, default: null },
+            at: { type: Date, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    inviteId: { type: Schema.Types.ObjectId, ref: 'CampaignInvite', default: null },
+    completedNotifiedAt: { type: Date, default: null },
   },
   { collection: 'campaignApplications', versionKey: false },
 );
 // One application (and interview) per candidate per campaign.
 applicationSchema.index({ campaignId: 1, userId: 1 }, { unique: true });
 applicationSchema.index({ campaignId: 1, joinedAt: -1 });
+applicationSchema.index({ sessionId: 1 });
+applicationSchema.index({ campaignId: 1, stage: 1 });
 
 export const CampaignApplicationModel = model<CampaignApplicationRecord>(
   'CampaignApplication',

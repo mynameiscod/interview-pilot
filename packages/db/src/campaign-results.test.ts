@@ -109,6 +109,7 @@ describe('result rows', () => {
       scoreRevision: 1,
       dimensions: { 'api-design': 80, debugging: null },
       flagged: true,
+      stage: 'NEW',
     });
   });
 
@@ -161,6 +162,7 @@ describe('results CSV', () => {
         scoreRevision: 0,
         dimensions: { 'api-design': 80, debugging: null },
         flagged: false,
+        stage: 'NEW',
       },
       DIMENSIONS,
     );
