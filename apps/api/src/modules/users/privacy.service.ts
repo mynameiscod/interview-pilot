@@ -1,6 +1,8 @@
 import {
   AuthIdentityModel,
+  BadgeAwardModel,
   CampaignApplicationModel,
+  CertificateModel,
   CampaignModel,
   CodingAttemptModel,
   ConsentModel,
@@ -13,11 +15,13 @@ import {
   JobTargetModel,
   MediaAssetModel,
   mongoose,
+  PlanItemProgressModel,
   PurchaseModel,
   ResumeModel,
   ShareLinkModel,
   UserModel,
   UserProfileModel,
+  UserProgressModel,
   type MediaAssetRecord,
 } from '@cbi/db';
 import {
@@ -116,6 +120,10 @@ export function createPrivacyService(deps: PrivacyDeps) {
         purchases,
         ledger,
         account,
+        goals,
+        planItems,
+        badges,
+        certificates,
       ] = await Promise.all([
         UserModel.findById(uid).lean(),
         UserProfileModel.findOne({ userId: uid }).lean(),
@@ -134,6 +142,10 @@ export function createPrivacyService(deps: PrivacyDeps) {
         PurchaseModel.find({ userId: uid }).sort({ createdAt: 1 }).lean(),
         CreditLedgerModel.find({ userId: uid }).sort({ createdAt: 1 }).lean(),
         CreditAccountModel.findOne({ userId: uid }).lean(),
+        UserProgressModel.findOne({ userId: uid }).lean(),
+        PlanItemProgressModel.find({ userId: uid }).sort({ createdAt: 1 }).lean(),
+        BadgeAwardModel.find({ userId: uid }).sort({ awardedAt: 1 }).lean(),
+        CertificateModel.find({ userId: uid }).sort({ issuedAt: 1 }).lean(),
       ]);
       if (!user) throw AppError.unauthenticated();
 
@@ -190,6 +202,12 @@ export function createPrivacyService(deps: PrivacyDeps) {
         feedback: rows(feedback),
         recordings,
         shareLinks: rows(shareLinks),
+        progress: {
+          goals: goals ? (exportable(goals) as Record<string, unknown>) : null,
+          planItems: rows(planItems),
+          badges: rows(badges),
+          certificates: rows(certificates),
+        },
         campaignApplications: applications.map((a) => ({
           ...(exportable(a) as Record<string, unknown>),
           campaign: campaigns.get(String(a.campaignId))?.name ?? null,

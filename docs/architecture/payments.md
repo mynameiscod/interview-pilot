@@ -123,6 +123,10 @@ Every purchase that was paid (including one refunded since) has a receipt PDF: `
 - **Fonts.** Receipts are rendered with pdfkit, as report PDFs are. The standard PDF fonts cover Latin-1 only, so a buyer name in another script (Hindi, Telugu) is left off rather than printed as `?`; the email still identifies the buyer. Set `RECEIPT_FONT_PATH` to one TrueType/OpenType font covering the scripts in use to print every name. No such font ships with the repository.
 - The place of supply (CGST/SGST vs IGST) is not determined; the invoice shows a single GST line.
 
+### Practice drills
+
+Practice drills never use credits: they are free up to `practice.drillsPerDay` per India-time day (default 3) and refused beyond that until the next day, with a full interview offered instead. The ledger is integer and a drill costs much less than an interview, so fractional or pooled drill pricing was left out; see [progress and practice](progress-and-practice.md#pricing).
+
 ### Credit adjustments
 
 Admins can grant or deduct a candidate's credits by hand in Admin → Payments → **Credits** (also linked from each purchase and from the user column of the purchases list). The page finds an account by exact email or user id (`GET /admin/credits/account`, `payments.read`) and shows the balance, usable lots and the latest ledger entries.

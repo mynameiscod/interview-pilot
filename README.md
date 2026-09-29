@@ -30,6 +30,8 @@ This is a standalone product. It shares no database or code with other CodeBegun
 
 The full design and phase plan: [docs/architecture/00-mvp-design-proposal.md](docs/architecture/00-mvp-design-proposal.md).
 
+After launch: the **progress hub** (readiness and skill trends, plan checklist, free daily practice drills, streaks, goals, milestones, readiness certificates and opt-in practice emails). See [docs/architecture/progress-and-practice.md](docs/architecture/progress-and-practice.md).
+
 > **Release blocker:** official brand assets aren't supplied yet. See [docs/product/brand-assets-required.md](docs/product/brand-assets-required.md).
 
 ## Repository layout

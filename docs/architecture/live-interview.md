@@ -33,6 +33,7 @@ Any in-progress state ──FAIL──▶ FAILED (the credit is refunded)
 - The full table (all 16 states × 21 events) is in `packages/interview-engine/src/session-machine.ts`. The tests check it against an independently written specification for every state, event and context combination (about 64,000 cases), prove every state is reachable and can still finish, and run thousands of random walks checking that a credit is reserved at most once, settled at most once and only after being reserved, and that the clock runs exactly while the interview is live.
 - Effects are data (`RESERVE_CREDIT`, `PAUSE_CLOCK`, `START_NEXT_ROUND`, …). `applySessionEvent` carries out the database ones in the same transaction as the state change. `ENQUEUE_EVALUATION` is returned to the caller, which starts the [evaluation pipeline](evaluation-and-reports.md).
 - **One live interview per candidate**: in-progress states set `live: true`, and a partial unique index on `{userId}` allows one such session.
+- **Practice drills** are sessions with `kind: 'DRILL'`: the same machine, room and sweep, with a one-round plan on one competency (`createDrillPlanner`) and no credit. See [progress and practice](progress-and-practice.md).
 - `stateHistory` keeps the last 50 transitions; every candidate action is also in `auditLogs`.
 
 ## The clock
@@ -114,11 +115,13 @@ The reconnect end-to-end tests (`apps/api/src/modules/live/live.integration.test
 | Start              | `INTERVIEW_RESERVE` −1 available, +1 reserved                  | `reserve:<session>` |
 | Meaningful finish  | `INTERVIEW_CONSUME` −1 reserved                                | `settle:<session>`  |
 | Early end, failure | `INTERVIEW_REFUND` +1 available, −1 reserved (back to its lot) | `settle:<session>`  |
+| Practice drill     | none: the session's credit status is `FREE`                    | —                   |
 
 - The ledger is append-only (the model rejects updates and deletes) and authoritative. `creditAccounts` is a projection updated in the same transaction and can be rebuilt with `recomputeCreditAccount`.
 - Consume and refund share one key, so an interview's credit is settled exactly once however many times an event is retried. Reservations use the earliest-expiring lot; expired lots never count.
 - **Meaningful** means at least 3 answered questions, or at least 40 % of the time budget used (and at least one answer). Ending early or a platform failure refunds the credit.
 - The welcome credit is granted the first time the candidate's balance is read or they start an interview. Purchases arrive in Phase 6.
+- A drill is free within the daily quota (`practice.drillsPerDay`, checked before the start; `402 DRILL_LIMIT_REACHED` beyond it). Its start records `FREE` instead of reserving, and since the engine only settles a reserved credit, nothing is ever consumed or refunded for it.
 
 API: `GET /credits/balance`, `GET /credits/ledger`, `POST /interviews/:id/start` (402 `INSUFFICIENT_CREDITS`, 409 when another interview is in progress), `POST /interviews/:id/end`.
 
