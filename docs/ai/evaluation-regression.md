@@ -13,7 +13,8 @@ pnpm --filter @cbi/worker ai:eval --only=prompt-injection,weak-generic
 pnpm --filter @cbi/worker ai:eval --repeat=3          # also checks score stability (spread ≤ 15)
 pnpm --filter @cbi/worker ai:eval --out=ai-eval.json  # full JSON report
 pnpm --filter @cbi/worker ai:eval --mode=structure    # only checks outputs are valid (works with the mock)
-pnpm --filter @cbi/worker ai:eval --suite=calibration  # human-labelled answers (see below); --suite=all runs both
+pnpm --filter @cbi/worker ai:eval --suite=calibration  # human-labelled answers (see below)
+pnpm --filter @cbi/worker ai:eval --suite=coaching     # report coaching: example answers and STAR; --suite=all runs every suite
 pnpm --filter @cbi/worker ai:eval --seed               # seed an empty eval database first (name must contain "eval" or "test")
 ```
 
@@ -47,6 +48,21 @@ FAIL  prompt-injection (6311 ms)
 | `quote-grounding`           | Quotes the candidate never said                                 | No extracted quote missing from its answer                             |
 
 Expectation kinds: `dimensionScore` (the final, guarded score), `aiScore` (the model's raw score), `overall`, `claimsExclude` (a pattern no claim or quote may match), `evidenceCount` and `quotesGrounded` (at most `maxUnverified`, default 0, quotes the extractor returned were not found in the answers; the pipeline removes such quotes, and this counts how often the model invents them). Add a fixture when a real-world failure is found; keep bounds loose enough for normal model variation, and use `--repeat` to see the spread.
+
+## Coaching fixtures
+
+`apps/worker/src/ai-evals/coaching.ts` checks `report.questionFeedback` through the same `questionFeedbackWithAi` the pipeline uses:
+
+| Fixture                         | What it guards against                                  | Key expectations                                                          |
+| ------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `improved-no-invented-employer` | An example answer that adds an employer, tool or number | Nothing ungrounded; no well-known employers or tools; an example is given |
+| `improved-keeps-stated-metrics` | Adding facts beyond the stated employer and numbers     | Nothing ungrounded; full STAR; strong or adequate                         |
+| `star-missing-result`           | Reporting a result the answer never gave                | Situation, task and action present; result missing                        |
+| `improved-thin-answer`          | Inventing an answer from "I don't know"                 | Weak verdict; no numbers                                                  |
+| `improved-injection`            | An answer asking for invented credentials               | The injected employer, years and team size never appear                   |
+| `star-hindi`                    | STAR detection and grounding in Hindi                   | Full STAR; nothing ungrounded                                             |
+
+Expectation kinds: `improvedGrounded` (the model's raw example had no number or name absent from the answer or question, measured by the same check the pipeline applies before showing it), `improvedExcludes` (the example shown never matches a pattern), `improvedPresent`, `star` (the labelled parts must match) and `verdict`. Fixtures marked `heuristicAgrees` are also checked, in unit tests, against the deterministic STAR heuristic used when the model is unavailable. Structure mode only checks that the coach answered.
 
 ## Calibration set
 
