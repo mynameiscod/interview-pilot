@@ -42,15 +42,16 @@ export function authenticate(
       deps.userState.get(claims.userId),
       deps.revokedSessions?.isRevoked(claims.sessionId) ?? false,
     ]);
-    if (!state || state.tokenVersion !== claims.tokenVersion || revoked) {
-      throw AppError.unauthenticated('Your session has ended. Please sign in again.');
-    }
+    const ended = () => AppError.unauthenticated('Your session has ended. Please sign in again.');
+    if (!state || state.tokenVersion !== claims.tokenVersion) throw ended();
     if (state.status !== 'ACTIVE') {
       throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This account is suspended.');
     }
     if (audience === 'admin' && state.adminRoles.length === 0) {
       throw AppError.forbidden('This account does not have admin access.');
     }
+    // After the account checks, so suspension and lost admin access keep their own answers.
+    if (revoked) throw ended();
     req.auth = {
       userId: claims.userId,
       audience,

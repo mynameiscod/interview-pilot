@@ -168,7 +168,8 @@ export async function ensureAuditLogRetention(days: number): Promise<TtlIndexPla
   if (plan.op === 'create') {
     await collection.createIndex(AUDIT_LOG_TTL_KEY, { expireAfterSeconds: seconds });
   } else if (plan.op === 'collMod') {
-    await collection.db.command({
+    // The native database handle (a Mongoose collection has no `db`).
+    await AuditLogModel.db.db!.command({
       collMod: collection.collectionName,
       index: { name: plan.name, expireAfterSeconds: seconds },
     });
