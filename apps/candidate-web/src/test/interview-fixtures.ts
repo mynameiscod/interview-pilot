@@ -32,6 +32,8 @@ export function makeResume(overrides: Partial<ResumeSummary> = {}): ResumeSummar
     extraction: makeExtraction(),
     layout: null,
     structured: null,
+    edited: null,
+    editedAt: null,
     createdAt: NOW,
     ...overrides,
   };
@@ -45,6 +47,8 @@ export function makeJobTarget(overrides: Partial<JobTargetSummary> = {}): JobTar
     originalName: null,
     extraction: makeExtraction({ status: 'PENDING', completedAt: null }),
     structured: null,
+    edited: null,
+    editedAt: null,
     company: null,
     companyName: null,
     role: null,

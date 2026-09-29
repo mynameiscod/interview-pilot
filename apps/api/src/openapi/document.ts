@@ -147,7 +147,9 @@ import {
   StartInterviewBody,
   TemplateSummary,
   UpdateInterviewSetupBody,
+  UpdateJdStructuredBody,
   UpdateJobTargetBody,
+  UpdateResumeStructuredBody,
   UploadJobTargetFields,
   UpsertCompanyBody,
   UpsertRoleBody,
@@ -729,6 +731,20 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Delete a resume and its file',
     response: null,
   });
+  candidate('put', '/resumes/{id}/structured', {
+    tag: 'Resumes',
+    summary:
+      'Save my corrections to the parsed resume as a revision that analysis prefers (READY resumes only)',
+    body: UpdateResumeStructuredBody,
+    response: ResumeSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('delete', '/resumes/{id}/structured', {
+    tag: 'Resumes',
+    summary: 'Discard my corrections and go back to the AI-read version',
+    response: ResumeSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
   candidate('post', '/jobs', {
     tag: 'Job targets',
     summary:
@@ -771,6 +787,20 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     tag: 'Job targets',
     summary: 'Extraction status',
     response: Extraction,
+  });
+  candidate('put', '/jobs/{id}/structured', {
+    tag: 'Job targets',
+    summary:
+      'Save my corrections to the parsed job description (skills, seniority, responsibilities) as a revision that analysis prefers',
+    body: UpdateJdStructuredBody,
+    response: JobTargetSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('delete', '/jobs/{id}/structured', {
+    tag: 'Job targets',
+    summary: 'Discard my corrections and go back to the AI-read version',
+    response: JobTargetSummary,
+    errors: [400, 401, 404, 409, 429],
   });
   route('get', '/companies', {
     tag: 'Library',

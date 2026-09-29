@@ -1,7 +1,9 @@
 import {
   CreateJobTargetBody,
   CreateResumeTextBody,
+  UpdateJdStructuredBody,
   UpdateJobTargetBody,
+  UpdateResumeStructuredBody,
   UploadJobTargetFields,
 } from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
@@ -50,6 +52,28 @@ export function resumesRouter(c: Container): Router {
   router.delete('/:id', async (req, res) => {
     await c.inputs.deleteResume(requireAuth(req).userId, String(req.params.id), clientContext(req));
     res.status(204).end();
+  });
+  // The candidate's corrections to the parsed resume (a revision beside the AI parse).
+  router.put('/:id/structured', async (req, res) => {
+    const body = UpdateResumeStructuredBody.parse(req.body);
+    res.json({
+      data: await c.inputs.setResumeRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        body,
+        clientContext(req),
+      ),
+    });
+  });
+  router.delete('/:id/structured', async (req, res) => {
+    res.json({
+      data: await c.inputs.setResumeRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        null,
+        clientContext(req),
+      ),
+    });
   });
   return router;
 }
@@ -102,6 +126,27 @@ export function jobsRouter(c: Container): Router {
   router.get('/:id/status', async (req, res) => {
     const target = await c.inputs.getJobTarget(requireAuth(req).userId, String(req.params.id));
     res.json({ data: target.extraction });
+  });
+  router.put('/:id/structured', async (req, res) => {
+    const body = UpdateJdStructuredBody.parse(req.body);
+    res.json({
+      data: await c.inputs.setJobTargetRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        body,
+        clientContext(req),
+      ),
+    });
+  });
+  router.delete('/:id/structured', async (req, res) => {
+    res.json({
+      data: await c.inputs.setJobTargetRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        null,
+        clientContext(req),
+      ),
+    });
   });
   return router;
 }

@@ -51,6 +51,9 @@ export interface ResumeRecord {
   /** Layout signals from extraction (ATS formatting checks); null until extracted. */
   layout?: DocumentLayout | null;
   structured: ResumeStructured | null;
+  /** The candidate's corrected revision; preferred over `structured` everywhere. */
+  edited?: ResumeStructured | null;
+  editedAt?: Date | null;
   extraction: ExtractionRecord;
   createdAt: Date;
   updatedAt: Date;
@@ -68,6 +71,9 @@ export interface JobTargetRecord {
   sha256: string | null;
   rawText: string | null;
   structured: JdStructured | null;
+  /** The candidate's corrected revision; preferred over `structured` everywhere. */
+  edited?: JdStructured | null;
+  editedAt?: Date | null;
   extraction: ExtractionRecord;
   companyId: Types.ObjectId | null;
   companyName: string | null;
@@ -114,6 +120,8 @@ const resumeSchema = new Schema<ResumeRecord>(
     rawText: { type: String, default: null },
     layout: { type: Schema.Types.Mixed, default: null },
     structured: { type: Schema.Types.Mixed, default: null },
+    edited: { type: Schema.Types.Mixed, default: null },
+    editedAt: { type: Date, default: null },
     extraction: { type: extractionSchema, required: true, default: () => ({}) },
   },
   { timestamps: true, collection: 'resumes' },
@@ -135,6 +143,8 @@ const jobTargetSchema = new Schema<JobTargetRecord>(
     sha256: { type: String, default: null },
     rawText: { type: String, default: null },
     structured: { type: Schema.Types.Mixed, default: null },
+    edited: { type: Schema.Types.Mixed, default: null },
+    editedAt: { type: Date, default: null },
     extraction: { type: extractionSchema, required: true, default: () => ({}) },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', default: null },
     companyName: { type: String, default: null },

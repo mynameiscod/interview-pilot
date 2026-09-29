@@ -38,6 +38,7 @@ import {
   restrictCategories,
   shortlistRoles,
 } from '../analysis/blueprint.js';
+import { jdRevisionText, resumeRevisionText, withRevision } from './confirmed-profile.js';
 import { knownNames, redactForAi } from './pii.js';
 
 export interface AnalysisProcessorDeps {
@@ -206,15 +207,25 @@ async function analyze(
 
   // Personal data is masked before any AI call; the stored text is unchanged.
   const names = await knownNames(session.userId);
-  const jdText = redactForAi(deps.logger, target.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '', {
-    what: 'analysis.jd',
-    userId: ctx.userId,
-    names,
-    addresses: false,
-  });
+  // The candidate's own corrections to the parse come first and take precedence.
+  const jdText = redactForAi(
+    deps.logger,
+    withRevision(
+      target.edited ? jdRevisionText(target.edited) : null,
+      target.rawText ?? '',
+      ANALYSIS_INPUT_CHARS,
+    ),
+    { what: 'analysis.jd', userId: ctx.userId, names, addresses: false },
+  );
   const resumeText = redactForAi(
     deps.logger,
-    resume?.rawText?.slice(0, ANALYSIS_INPUT_CHARS) ?? '',
+    resume
+      ? withRevision(
+          resume.edited ? resumeRevisionText(resume.edited) : null,
+          resume.rawText ?? '',
+          ANALYSIS_INPUT_CHARS,
+        )
+      : '',
     { what: 'analysis.resume', userId: ctx.userId, names },
   );
   const [roles, company, chosenRole] = await Promise.all([
@@ -223,7 +234,11 @@ async function analyze(
     target.roleId ? RoleModel.findOne({ _id: target.roleId, active: true }).lean() : null,
   ]);
   const notes = company.notes;
-  const roleTitle = target.roleTitle?.trim() || chosenRole?.title || target.structured?.title || '';
+  const roleTitle =
+    target.roleTitle?.trim() ||
+    chosenRole?.title ||
+    (target.edited ?? target.structured)?.title ||
+    '';
   const notesText = [
     ...notes.map((n) => `- ${n}`),
     ...companyGuidance(company).map((line) => `- ${line}`),

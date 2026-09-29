@@ -18,6 +18,8 @@ import {
   type CreateJobTargetBody,
   type CreateResumeTextBody,
   type ResumeSource,
+  type UpdateJdStructuredBody,
+  type UpdateResumeStructuredBody,
   type DocumentMime,
   type Extraction,
   type JobTargetSummary,
@@ -69,6 +71,8 @@ export function resumeSummary(r: ResumeRecord): ResumeSummary {
     extraction: extractionSummary(r.extraction),
     layout: r.layout ?? null,
     structured: r.structured,
+    edited: r.edited ?? null,
+    editedAt: r.editedAt ? iso(r.editedAt) : null,
     createdAt: iso(r.createdAt),
   };
 }
@@ -85,6 +89,8 @@ export async function jobTargetSummary(t: JobTargetRecord): Promise<JobTargetSum
     originalName: t.originalName,
     extraction: extractionSummary(t.extraction),
     structured: t.structured,
+    edited: t.edited ?? null,
+    editedAt: t.editedAt ? iso(t.editedAt) : null,
     company: company ? { id: String(company._id), name: company.name } : null,
     companyName: t.companyName,
     role: role ? { id: String(role._id), title: role.title } : null,
@@ -106,6 +112,27 @@ function sniff(file: UploadedFile): DocumentMime {
 }
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Explains why an edit matched nothing: 404 when the input is not the
+ * candidate's, 409 while it is still being read (or failed, or is role-only).
+ * Always throws.
+ */
+async function assertReadable(
+  model: typeof ResumeModel | typeof JobTargetModel,
+  id: string,
+  userId: string,
+  label: string,
+  extra: Record<string, unknown> = {},
+): Promise<never> {
+  const exists = await (model as typeof ResumeModel).exists({ _id: id, userId, ...extra });
+  if (!exists) throw AppError.notFound(`${label} not found`);
+  throw new AppError(
+    409,
+    'INVALID_STATE',
+    'This document has not been read successfully, so there is nothing to edit yet.',
+  );
+}
 
 interface Deps {
   storage: StorageProvider;
@@ -281,6 +308,35 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
       return resumeSummary(resume as ResumeRecord);
     },
 
+    /**
+     * Saves the candidate's corrected resume as a revision beside the AI parse
+     * (`edited`), or with `null` goes back to the AI parse. Only once read.
+     */
+    async setResumeRevision(
+      userId: string,
+      id: string,
+      revision: UpdateResumeStructuredBody | null,
+      ctx: ClientContext,
+    ) {
+      const updated = await ResumeModel.findOneAndUpdate(
+        { _id: objectId(id, 'Resume'), userId, 'extraction.status': 'READY' },
+        { $set: { edited: revision, editedAt: revision ? new Date() : null } },
+        { returnDocument: 'after', projection: { rawText: 0 } },
+      ).lean();
+      if (!updated) await assertReadable(ResumeModel, id, userId, 'Resume');
+      await audit.record(
+        {
+          actorType: 'USER',
+          actorId: userId,
+          action: revision ? 'resume.edited' : 'resume.edit_reverted',
+          resourceType: 'resume',
+          resourceId: id,
+        },
+        ctx,
+      );
+      return resumeSummary(updated as ResumeRecord);
+    },
+
     async deleteResume(userId: string, id: string, ctx: ClientContext) {
       const resume = await ResumeModel.findOneAndDelete({ _id: objectId(id, 'Resume'), userId });
       if (!resume) throw AppError.notFound('Resume not found');
@@ -364,6 +420,38 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
       return jobTargetSummary(updated as JobTargetRecord);
     },
 
+    /** The job-description counterpart of `setResumeRevision`. */
+    async setJobTargetRevision(
+      userId: string,
+      id: string,
+      revision: UpdateJdStructuredBody | null,
+      ctx: ClientContext,
+    ) {
+      const updated = await JobTargetModel.findOneAndUpdate(
+        {
+          _id: objectId(id, 'Job target'),
+          userId,
+          ...LIVE_TARGET,
+          source: { $ne: 'ROLE_ONLY' },
+          'extraction.status': 'READY',
+        },
+        { $set: { edited: revision, editedAt: revision ? new Date() : null } },
+        { returnDocument: 'after', projection: { rawText: 0 } },
+      ).lean();
+      if (!updated) await assertReadable(JobTargetModel, id, userId, 'Job target', LIVE_TARGET);
+      await audit.record(
+        {
+          actorType: 'USER',
+          actorId: userId,
+          action: revision ? 'job_target.edited' : 'job_target.edit_reverted',
+          resourceType: 'jobTarget',
+          resourceId: id,
+        },
+        ctx,
+      );
+      return jobTargetSummary(updated as JobTargetRecord);
+    },
+
     async listJobTargets(userId: string) {
       const rows = await JobTargetModel.find({ userId, ...LIVE_TARGET }, { rawText: 0 })
         .sort({ createdAt: -1 })
@@ -415,6 +503,7 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
               url: null,
               finalUrl: null,
               originalName: null,
+              edited: null,
             },
           },
         );
