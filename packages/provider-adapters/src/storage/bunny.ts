@@ -108,6 +108,16 @@ export function createBunnyStorage(opts: BunnyStorageOptions): StorageProvider {
       if (!res.ok) throw fail('GET', res);
       return Buffer.from(await res.arrayBuffer());
     },
+    async getRange(key, start, end) {
+      const res = await call('GET', key, { headers: { Range: `bytes=${start}-${end}` } });
+      if (res.status === 404) throw new StorageNotFoundError('bunny-storage');
+      // Past the end of the object: nothing to return.
+      if (res.status === 416) return Buffer.alloc(0);
+      if (!res.ok) throw fail('GET', res);
+      const body = Buffer.from(await res.arrayBuffer());
+      // 200: the range was ignored and the whole object came back.
+      return res.status === 206 ? body : body.subarray(start, end + 1);
+    },
     async delete(key) {
       const res = await call('DELETE', key);
       if (!res.ok && res.status !== 404) throw fail('DELETE', res);

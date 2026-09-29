@@ -173,8 +173,10 @@ describe('recordings', () => {
   it('requests a playback link and plays it from the API origin', async () => {
     const playback = {
       url: '/api/v1/media/play/med1?exp=1767000000&sig=abc',
-      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      expiresAt: new Date(Date.now() + 1_800_000).toISOString(),
       mimeType: 'video/webm',
+      source: 'FILE',
+      parts: ['/api/v1/media/play/med1?exp=1767000000&sig=abc'],
     };
     const { api } = await renderAt('/recordings/med1', ['OPERATIONS_ADMIN'], {
       ...detailHandlers(),

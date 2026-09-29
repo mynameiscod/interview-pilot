@@ -16,6 +16,7 @@ import {
 import {
   AdminIntegrityEvent,
   AdminMediaAsset,
+  MAX_INTEGRITY_EVENTS,
   MediaAssetSummary,
   PlaybackUrl,
   RT_NAMESPACE,
@@ -333,10 +334,11 @@ describe('recording upload resilience', () => {
     const mine = MediaAssetSummary.parse((await call('get', `/interviews/${id}/media`)).body.data);
     expect(mine).toMatchObject({ status: 'COMPLETE', missingSegments: [], segmentCount: 5 });
 
-    // Playback: a signed link streams the segments in order as one file.
+    // Playback: one recorder, one part; its segments in order form one file until the worker joins it.
     const link = PlaybackUrl.parse(
       (await call('get', `/interviews/${id}/media/playback-url`)).body.data,
     );
+    expect(link).toMatchObject({ source: 'PARTS', parts: [link.url] });
     const played = await request(t.app)
       .get(link.url)
       .buffer(true)
@@ -367,6 +369,78 @@ describe('recording upload resilience', () => {
     });
     expect([...t.storage.objects.keys()].filter((k) => k.startsWith('media/'))).toEqual([]);
     await request(t.app).get(link.url).expect(404);
+  });
+
+  it('keeps each recorder part playable, serves byte ranges and switches to the joined file', async () => {
+    const { userId, accessToken, call } = await candidate();
+    const id = await readyInterview(userId, 'VIDEO');
+    await startVideo(call, id);
+    await join(accessToken, id);
+    const header = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+    const partUpload = (idx: number, part: number, body: Buffer) =>
+      call('post', `/interviews/${id}/media/segments/${idx}?part=${part}`)
+        .set('Content-Type', 'video/webm')
+        .send(body);
+    await partUpload(0, 0, Buffer.concat([header, Buffer.from('part0-a')])).expect(201);
+    await partUpload(1, 0, Buffer.from('part0-b')).expect(201);
+    // The camera was re-acquired: a new MediaRecorder starts a new container (its own header).
+    await partUpload(2, 1, Buffer.concat([header, Buffer.from('part1-a')])).expect(201);
+    // A new container must be the declared one.
+    await partUpload(3, 1, Buffer.from('\0\0\0\x18ftypmp42')).expect(415);
+    await call('post', `/interviews/${id}/media/segments/3?part=9999`)
+      .set('Content-Type', 'video/webm')
+      .send(Buffer.from('x'))
+      .expect(400);
+    await call('post', `/interviews/${id}/end`).expect(200);
+    const fin = await call('post', `/interviews/${id}/media/finalize`)
+      .send({ segmentCount: 3, durationMs: 30_000 })
+      .expect(200);
+    expect(MediaAssetSummary.parse(fin.body.data)).toMatchObject({
+      status: 'COMPLETE',
+      parts: 2,
+      playbackFile: 'PENDING',
+    });
+
+    const link = PlaybackUrl.parse(
+      (await call('get', `/interviews/${id}/media/playback-url`)).body.data,
+    );
+    expect(link.source).toBe('PARTS');
+    expect(link.parts).toHaveLength(2);
+    const second = await request(t.app).get(link.parts[1]!).set('Range', 'bytes=4-').expect(206);
+    expect(second.headers['content-range']).toBe('bytes 4-10/11');
+    expect(second.headers['accept-ranges']).toBe('bytes');
+    await request(t.app).get(link.parts[1]!).set('Range', 'bytes=99-').expect(416);
+
+    // The worker joined the parts: playback switches to the single file.
+    const asset = (await MediaAssetModel.findOne({ sessionId: id }).lean())!;
+    const key = `media/${userId}/${id}/${String(asset._id)}/recording.webm`;
+    const joined = Buffer.concat([header, Buffer.from('joined-recording')]);
+    await t.storage.storage.put(key, joined, 'video/webm');
+    await MediaAssetModel.updateOne(
+      { _id: asset._id },
+      {
+        $set: {
+          playbackFile: {
+            status: 'READY',
+            key,
+            bytes: joined.length,
+            at: new Date(),
+            attempts: 1,
+            error: null,
+          },
+        },
+      },
+    );
+    const file = PlaybackUrl.parse(
+      (await call('get', `/interviews/${id}/media/playback-url`)).body.data,
+    );
+    expect(file).toMatchObject({ source: 'FILE', parts: [file.url] });
+    const head = await request(t.app).get(file.url).set('Range', 'bytes=0-3').expect(206);
+    expect(head.headers['content-range']).toBe(`bytes 0-3/${joined.length}`);
+
+    // Deleting removes the joined file too.
+    await call('delete', `/interviews/${id}/media`).expect(200);
+    expect([...t.storage.objects.keys()].filter((k) => k.startsWith('media/'))).toEqual([]);
   });
 
   it('never fails the interview when every upload fails', async () => {
@@ -443,6 +517,18 @@ describe('integrity observations and admin', () => {
       ),
     );
     expect(await IntegrityEventModel.countDocuments({ sessionId: id })).toBeLessThanOrEqual(8);
+    const stored = await IntegrityEventModel.countDocuments({ sessionId: id });
+    expect((await InterviewSessionModel.findById(id).lean())!.integrityEventCount).toBe(stored);
+    // A full session stores no more (the counter caps it; nothing is counted per event).
+    await InterviewSessionModel.updateOne(
+      { _id: id },
+      { $set: { integrityEventCount: MAX_INTEGRITY_EVENTS } },
+    );
+    await new Promise((r) => setTimeout(r, 1100));
+    await socket
+      .timeout(5000)
+      .emitWithAck(RtEvent.INTEGRITY, { sessionId: id, type: 'WINDOW_BLUR', at });
+    expect(await IntegrityEventModel.countDocuments({ sessionId: id })).toBe(stored);
 
     await upload(call, id, 0, segments(1)[0]!).expect(201);
     await call('post', `/interviews/${id}/media/finalize`)

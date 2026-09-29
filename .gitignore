@@ -17,3 +17,6 @@ test-results/
 # Playwright e2e: SPA builds, server logs and local file storage (reports are ignored above)
 tests/e2e/.cache/
 tests/load/results/
+
+# Claude Code agent worktrees and local settings
+.claude/

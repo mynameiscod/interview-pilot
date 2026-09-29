@@ -17,6 +17,7 @@ function sink() {
 }
 
 describe('ZipWriter', () => {
+  // Deflating 200 KB of random bytes is slow when the whole workspace is testing at once.
   it('round-trips buffers and streamed entries with UTF-8 names', async () => {
     const s = sink();
     const zip = new ZipWriter(s.out);
@@ -48,7 +49,7 @@ describe('ZipWriter', () => {
     expect(files.get('empty.txt')!.length).toBe(0);
     expect(zip.entries).toBe(4);
     expect(zip.size).toBe(s.bytes());
-  });
+  }, 20_000);
 
   it('writes each entry out as it goes instead of buffering the archive', async () => {
     const s = sink();

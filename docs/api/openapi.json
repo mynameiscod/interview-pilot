@@ -27735,12 +27735,31 @@
         "tags": [
           "Interviews"
         ],
-        "summary": "Start the interview (READY or READY_TO_START → ACTIVE), reserving one credit. The first question arrives in the realtime room",
+        "summary": "Start the interview (READY or READY_TO_START → ACTIVE), reserving one credit. The first question arrives in the realtime room. The optional UI locale settles an `auto` interview language when the profile does not",
         "security": [
           {
             "bearerAuth": []
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uiLocale": {
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "te",
+                      "hi"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Success",
@@ -28334,6 +28353,74 @@
                   },
                   "required": [
                     "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -52298,10 +52385,26 @@
         "tags": [
           "Recordings"
         ],
-        "summary": "Upload one MediaRecorder segment as the raw body (Content-Type video/webm or video/mp4, ≤ 8 MB). Idempotent by index: 200 duplicate, 201 stored; 503 means retry later",
+        "summary": "Upload one MediaRecorder segment as the raw body (Content-Type video/webm or video/mp4, ≤ 8 MB), with the recorder part that produced it (each MediaRecorder instance is a new part). Idempotent by index: 200 duplicate, 201 stored; 503 means retry later",
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 199,
+              "default": 0
+            },
+            "required": false,
+            "name": "part",
+            "in": "query"
           }
         ],
         "responses": {
@@ -52983,6 +53086,20 @@
                             "type": "integer"
                           }
                         },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
                         "bytes": {
                           "type": "integer"
                         },
@@ -53040,6 +53157,8 @@
                         "segmentCount",
                         "expectedSegments",
                         "missingSegments",
+                        "parts",
+                        "playbackFile",
                         "bytes",
                         "durationMs",
                         "retentionExpiresAt",
@@ -53398,6 +53517,20 @@
                             "type": "integer"
                           }
                         },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
                         "bytes": {
                           "type": "integer"
                         },
@@ -53455,6 +53588,8 @@
                         "segmentCount",
                         "expectedSegments",
                         "missingSegments",
+                        "parts",
+                        "playbackFile",
                         "bytes",
                         "durationMs",
                         "retentionExpiresAt",
@@ -53672,6 +53807,20 @@
                             "type": "integer"
                           }
                         },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
                         "bytes": {
                           "type": "integer"
                         },
@@ -53729,6 +53878,8 @@
                         "segmentCount",
                         "expectedSegments",
                         "missingSegments",
+                        "parts",
+                        "playbackFile",
                         "bytes",
                         "durationMs",
                         "retentionExpiresAt",
@@ -53956,7 +54107,7 @@
         "tags": [
           "Recordings"
         ],
-        "summary": "A signed playback link for my recording (valid 5 minutes)",
+        "summary": "Signed playback links for my recording (valid 30 minutes; ask again when they expire): the joined file, or its parts in order",
         "security": [
           {
             "bearerAuth": []
@@ -53986,12 +54137,27 @@
                             "video/webm",
                             "video/mp4"
                           ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "FILE",
+                            "PARTS"
+                          ]
+                        },
+                        "parts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "url",
                         "expiresAt",
-                        "mimeType"
+                        "mimeType",
+                        "source",
+                        "parts"
                       ]
                     }
                   },
@@ -54146,7 +54312,7 @@
         "tags": [
           "Recordings"
         ],
-        "summary": "Stream a recording from a signed link (exp and sig query parameters; no Authorization header, for <video>)",
+        "summary": "Stream a recording from a signed link (exp, sig and, for one part, part query parameters; no Authorization header, for <video>). Single byte ranges: 206 with Content-Range, 416 past the end",
         "responses": {
           "200": {
             "description": "No content"
@@ -54220,6 +54386,142 @@
             }
           },
           "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
             "description": "Error",
             "content": {
               "application/json": {
@@ -54405,6 +54707,20 @@
                               "type": "integer"
                             }
                           },
+                          "parts": {
+                            "type": "integer"
+                          },
+                          "playbackFile": {
+                            "type": "string",
+                            "enum": [
+                              "NONE",
+                              "PENDING",
+                              "PROCESSING",
+                              "READY",
+                              "FAILED",
+                              "UNAVAILABLE"
+                            ]
+                          },
                           "bytes": {
                             "type": "integer"
                           },
@@ -54477,6 +54793,8 @@
                           "segmentCount",
                           "expectedSegments",
                           "missingSegments",
+                          "parts",
+                          "playbackFile",
                           "bytes",
                           "durationMs",
                           "retentionExpiresAt",
@@ -54836,6 +55154,20 @@
                             "type": "integer"
                           }
                         },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
                         "bytes": {
                           "type": "integer"
                         },
@@ -54908,6 +55240,8 @@
                         "segmentCount",
                         "expectedSegments",
                         "missingSegments",
+                        "parts",
+                        "playbackFile",
                         "bytes",
                         "durationMs",
                         "retentionExpiresAt",
@@ -55236,12 +55570,27 @@
                             "video/webm",
                             "video/mp4"
                           ]
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "FILE",
+                            "PARTS"
+                          ]
+                        },
+                        "parts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "url",
                         "expiresAt",
-                        "mimeType"
+                        "mimeType",
+                        "source",
+                        "parts"
                       ]
                     }
                   },
@@ -55611,6 +55960,20 @@
                             "type": "integer"
                           }
                         },
+                        "parts": {
+                          "type": "integer"
+                        },
+                        "playbackFile": {
+                          "type": "string",
+                          "enum": [
+                            "NONE",
+                            "PENDING",
+                            "PROCESSING",
+                            "READY",
+                            "FAILED",
+                            "UNAVAILABLE"
+                          ]
+                        },
                         "bytes": {
                           "type": "integer"
                         },
@@ -55683,6 +56046,8 @@
                         "segmentCount",
                         "expectedSegments",
                         "missingSegments",
+                        "parts",
+                        "playbackFile",
                         "bytes",
                         "durationMs",
                         "retentionExpiresAt",

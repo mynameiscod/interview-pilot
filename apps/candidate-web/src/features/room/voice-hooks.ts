@@ -153,6 +153,8 @@ interface ActiveRecording {
   mimeType: string;
   startedAt: number;
   timer: ReturnType<typeof setInterval>;
+  /** Stop was requested (by the candidate or the limit): the limit must not fire again. */
+  stopping: boolean;
 }
 
 const MAX_ANSWER_MS = VOICE_LIMITS.maxAnswerSec * 1000;
@@ -213,12 +215,28 @@ export function useRecorder(onLimit: () => void) {
     const startedAt = performance.now();
     const meter = createLevelMeter(stream);
     const timer = setInterval(() => {
+      const current = activeRef.current;
+      if (!current || current.timer !== timer || current.stopping) return;
       const ms = performance.now() - startedAt;
       setElapsedMs(Math.min(ms, MAX_ANSWER_MS));
       setLevel(meter?.read() ?? 0);
-      if (ms >= MAX_ANSWER_MS) limitRef.current();
+      if (ms >= MAX_ANSWER_MS) {
+        // Once only: the recorder's `onstop` can take several ticks to arrive.
+        current.stopping = true;
+        clearInterval(timer);
+        limitRef.current();
+      }
     }, TICK_MS);
-    activeRef.current = { stream, recorder, meter, chunks, mimeType, startedAt, timer };
+    activeRef.current = {
+      stream,
+      recorder,
+      meter,
+      chunks,
+      mimeType,
+      startedAt,
+      timer,
+      stopping: false,
+    };
     recorder.start(1000);
     setElapsedMs(0);
     setLevel(0);
@@ -230,10 +248,15 @@ export function useRecorder(onLimit: () => void) {
     const active = activeRef.current;
     if (!active) return Promise.resolve(null);
     const durationMs = Math.min(performance.now() - active.startedAt, MAX_ANSWER_MS);
+    active.stopping = true;
+    clearInterval(active.timer);
     activeRef.current = null;
     setRecording(false);
     return new Promise<Recording>((resolve) => {
+      let finished = false;
       const finish = () => {
+        if (finished) return;
+        finished = true;
         release(active);
         const type = active.recorder.mimeType || active.mimeType;
         resolve({ blob: new Blob(active.chunks, { type }), durationMs });

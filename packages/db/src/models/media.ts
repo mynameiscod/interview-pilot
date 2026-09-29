@@ -1,6 +1,7 @@
 import {
   IntegrityEventType,
   MediaDeletionStatus,
+  MediaFileStatus,
   MediaKind,
   MediaMime,
   MediaStatus,
@@ -8,6 +9,7 @@ import {
 import type {
   IntegrityEventType as IntegrityEventTypeT,
   MediaDeletionStatus as MediaDeletionStatusT,
+  MediaFileStatus as MediaFileStatusT,
   MediaKind as MediaKindT,
   MediaMime as MediaMimeT,
   MediaStatus as MediaStatusT,
@@ -22,6 +24,10 @@ function model<T>(name: string, schema: Schema<T>): Model<T> {
 
 export interface MediaSegmentRecord {
   idx: number;
+  /** The MediaRecorder instance that produced it (each starts a new container); absent = 0. */
+  part?: number;
+  /** Starts with a container header; absent on older records, where only index 0 had one. */
+  header?: boolean;
   storageKey: string;
   bytes: number;
   sha256: string;
@@ -44,12 +50,26 @@ export interface MediaAssetRecord {
   consentId: Types.ObjectId | null;
   manifestKey: string | null;
   finalizedAt: Date | null;
+  /** The joined, seekable recording the worker builds after finalize. */
+  playbackFile: {
+    status: MediaFileStatusT;
+    key: string | null;
+    bytes: number | null;
+    /** When the current status was set (a PROCESSING claim's lease starts here). */
+    at: Date | null;
+    attempts: number;
+    error: string | null;
+  };
   retentionExpiresAt: Date;
   deletion: {
-    status: MediaDeletionStatusT;
+    /** DELETING: objects are being removed; no new segment is accepted. */
+    status: MediaDeletionStatusT | 'DELETING';
     at: Date | null;
     reason: string | null;
     by: string | null;
+    /** Every object key removed, deleted again by the sweep after `sweepAfter` (late writers). */
+    keys: string[];
+    sweepAfter: Date | null;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -58,6 +78,8 @@ export interface MediaAssetRecord {
 const segmentSchema = new Schema<MediaSegmentRecord>(
   {
     idx: { type: Number, required: true },
+    part: { type: Number },
+    header: { type: Boolean },
     storageKey: { type: String, required: true },
     bytes: { type: Number, required: true },
     sha256: { type: String, required: true },
@@ -81,18 +103,52 @@ const mediaAssetSchema = new Schema<MediaAssetRecord>(
     consentId: { type: Schema.Types.ObjectId, ref: 'ConsentText', default: null },
     manifestKey: { type: String, default: null },
     finalizedAt: { type: Date, default: null },
+    playbackFile: {
+      type: new Schema(
+        {
+          status: { type: String, enum: MediaFileStatus.options, required: true },
+          key: { type: String, default: null },
+          bytes: { type: Number, default: null },
+          at: { type: Date, default: null },
+          attempts: { type: Number, default: 0 },
+          error: { type: String, default: null },
+        },
+        { _id: false },
+      ),
+      default: () => ({
+        status: 'NONE',
+        key: null,
+        bytes: null,
+        at: null,
+        attempts: 0,
+        error: null,
+      }),
+    },
     retentionExpiresAt: { type: Date, required: true },
     deletion: {
       type: new Schema(
         {
-          status: { type: String, enum: MediaDeletionStatus.options, required: true },
+          status: {
+            type: String,
+            enum: [...MediaDeletionStatus.options, 'DELETING'],
+            required: true,
+          },
           at: { type: Date, default: null },
           reason: { type: String, default: null },
           by: { type: String, default: null },
+          keys: { type: [String], default: [] },
+          sweepAfter: { type: Date, default: null },
         },
         { _id: false },
       ),
-      default: () => ({ status: 'NONE', at: null, reason: null, by: null }),
+      default: () => ({
+        status: 'NONE',
+        at: null,
+        reason: null,
+        by: null,
+        keys: [],
+        sweepAfter: null,
+      }),
     },
   },
   { timestamps: true, collection: 'mediaAssets' },
@@ -101,6 +157,8 @@ mediaAssetSchema.index({ sessionId: 1, kind: 1 }, { unique: true });
 mediaAssetSchema.index({ retentionExpiresAt: 1, 'deletion.status': 1 });
 mediaAssetSchema.index({ status: 1, updatedAt: 1 });
 mediaAssetSchema.index({ userId: 1, createdAt: -1 });
+mediaAssetSchema.index({ 'playbackFile.status': 1, 'playbackFile.at': 1 });
+mediaAssetSchema.index({ 'deletion.status': 1, 'deletion.sweepAfter': 1 });
 
 export const MediaAssetModel = model<MediaAssetRecord>('MediaAsset', mediaAssetSchema);
 

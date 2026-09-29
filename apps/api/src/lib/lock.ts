@@ -6,6 +6,11 @@ const RELEASE = `if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call
 
 export const LOCK_BUSY = Symbol('lock-busy');
 
+/** Releases a lock taken with `SET key token PX … NX`, if it is still ours. */
+export async function releaseLock(redis: Pick<Redis, 'eval'>, key: string, token: string) {
+  await redis.eval(RELEASE, 1, key, token).catch(() => undefined);
+}
+
 /**
  * Runs `fn` while holding a Redis lock shared by every API replica. Waits up
  * to `waitMs` for the lock, then gives up with LOCK_BUSY. The TTL bounds how
@@ -29,6 +34,6 @@ export async function withLock<T>(
   try {
     return await fn();
   } finally {
-    await redis.eval(RELEASE, 1, key, token).catch(() => undefined);
+    await releaseLock(redis, key, token);
   }
 }

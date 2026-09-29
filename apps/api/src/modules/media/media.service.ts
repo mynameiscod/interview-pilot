@@ -6,8 +6,10 @@ import {
   IntegrityEventModel,
   InterviewSessionModel,
   MediaAssetModel,
+  mediaParts,
   mediaPrefix,
   missingSegments,
+  noteOrphanedMediaKey,
   UserModel,
   type InterviewSessionRecord,
   type MediaAssetRecord,
@@ -26,11 +28,12 @@ import {
   type PlaybackUrl,
   type SegmentUploadResult,
 } from '@cbi/shared-types';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import { parseRange, readPieces, type Piece } from './range.js';
 
 type Session = InterviewSessionRecord;
 
@@ -46,30 +49,39 @@ export const mediaSummary = (a: MediaAssetRecord): MediaAssetSummary => ({
   status: a.status,
   segmentCount: a.segments.length,
   expectedSegments: a.expectedSegments,
-  missingSegments: a.deletion.status === 'DELETED' ? [] : missingSegments(a),
+  missingSegments: a.deletion.status === 'NONE' ? missingSegments(a) : [],
+  parts: a.deletion.status === 'NONE' ? mediaParts(a).length : 0,
+  playbackFile: a.playbackFile?.status ?? 'NONE',
   bytes: a.bytes,
   durationMs: a.durationMs,
   retentionExpiresAt: iso(a.retentionExpiresAt),
   deletion: {
-    status: a.deletion.status,
+    // A delete in progress is already a deletion to the candidate and admins.
+    status: a.deletion.status === 'NONE' ? 'NONE' : 'DELETED',
     at: a.deletion.at ? iso(a.deletion.at) : null,
     reason: a.deletion.reason,
   },
   createdAt: iso(a.createdAt),
 });
 
-/** The container, from the declared type and (for the first segment) the bytes. */
+/** The container a segment's bytes start, when it starts one (the first segment of a part). */
+export function sniffVideoHeader(body: Buffer): MediaMime | null {
+  if (body.length >= 4 && body.readUInt32BE(0) === 0x1a45dfa3) return 'video/webm';
+  if (body.length >= 8 && body.subarray(4, 8).toString('latin1') === 'ftyp') return 'video/mp4';
+  return null;
+}
+
+/**
+ * The container, from the declared type and (for a segment that starts a
+ * container, `first`) the bytes, which must start the declared one.
+ */
 export function segmentMime(
   contentType: string | undefined,
   first: Buffer | null,
 ): MediaMime | null {
   const declared = (contentType ?? '').split(';')[0]!.trim().toLowerCase();
   if (declared !== 'video/webm' && declared !== 'video/mp4') return null;
-  if (first) {
-    const webm = first.length >= 4 && first.readUInt32BE(0) === 0x1a45dfa3;
-    const mp4 = first.length >= 8 && first.subarray(4, 8).toString('latin1') === 'ftyp';
-    if (declared === 'video/webm' ? !webm : !mp4) return null;
-  }
+  if (first && sniffVideoHeader(first) !== declared) return null;
   return declared;
 }
 
@@ -109,23 +121,35 @@ export function createMediaService(deps: Deps) {
     }
   }
 
-  const signature = (assetId: string, exp: number) =>
+  /** A link names what it plays: the joined `file` or one recorder `part-<n>`. */
+  const signature = (assetId: string, target: string, exp: number) =>
     createHmac('sha256', deps.signingSecret)
-      .update(`media-play:${assetId}:${exp}`)
+      .update(`media-play:${assetId}:${target}:${exp}`)
       .digest('base64url');
+
+  const fileReady = (a: MediaAssetRecord) =>
+    a.playbackFile?.status === 'READY' && Boolean(a.playbackFile.key && a.playbackFile.bytes);
 
   function playbackUrl(a: MediaAssetRecord): PlaybackUrl {
     const exp = Math.floor(now().getTime() / 1000) + MEDIA_LIMITS.playbackTtlSec;
     const id = String(a._id);
+    const link = (target: string, query = '') =>
+      `/api/v1/media/play/${id}?exp=${exp}${query}&sig=${signature(id, target, exp)}`;
+    const file = fileReady(a);
+    const parts = file
+      ? [link('file')]
+      : mediaParts(a).map((p) => link(`part-${p.part}`, `&part=${p.part}`));
     return {
-      url: `/api/v1/media/play/${id}?exp=${exp}&sig=${signature(id, exp)}`,
+      url: parts[0]!,
       expiresAt: new Date(exp * 1000).toISOString(),
       mimeType: a.mimeType,
+      source: file ? 'FILE' : 'PARTS',
+      parts,
     };
   }
 
   function playable(a: MediaAssetRecord | null): a is MediaAssetRecord {
-    return Boolean(a && a.deletion.status === 'NONE' && a.segments.length > 0);
+    return Boolean(a && a.deletion.status === 'NONE' && (fileReady(a) || mediaParts(a).length > 0));
   }
 
   async function decorate(rows: MediaAssetRecord[]): Promise<AdminMediaAsset[]> {
@@ -167,6 +191,7 @@ export function createMediaService(deps: Deps) {
       idx: number,
       body: Buffer,
       contentType: string | undefined,
+      part = 0,
     ): Promise<SegmentUploadResult> {
       if (!Number.isInteger(idx) || idx < 0 || idx >= MEDIA_LIMITS.maxSegments) {
         throw AppError.validation('Invalid segment index.');
@@ -181,7 +206,9 @@ export function createMediaService(deps: Deps) {
       if (body.length === 0) throw AppError.validation('Empty segment.');
       const s = await own(userId, sessionId);
       assertCanRecord(s);
-      const mime = segmentMime(contentType, idx === 0 ? body : null);
+      // Segment 0 must start a container; a later one starts one when a new recorder (part) began.
+      const header = sniffVideoHeader(body) !== null;
+      const mime = segmentMime(contentType, idx === 0 || header ? body : null);
       if (!mime) {
         throw new AppError(
           415,
@@ -206,7 +233,7 @@ export function createMediaService(deps: Deps) {
         },
         { upsert: true, returnDocument: 'after' },
       ).lean<MediaAssetRecord>();
-      if (!asset || asset.deletion.status === 'DELETED') {
+      if (!asset || asset.deletion.status !== 'NONE') {
         throw new AppError(409, 'INVALID_STATE', 'This recording was deleted.');
       }
       if (asset.mimeType !== mime) {
@@ -246,15 +273,35 @@ export function createMediaService(deps: Deps) {
         { _id: asset._id, 'segments.idx': { $ne: idx }, 'deletion.status': 'NONE' },
         {
           $push: {
-            segments: { idx, storageKey, bytes: body.length, sha256, uploadedAt: now() },
+            segments: {
+              idx,
+              part,
+              header,
+              storageKey,
+              bytes: body.length,
+              sha256,
+              uploadedAt: now(),
+            },
           },
           $inc: { bytes: body.length },
         },
         { returnDocument: 'after' },
       ).lean<MediaAssetRecord>();
       if (!updated) {
-        // A concurrent retry stored it first.
         asset = (await MediaAssetModel.findById(asset._id).lean<MediaAssetRecord>())!;
+        if (asset.deletion.status !== 'NONE') {
+          // Deleted while this segment was being stored: never leave the object unreferenced.
+          const assetId = asset._id;
+          await storage.delete(storageKey).catch(async (err: unknown) => {
+            logger.warn(
+              { err, sessionId, idx },
+              'segment of a deleted recording left for the sweep',
+            );
+            await noteOrphanedMediaKey(assetId, storageKey, now());
+          });
+          throw new AppError(409, 'INVALID_STATE', 'This recording was deleted.');
+        }
+        // A concurrent retry stored it first.
         return { index: idx, bytes: body.length, duplicate: true, received: asset.segments.length };
       }
       // A late segment for an already-finalized recording: re-evaluate (it may now be complete).
@@ -351,33 +398,100 @@ export function createMediaService(deps: Deps) {
       return mediaSummary((await MediaAssetModel.findById(a._id).lean())!);
     },
 
-    /** Streams the recording (segments in order) for a valid signed link. */
-    async stream(assetId: string, exp: string, sig: string, res: Response) {
-      const expNum = Number(exp);
-      const expected = Buffer.from(signature(assetId, expNum));
-      const given = Buffer.from(String(sig));
+    /**
+     * Plays a valid signed link: the joined file, or one recorder part (its
+     * segments in order form one container). A single byte range is served
+     * (206/416) so players can seek; storage is read window by window.
+     */
+    async stream(
+      assetId: string,
+      link: { exp: string; sig: string; part?: string },
+      req: Pick<Request, 'method'> & { range?: string },
+      res: Response,
+    ) {
+      const expNum = Number(link.exp);
+      const part = link.part === undefined || link.part === '' ? null : Number(link.part);
+      const target = part === null ? 'file' : `part-${part}`;
+      const expected = Buffer.from(signature(assetId, target, expNum));
+      const given = Buffer.from(String(link.sig));
       if (
         !Number.isInteger(expNum) ||
+        (part !== null && !Number.isInteger(part)) ||
         expNum * 1000 < now().getTime() ||
         expected.length !== given.length ||
         !timingSafeEqual(expected, given)
       ) {
         throw AppError.forbidden('This playback link is invalid or has expired.');
       }
-      const a = await MediaAssetModel.findById(objectId(assetId, 'Recording')).lean();
+      const a = await MediaAssetModel.findById(
+        objectId(assetId, 'Recording'),
+      ).lean<MediaAssetRecord>();
       if (!playable(a)) throw AppError.notFound('Recording not found');
+      let pieces: Piece[];
+      if (part === null) {
+        // A file link issued before a late segment reset the file: the player asks for new links.
+        if (!fileReady(a)) throw AppError.notFound('Recording not found');
+        pieces = [{ key: a.playbackFile.key!, bytes: a.playbackFile.bytes! }];
+      } else {
+        const found = mediaParts(a).find((p) => p.part === part);
+        if (!found) throw AppError.notFound('Recording not found');
+        pieces = found.segments.map((s) => ({ key: s.storageKey, bytes: s.bytes }));
+      }
+      const size = pieces.reduce((n, p) => n + p.bytes, 0);
       res.set({
         'Content-Type': a.mimeType,
         'Cache-Control': 'private, no-store',
         'Content-Disposition': 'inline',
         'X-Content-Type-Options': 'nosniff',
+        'Accept-Ranges': 'bytes',
       });
-      // MediaRecorder segments are one continuous stream: in order, they form a playable file.
-      for (const seg of [...a.segments].sort((x, y) => x.idx - y.idx)) {
-        const chunk = await storage.get(seg.storageKey);
-        if (!res.write(chunk)) await new Promise<void>((resolve) => res.once('drain', resolve));
+      const range = parseRange(req.range, size);
+      if (range === 'unsatisfiable') {
+        res.status(416).set('Content-Range', `bytes */${size}`).end();
+        return;
       }
-      res.end();
+      const { start, end } = range ?? { start: 0, end: size - 1 };
+      const chunks = readPieces(storage, pieces, { start, end });
+      // Read the first window before answering, so a storage outage is a clean 503.
+      let first: IteratorResult<Buffer>;
+      try {
+        first = await chunks.next();
+      } catch (err) {
+        logger.warn({ err, assetId }, 'recording playback read failed');
+        throw new AppError(
+          503,
+          'PROVIDER_UNAVAILABLE',
+          'The recording cannot be played right now.',
+        );
+      }
+      res.status(range ? 206 : 200).set('Content-Length', String(end - start + 1));
+      if (range) res.set('Content-Range', `bytes ${start}-${end}/${size}`);
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      const drained = () =>
+        new Promise<void>((resolve) => {
+          const done = () => {
+            res.off('drain', done);
+            res.off('close', done);
+            resolve();
+          };
+          res.once('drain', done);
+          res.once('close', done);
+        });
+      try {
+        for (let next = first; !next.done; next = await chunks.next()) {
+          // The player went away (a seek opens a new request): stop reading storage.
+          if (res.destroyed) return;
+          if (!res.write(next.value)) await drained();
+        }
+        res.end();
+      } catch (err) {
+        // Headers (and some bytes) are out: a broken response is the only honest signal left.
+        logger.warn({ err, assetId, start, end }, 'recording playback failed mid-stream');
+        res.destroy(err instanceof Error ? err : new Error('playback failed'));
+      }
     },
 
     // ---- Integrity observations --------------------------------------------------------------
@@ -390,8 +504,12 @@ export function createMediaService(deps: Deps) {
       ).lean<Session>();
       if (!s || !s.live) return false;
       if (!(s.consents ?? []).some((c) => c.type === 'INTEGRITY' && c.accepted)) return false;
-      const count = await IntegrityEventModel.countDocuments({ sessionId: s._id });
-      if (count >= MAX_INTEGRITY_EVENTS) return false;
+      // Reserve a slot atomically (no count query per event); a full session stores no more.
+      const reserved = await InterviewSessionModel.updateOne(
+        { _id: s._id, integrityEventCount: { $not: { $gte: MAX_INTEGRITY_EVENTS } } },
+        { $inc: { integrityEventCount: 1 } },
+      );
+      if (reserved.modifiedCount !== 1) return false;
       await IntegrityEventModel.create({
         sessionId: s._id,
         userId,
@@ -408,7 +526,10 @@ export function createMediaService(deps: Deps) {
     async adminList(query: AdminMediaQuery) {
       const filter: Record<string, unknown> = {};
       if (query.status) filter.status = query.status;
-      if (query.deletion) filter['deletion.status'] = query.deletion;
+      if (query.deletion) {
+        filter['deletion.status'] =
+          query.deletion === 'DELETED' ? { $in: ['DELETED', 'DELETING'] } : query.deletion;
+      }
       if (query.q) {
         const q = query.q;
         const ids = /^[0-9a-f]{24}$/i.test(q) ? [{ sessionId: q }, { userId: q }, { _id: q }] : [];

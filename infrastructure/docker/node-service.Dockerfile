@@ -22,6 +22,9 @@ FROM ${NODE_IMAGE} AS runtime
 ARG SERVICE
 ARG APP_VERSION=0.0.0-dev
 ENV NODE_ENV=production APP_VERSION=${APP_VERSION}
+# The worker joins recording parts into one seekable file with ffmpeg (MEDIA_FFMPEG_PATH);
+# without it recordings still play, part by part.
+RUN if [ "$SERVICE" = "worker" ]; then apk add --no-cache ffmpeg; fi
 WORKDIR /app
 COPY --from=build --chown=node:node /out ./
 # Spool directory for campaign export packages (a disk volume in production; the root is read-only).

@@ -25,9 +25,11 @@ import {
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { objectId } from '../../lib/ids.js';
+import { releaseLock } from '../../lib/lock.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ConsentService } from '../consent/consent.service.js';
 import type { RoomEmitter } from '../live/live.service.js';
+import { billableDurationSec } from './audio-duration.js';
 
 type Session = InterviewSessionRecord;
 
@@ -94,12 +96,95 @@ export function createTranscriptStore(redis: Redis) {
 }
 export type TranscriptStore = ReturnType<typeof createTranscriptStore>;
 
+// ---- Question audio cache --------------------------------------------------------------------
+
+export interface QuestionAudio {
+  audio: Buffer;
+  mimeType: string;
+}
+
+const AUDIO_TTL_SEC = 2 * 3600;
+
+/**
+ * Spoken questions, cached in Redis and synthesized once across every API
+ * replica. The first replica to ask takes a short Redis lock and
+ * synthesizes; the others wait for its cache write and read it. If the
+ * holder fails (or is slower than the lock), a waiter synthesizes itself.
+ * When Redis is unavailable each replica synthesizes on its own (as before).
+ */
+export function createQuestionAudioCache(opts: {
+  redis: Redis;
+  logger: Logger;
+  /** Lock lifetime: also how long a waiter waits before synthesizing itself. */
+  lockMs?: number;
+  pollMs?: number;
+}) {
+  const { redis, logger } = opts;
+  const lockMs = opts.lockMs ?? 20_000;
+  const pollMs = opts.pollMs ?? 150;
+  const key = (questionId: string) => `cbi:voice:tts:${questionId}`;
+  const lockKey = (questionId: string) => `cbi:voice:tts-lock:${questionId}`;
+
+  async function read(questionId: string): Promise<QuestionAudio | null> {
+    const [audio, mimeType] = await Promise.all([
+      redis.getBuffer(key(questionId)),
+      redis.get(`${key(questionId)}:type`),
+    ]).catch(() => [null, null] as const);
+    return audio && mimeType ? { audio, mimeType } : null;
+  }
+
+  async function produce(questionId: string, synthesize: () => Promise<QuestionAudio>) {
+    const result = await synthesize();
+    await redis
+      .multi()
+      .set(key(questionId), result.audio, 'EX', AUDIO_TTL_SEC)
+      .set(`${key(questionId)}:type`, result.mimeType, 'EX', AUDIO_TTL_SEC)
+      .exec()
+      .catch((err: unknown) => logger.warn({ err }, 'question audio cache write failed'));
+    return result;
+  }
+
+  return {
+    read,
+    async get(
+      questionId: string,
+      synthesize: () => Promise<QuestionAudio>,
+    ): Promise<QuestionAudio> {
+      const cached = await read(questionId);
+      if (cached) return cached;
+      const token = randomUUID();
+      const acquired = await redis
+        .set(lockKey(questionId), token, 'PX', lockMs, 'NX')
+        .catch(() => 'NO_REDIS' as const);
+      if (acquired === 'OK' || acquired === 'NO_REDIS') {
+        try {
+          // Another replica may have finished between the read and the lock.
+          return (await read(questionId)) ?? (await produce(questionId, synthesize));
+        } finally {
+          if (acquired === 'OK') await releaseLock(redis, lockKey(questionId), token);
+        }
+      }
+      // Another replica is synthesizing this question: wait for its cache write.
+      const deadline = Date.now() + lockMs;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        const ready = await read(questionId);
+        if (ready) return ready;
+        const held = await redis.exists(lockKey(questionId)).catch(() => 0);
+        if (!held) break;
+      }
+      // The holder failed (its lock is gone without a result) or is too slow.
+      return (await read(questionId)) ?? produce(questionId, synthesize);
+    },
+  };
+}
+export type QuestionAudioCache = ReturnType<typeof createQuestionAudioCache>;
+
 // ---- Service -----------------------------------------------------------------------------------
 
 const LIVE = new Set(['ACTIVE', 'ROUND_TRANSITION']);
 const SWITCHABLE = new Set(['ACTIVE', 'ROUND_TRANSITION', 'RECONNECTING', 'PAUSED']);
 const PRE_START = new Set(['READY', 'DEVICE_CHECK', 'CONSENT_REQUIRED', 'READY_TO_START']);
-const AUDIO_TTL_SEC = 2 * 3600;
 const LOW_CONFIDENCE = 0.5;
 
 const speechUnavailable = (what: string) =>
@@ -113,14 +198,17 @@ interface Deps {
   audit: AuditService;
   transcripts: TranscriptStore;
   consent: ConsentService;
+  /** Defaults to one on `redis` (tests shorten its timings). */
+  questionAudio?: QuestionAudioCache;
   now?: () => Date;
 }
 
 export function createVoiceService(deps: Deps) {
   const { ai, redis, logger, rooms, audit, transcripts, consent } = deps;
   const now = deps.now ?? (() => new Date());
-  /** One synthesis per question per process, however many requests wait for it. */
-  const inFlight = new Map<string, Promise<{ audio: Buffer; mimeType: string }>>();
+  const audioCache = deps.questionAudio ?? createQuestionAudioCache({ redis, logger });
+  /** One synthesis per question per process; the cache's Redis lock covers other replicas. */
+  const inFlight = new Map<string, Promise<QuestionAudio>>();
 
   async function own(userId: string, sessionId: string): Promise<Session> {
     const s = await InterviewSessionModel.findOne({
@@ -132,7 +220,6 @@ export function createVoiceService(deps: Deps) {
   }
 
   const language = (s: Session) => (s.language === 'auto' ? null : s.language);
-  const audioKey = (questionId: string) => `cbi:voice:tts:${questionId}`;
 
   function degraded(sessionId: string, event: DegradedEvent) {
     rooms.emit(sessionId, RtEvent.DEGRADED, event);
@@ -142,25 +229,17 @@ export function createVoiceService(deps: Deps) {
     s: Session,
     turn: Pick<InterviewTurnRecord, 'questionId' | 'question'>,
   ) {
-    const cached = await redis.getBuffer(audioKey(turn.questionId)).catch(() => null);
-    const cachedType = cached ? await redis.get(`${audioKey(turn.questionId)}:type`) : null;
-    if (cached && cachedType) return { audio: cached, mimeType: cachedType };
     let pending = inFlight.get(turn.questionId);
     if (!pending) {
-      pending = (async () => {
-        const r = await ai.router.synthesize(
-          { text: turn.question.text, language: language(s) },
-          { userId: String(s.userId), sessionId: String(s._id) },
-        );
-        const audio = Buffer.from(r.result.audio);
-        await redis
-          .multi()
-          .set(audioKey(turn.questionId), audio, 'EX', AUDIO_TTL_SEC)
-          .set(`${audioKey(turn.questionId)}:type`, r.result.mimeType, 'EX', AUDIO_TTL_SEC)
-          .exec()
-          .catch((err: unknown) => logger.warn({ err }, 'question audio cache write failed'));
-        return { audio, mimeType: r.result.mimeType };
-      })().finally(() => inFlight.delete(turn.questionId));
+      pending = audioCache
+        .get(turn.questionId, async () => {
+          const r = await ai.router.synthesize(
+            { text: turn.question.text, language: language(s) },
+            { userId: String(s.userId), sessionId: String(s._id) },
+          );
+          return { audio: Buffer.from(r.result.audio), mimeType: r.result.mimeType };
+        })
+        .finally(() => inFlight.delete(turn.questionId));
       inFlight.set(turn.questionId, pending);
     }
     return pending;
@@ -231,6 +310,8 @@ export function createVoiceService(deps: Deps) {
           'This recording format is not supported.',
         );
       }
+      // Usage and cost follow the audio itself, not the browser's figure (some models report none).
+      const durationSec = billableDurationSec(audio, mimeType, fields.durationMs);
       let result;
       try {
         result = await ai.router.transcribe(
@@ -238,7 +319,7 @@ export function createVoiceService(deps: Deps) {
             audio: new Uint8Array(audio.buffer, audio.byteOffset, audio.byteLength),
             mimeType,
             language: language(s),
-            durationSec: fields.durationMs / 1000,
+            durationSec,
           },
           { userId, sessionId },
         );
@@ -255,7 +336,7 @@ export function createVoiceService(deps: Deps) {
         sessionId,
         questionId: fields.questionId,
         text: result.result.text.slice(0, 6000),
-        durationSec: result.usage.audioSec ?? fields.durationMs / 1000,
+        durationSec: result.usage.audioSec ?? durationSec,
         language: result.result.language,
         confidence: result.result.confidence,
         model: result.model.modelId,

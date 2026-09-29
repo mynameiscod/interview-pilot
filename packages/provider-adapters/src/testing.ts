@@ -61,6 +61,11 @@ export function createMemoryStorage() {
       if (!hit) throw new StorageNotFoundError('test-memory-storage');
       return Readable.from([Buffer.from(hit.body)]);
     },
+    async getRange(key, start, end) {
+      const hit = objects.get(key);
+      if (!hit) throw new StorageNotFoundError('test-memory-storage');
+      return Buffer.from(hit.body.subarray(start, end + 1));
+    },
     async delete(key) {
       objects.delete(key);
     },
