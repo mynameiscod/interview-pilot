@@ -4,6 +4,9 @@ import {
   ExtractionStatus,
   ExtractionWarning,
   JobTargetSource,
+  ResumeFormat,
+  ResumeSource,
+  type DocumentLayout,
   type JdStructured,
   type ResumeStructured,
 } from '@cbi/shared-types';
@@ -13,6 +16,8 @@ import type {
   ExtractionStatus as ExtractionStatusT,
   ExtractionWarning as ExtractionWarningT,
   JobTargetSource as JobTargetSourceT,
+  ResumeFormat as ResumeFormatT,
+  ResumeSource as ResumeSourceT,
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
@@ -37,8 +42,14 @@ export interface ResumeRecord {
   mime: DocumentMimeT;
   size: number;
   sha256: string;
+  /** Missing on resumes created before pasted text was accepted (= UPLOAD). */
+  source?: ResumeSourceT;
+  /** Missing on older resumes (= STANDARD). */
+  format?: ResumeFormatT;
   /** Extracted text, capped at DOCUMENT_LIMITS.maxTextChars. Never returned by list endpoints. */
   rawText: string | null;
+  /** Layout signals from extraction (ATS formatting checks); null until extracted. */
+  layout?: DocumentLayout | null;
   structured: ResumeStructured | null;
   extraction: ExtractionRecord;
   createdAt: Date;
@@ -98,7 +109,10 @@ const resumeSchema = new Schema<ResumeRecord>(
     mime: { type: String, enum: DocumentMime.options, required: true },
     size: { type: Number, required: true },
     sha256: { type: String, required: true },
+    source: { type: String, enum: ResumeSource.options, default: 'UPLOAD' },
+    format: { type: String, enum: ResumeFormat.options, default: 'STANDARD' },
     rawText: { type: String, default: null },
+    layout: { type: Schema.Types.Mixed, default: null },
     structured: { type: Schema.Types.Mixed, default: null },
     extraction: { type: extractionSchema, required: true, default: () => ({}) },
   },

@@ -9,17 +9,31 @@ const escapePdf = (s: string) => s.replace(/[\\()]/g, (c) => `\\${c}`);
 
 /** A valid single- or multi-page PDF with a real text layer (Helvetica). */
 export function buildPdf(pages: string[][]): Buffer {
+  return buildPositionedPdf(
+    pages.map((lines) => lines.map((text, i) => ({ x: 50, y: 780 - i * 16, text }))),
+  );
+}
+
+/** A run of text drawn at (x, y) in points (A4 page: 595 × 842, origin bottom-left). */
+export interface PositionedText {
+  x: number;
+  y: number;
+  text: string;
+}
+
+/** A PDF whose text runs sit exactly where given: for layout (tables, columns) fixtures. */
+export function buildPositionedPdf(pages: PositionedText[][]): Buffer {
   const objects: string[] = [];
   const pageIds: number[] = [];
   // 1: catalog, 2: pages, 3: font; then per page a page object and a content stream.
   let next = 4;
   const pageObjects: [number, string][] = [];
-  for (const lines of pages) {
+  for (const runs of pages) {
     const pageId = next++;
     const contentId = next++;
     pageIds.push(pageId);
-    const ops = lines
-      .map((line, i) => `BT /F1 11 Tf 50 ${780 - i * 16} Td (${escapePdf(line)}) Tj ET`)
+    const ops = runs
+      .map((r) => `BT /F1 11 Tf ${r.x} ${r.y} Td (${escapePdf(r.text)}) Tj ET`)
       .join('\n');
     pageObjects.push([
       pageId,
@@ -120,6 +134,93 @@ export function buildDocxBomb(inflatedMb: number): Buffer {
     'word/media/padding.bin': new Uint8Array(inflatedMb * 1024 * 1024),
   });
 }
+
+/**
+ * A synthetic LinkedIn "Save to PDF" profile (invented person and companies):
+ * the sidebar (Contact, Top Skills, Languages, Certifications) at the left,
+ * drawn first, and the main column (name, headline, location, Summary,
+ * Experience with a company's grouped roles, Education) to its right, as the
+ * real export lays them out. Only characters Helvetica's standard encoding
+ * shares with Latin-1 are used, so hyphens stand in for bullets and dashes.
+ */
+export const LINKEDIN_SIDEBAR = [
+  'Contact',
+  'priya.demo@example.com',
+  'www.linkedin.com/in/priya-demo',
+  '(LinkedIn)',
+  'Top Skills',
+  'Node.js',
+  'PostgreSQL',
+  'Kubernetes',
+  'Languages',
+  'English (Full Professional)',
+  'Certifications',
+  'AWS Certified Developer',
+];
+export const LINKEDIN_MAIN = [
+  'Priya Demo',
+  'Senior Backend Engineer at Acme Payments',
+  'Hyderabad, Telangana, India',
+  'Summary',
+  'Backend engineer who builds reliable payment systems with Node.js and',
+  'PostgreSQL.',
+  'Experience',
+  'Acme Payments',
+  '3 years 2 months',
+  'Senior Software Engineer',
+  'January 2023 - Present (1 year 9 months)',
+  'Hyderabad, Telangana, India',
+  '- Designed an idempotent payments ledger handling 2M transactions a day.',
+  '- Reduced p95 latency by 40% by moving hot reads to Redis.',
+  'Software Engineer',
+  'August 2021 - December 2022 (1 year 5 months)',
+  'Built REST APIs in TypeScript for merchant onboarding.',
+  'Globex Labs',
+  'Software Engineering Intern',
+  'January 2021 - June 2021 (6 months)',
+  'Wrote integration tests for the billing service.',
+  'Education',
+  'JNTU Hyderabad',
+  'Bachelor of Technology - BTech, Computer Science (2017 - 2021)',
+];
+
+export function buildLinkedInProfilePdf(): Buffer {
+  // Sidebar and main column use different line grids, so their rows never merge.
+  return buildPositionedPdf([
+    [
+      ...LINKEDIN_SIDEBAR.map((text, i) => ({ x: 30, y: 800 - i * 14, text })),
+      ...LINKEDIN_MAIN.map((text, i) => ({ x: 220, y: 793 - i * 15, text })),
+      { x: 270, y: 30, text: 'Page 1 of 1' },
+    ],
+  ]);
+}
+
+/** The same profile as a candidate would copy it from their LinkedIn page (web order). */
+export const LINKEDIN_PASTED_TEXT = [
+  'Priya Demo',
+  'Senior Backend Engineer at Acme Payments',
+  'About',
+  'Backend engineer who builds reliable payment systems.',
+  'Experience',
+  'Senior Software Engineer',
+  'Senior Software Engineer',
+  'Acme Payments · Full-time',
+  'Jan 2023 - Present · 1 yr 9 mos',
+  'Hyderabad, Telangana, India · On-site',
+  'Designed an idempotent payments ledger handling 2M transactions a day.',
+  'Software Engineer',
+  'Aug 2021 - Dec 2022 · 1 yr 5 mos',
+  'Built REST APIs in TypeScript for merchant onboarding.',
+  'Education',
+  'JNTU Hyderabad',
+  'Bachelor of Technology - BTech, Computer Science',
+  '2017 - 2021',
+  'Skills',
+  'Node.js',
+  'Endorsed by 3 colleagues at Acme Payments',
+  'PostgreSQL',
+  'Show all 12 skills',
+].join('\n');
 
 export const SAMPLE_RESUME_LINES = [
   'Priya Sharma - Backend Engineer',

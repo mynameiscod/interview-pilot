@@ -1,13 +1,22 @@
 import {
   DOCUMENT_LIMITS,
   DOCUMENT_MIME,
+  type DocumentLayout,
   type DocumentMime,
   type ExtractionErrorCode,
   type ExtractionWarning,
 } from '@cbi/shared-types';
 import mammoth from 'mammoth';
-import { extractText, getDocumentProxy } from 'unpdf';
+import { getDocumentProxy } from 'unpdf';
 import { detectDocumentType } from './detect.js';
+import {
+  countWords,
+  docxLayout,
+  pdfLayout,
+  textLayout,
+  type LayoutSignals,
+  type PdfPageItems,
+} from './layout.js';
 import { assertZipWithinLimits, ZipLimitError } from './zip.js';
 
 export class ExtractionError extends Error {
@@ -27,6 +36,8 @@ export interface ExtractedText {
   warnings: ExtractionWarning[];
   ocrUsed: boolean;
   pages: number | null;
+  /** Formatting signals for ATS checks (tables, columns, image-only, length). */
+  layout: DocumentLayout;
 }
 
 /**
@@ -80,7 +91,18 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   }
 }
 
-async function pdfText(buf: Buffer, maxPages: number): Promise<{ text: string; pages: number }> {
+/** unpdf's merged-text normalisation: collapse spaces, keep line structure, one blank line at most. */
+const mergePageTexts = (texts: string[]) =>
+  texts
+    .join('\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
+
+async function pdfText(
+  buf: Buffer,
+  maxPages: number,
+): Promise<{ text: string; pages: number; layout: LayoutSignals }> {
   let pdf;
   try {
     // Text extraction never renders glyphs, so pdf.js font-program evaluation is not reached.
@@ -96,8 +118,37 @@ async function pdfText(buf: Buffer, maxPages: number): Promise<{ text: string; p
   }
   try {
     if (pdf.numPages > maxPages) throw new ExtractionError('TOO_MANY_PAGES');
-    const { text } = await extractText(pdf, { mergePages: true });
-    return { text, pages: pdf.numPages };
+    // One pass over each page's text runs gives the text (as unpdf's extractText
+    // builds it) and the positions the layout checks need.
+    const pages: PdfPageItems[] = [];
+    const texts: string[] = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const page = await pdf.getPage(n);
+      const content = await page.getTextContent();
+      const items = content.items.flatMap((item) =>
+        'str' in item
+          ? [
+              {
+                str: item.str,
+                x: item.transform[4] as number,
+                y: item.transform[5] as number,
+                width: item.width,
+                hasEOL: item.hasEOL,
+              },
+            ]
+          : [],
+      );
+      texts.push(items.map((i) => i.str + (i.hasEOL ? '\n' : '')).join(''));
+      pages.push({ width: page.view[2]! - page.view[0]!, items });
+    }
+    const layout = pdfLayout(pages);
+    // Two-column resumes read column by column instead of interleaved line by line.
+    const text = mergePageTexts(layout.columnText ? [layout.columnText] : texts);
+    return {
+      text,
+      pages: pdf.numPages,
+      layout: { tablesSuspected: layout.tablesSuspected, columnsSuspected: layout.columnsSuspected },
+    };
   } catch (err) {
     if (err instanceof ExtractionError) throw err;
     throw new ExtractionError('CORRUPT', { cause: err });
@@ -140,6 +191,8 @@ export async function extractDocumentText(
   let parser: string;
   let pages: number | null = null;
   let ocrUsed = false;
+  let signals: LayoutSignals;
+  let imageOnly = false;
 
   switch (mime) {
     case DOCUMENT_MIME.PDF: {
@@ -150,8 +203,10 @@ export async function extractDocumentText(
       raw = pdf.text;
       pages = pdf.pages;
       parser = 'unpdf';
+      signals = pdf.layout;
       if (cleanText(raw).length < DOCUMENT_LIMITS.minTextChars) {
         warnings.push('OCR_NEEDED');
+        imageOnly = true;
         const ocrText = opts.ocr ? await opts.ocr(buf, mime, { pages }).catch(() => null) : null;
         if (ocrText && cleanText(ocrText).length >= DOCUMENT_LIMITS.minTextChars) {
           raw = ocrText;
@@ -169,10 +224,13 @@ export async function extractDocumentText(
         timeoutMs,
       );
       parser = 'mammoth';
+      // docxText has already checked the archive against the zip-bomb limits.
+      signals = docxLayout(buf);
       break;
     default:
       raw = buf.toString('utf8');
       parser = 'text';
+      signals = textLayout(raw);
   }
 
   let text = cleanText(raw);
@@ -181,5 +239,6 @@ export async function extractDocumentText(
     text = text.slice(0, maxChars);
     warnings.push('TEXT_TRUNCATED');
   }
-  return { mime, text, parser, warnings, ocrUsed, pages };
+  const layout: DocumentLayout = { pages, words: countWords(text), ...signals, imageOnly };
+  return { mime, text, parser, warnings, ocrUsed, pages, layout };
 }

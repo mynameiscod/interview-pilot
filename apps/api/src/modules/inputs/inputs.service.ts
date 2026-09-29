@@ -16,6 +16,8 @@ import type { StorageProvider } from '@cbi/provider-adapters';
 import {
   DOCUMENT_MIME,
   type CreateJobTargetBody,
+  type CreateResumeTextBody,
+  type ResumeSource,
   type DocumentMime,
   type Extraction,
   type JobTargetSummary,
@@ -62,7 +64,10 @@ export function resumeSummary(r: ResumeRecord): ResumeSummary {
     originalName: r.originalName,
     mime: r.mime,
     size: r.size,
+    source: r.source ?? 'UPLOAD',
+    format: r.format ?? 'STANDARD',
     extraction: extractionSummary(r.extraction),
+    layout: r.layout ?? null,
     structured: r.structured,
     createdAt: iso(r.createdAt),
   };
@@ -186,48 +191,77 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
     }
   }
 
+  /**
+   * Stores a resume file and queues its extraction. The same content again
+   * (same SHA-256) returns the existing resume instead of a duplicate.
+   */
+  async function storeResume(
+    userId: string,
+    file: UploadedFile,
+    mime: DocumentMime,
+    source: ResumeSource,
+    ctx: ClientContext,
+  ) {
+    const hash = sha256(file.buffer);
+    const existing = await ResumeModel.findOne({
+      userId,
+      sha256: hash,
+      'extraction.status': { $ne: 'FAILED' },
+    }).lean();
+    if (existing) return { created: false, resume: resumeSummary(existing) };
+    await enforceDailyQuota('resumes', userId);
+    if ((await ResumeModel.countDocuments({ userId })) >= MAX_RESUMES_PER_USER) {
+      throw AppError.conflict(
+        `You can keep up to ${MAX_RESUMES_PER_USER} resumes. Delete one to upload another.`,
+      );
+    }
+    const id = new mongoose.Types.ObjectId();
+    const storageKey = `resumes/${userId}/${id}.${EXTENSION[mime]}`;
+    await storage.put(storageKey, file.buffer, mime);
+    const resume = await ResumeModel.create({
+      _id: id,
+      userId,
+      storageKey,
+      originalName: safeFileName(file.originalname),
+      mime,
+      size: file.buffer.length,
+      sha256: hash,
+      source,
+    });
+    await audit.record(
+      {
+        actorType: 'USER',
+        actorId: userId,
+        action: 'resume.uploaded',
+        resourceType: 'resume',
+        resourceId: String(id),
+        details: { mime, size: file.buffer.length, source },
+      },
+      ctx,
+    );
+    await enqueue('resume', String(id), () => jobs.extractResume(String(id)));
+    return { created: true, resume: resumeSummary(resume.toObject()) };
+  }
+
   return {
     async uploadResume(userId: string, file: UploadedFile, ctx: ClientContext) {
-      const mime = sniff(file);
-      const hash = sha256(file.buffer);
-      // Re-uploading the same file returns the existing resume instead of a duplicate.
-      const existing = await ResumeModel.findOne({
+      return storeResume(userId, file, sniff(file), 'UPLOAD', ctx);
+    },
+
+    /**
+     * A resume from pasted text (for example a LinkedIn profile copied from
+     * the candidate's own page). It is stored as a text file and goes through
+     * the same extraction as an upload; the worker recognises LinkedIn text.
+     */
+    async createResumeFromText(userId: string, body: CreateResumeTextBody, ctx: ClientContext) {
+      const label = body.label?.trim() || 'Pasted profile';
+      return storeResume(
         userId,
-        sha256: hash,
-        'extraction.status': { $ne: 'FAILED' },
-      }).lean();
-      if (existing) return { created: false, resume: resumeSummary(existing) };
-      await enforceDailyQuota('resumes', userId);
-      if ((await ResumeModel.countDocuments({ userId })) >= MAX_RESUMES_PER_USER) {
-        throw AppError.conflict(
-          `You can keep up to ${MAX_RESUMES_PER_USER} resumes. Delete one to upload another.`,
-        );
-      }
-      const id = new mongoose.Types.ObjectId();
-      const storageKey = `resumes/${userId}/${id}.${EXTENSION[mime]}`;
-      await storage.put(storageKey, file.buffer, mime);
-      const resume = await ResumeModel.create({
-        _id: id,
-        userId,
-        storageKey,
-        originalName: safeFileName(file.originalname),
-        mime,
-        size: file.buffer.length,
-        sha256: hash,
-      });
-      await audit.record(
-        {
-          actorType: 'USER',
-          actorId: userId,
-          action: 'resume.uploaded',
-          resourceType: 'resume',
-          resourceId: String(id),
-          details: { mime, size: file.buffer.length },
-        },
+        { buffer: Buffer.from(body.text, 'utf8'), originalname: `${label}.txt` },
+        DOCUMENT_MIME.TXT,
+        'PASTE',
         ctx,
       );
-      await enqueue('resume', String(id), () => jobs.extractResume(String(id)));
-      return { created: true, resume: resumeSummary(resume.toObject()) };
     },
 
     async listResumes(userId: string) {

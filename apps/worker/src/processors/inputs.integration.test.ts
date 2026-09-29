@@ -6,6 +6,7 @@ import {
   CampaignModel,
   CompanyModel,
   AiRouteModel,
+  AiUsageModel,
   connectMongo,
   createRedis,
   disconnectMongo,
@@ -23,12 +24,21 @@ import {
   type ExtractionRecord,
   type JobTargetRecord,
 } from '@cbi/db';
-import { buildDocx, buildDocxBomb, buildPdf, SAMPLE_RESUME_LINES } from '@cbi/documents/testing';
+import {
+  buildDocx,
+  buildDocxBomb,
+  buildLinkedInProfilePdf,
+  buildPdf,
+  buildScannedPdf,
+  SAMPLE_RESUME_LINES,
+} from '@cbi/documents/testing';
+import { MOCK_OCR_TEXT } from '@cbi/provider-adapters';
 import { createMemoryStorage } from '@cbi/provider-adapters/testing';
 import { DOCUMENT_MIME } from '@cbi/shared-types';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { processInterviewAnalyze } from './analysis.js';
 import { processJdExtract, processResumeExtract, type DocumentProcessorDeps } from './documents.js';
+import { createDocumentOcr } from './ocr.js';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const REDIS_URL = process.env.REDIS_URL;
@@ -148,6 +158,41 @@ describe('resume extraction', () => {
     expect(saved!.rawText).toContain('idempotent payments ledger');
     expect(saved!.structured).not.toBeNull();
     expect(saved!.extraction.warnings).not.toContain('STRUCTURE_UNAVAILABLE');
+  });
+
+  it('reads a scanned PDF through the seeded ocr.document route (mock OCR model)', async () => {
+    const resume = await uploadResume(buildScannedPdf(2));
+    // Without OCR the scan is unreadable, as before.
+    await processResumeExtract(docs(), String(resume._id), false);
+    expect((await ResumeModel.findById(resume._id).lean())!.extraction).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'NO_TEXT',
+    });
+
+    const again = await uploadResume(buildScannedPdf(2));
+    const ocr = createDocumentOcr({ ai, logger }, { maxPages: 5, maxBytes: 1024 * 1024 });
+    await processResumeExtract({ ...docs(), ocr }, String(again._id), false);
+    const saved = await ResumeModel.findById(again._id).lean();
+    expect(saved!.extraction).toMatchObject({ status: 'READY', parser: 'ocr', ocrUsed: true });
+    expect(saved!.rawText).toBe(MOCK_OCR_TEXT);
+    expect(saved!.layout).toMatchObject({ imageOnly: true, pages: 2 });
+    const usage = await AiUsageModel.find({ feature: 'ocr.document' }).lean();
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ outcome: 'SUCCESS', promptKey: 'ocr.document' });
+  });
+
+  it('parses a LinkedIn PDF export without an AI call', async () => {
+    const resume = await uploadResume(buildLinkedInProfilePdf());
+    await processResumeExtract(docs(), String(resume._id), false);
+    const saved = await ResumeModel.findById(resume._id).lean();
+    expect(saved).toMatchObject({ format: 'LINKEDIN', extraction: { status: 'READY' } });
+    expect(saved!.layout).toMatchObject({ columnsSuspected: true });
+    expect(saved!.structured!.experience.map((e) => e.organization)).toEqual([
+      'Acme Payments',
+      'Acme Payments',
+      'Globex Labs',
+    ]);
+    expect(await AiUsageModel.countDocuments({ feature: 'resume.structure' })).toBe(0);
   });
 
   it('reads DOCX and records the detected type', async () => {

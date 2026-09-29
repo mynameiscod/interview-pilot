@@ -131,6 +131,7 @@ import {
   CreateBlueprintVersionBody,
   CreateInterviewBody,
   CreateJobTargetBody,
+  CreateResumeTextBody,
   CreateTemplateVersionBody,
   Extraction,
   InterviewListQuery,
@@ -698,6 +699,15 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: ResumeSummary,
     status: 201,
     errors: [400, 401, 409, 413, 415, 429, 503],
+  });
+  candidate('post', '/resumes/text', {
+    tag: 'Resumes',
+    summary:
+      'Add a resume from pasted text, e.g. a LinkedIn profile copied by the candidate (201 new, 200 duplicate)',
+    body: CreateResumeTextBody,
+    response: ResumeSummary,
+    status: 201,
+    errors: [400, 401, 409, 429, 503],
   });
   candidate('get', '/resumes', {
     tag: 'Resumes',

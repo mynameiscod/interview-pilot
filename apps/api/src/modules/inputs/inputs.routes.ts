@@ -1,4 +1,9 @@
-import { CreateJobTargetBody, UpdateJobTargetBody, UploadJobTargetFields } from '@cbi/shared-types';
+import {
+  CreateJobTargetBody,
+  CreateResumeTextBody,
+  UpdateJobTargetBody,
+  UploadJobTargetFields,
+} from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
 import type { Container } from '../../container.js';
 import { clientContext } from '../../lib/request-context.js';
@@ -19,6 +24,17 @@ export function resumesRouter(c: Container): Router {
   router.post('/', c.limiters.upload, upload, async (req, res) => {
     const { userId } = requireAuth(req);
     const { created, resume } = await c.inputs.uploadResume(userId, req.file!, clientContext(req));
+    res.status(created ? 201 : 200).json({ data: resume });
+  });
+  // Pasted text (e.g. a LinkedIn profile copied by the candidate) counts as an upload.
+  router.post('/text', c.limiters.upload, async (req, res) => {
+    const body = CreateResumeTextBody.parse(req.body);
+    const { userId } = requireAuth(req);
+    const { created, resume } = await c.inputs.createResumeFromText(
+      userId,
+      body,
+      clientContext(req),
+    );
     res.status(created ? 201 : 200).json({ data: resume });
   });
   router.get('/', async (req, res) => {

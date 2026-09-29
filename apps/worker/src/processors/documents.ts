@@ -2,7 +2,12 @@ import { renderPrompt, untrusted, type PromptValue } from '@cbi/ai-core';
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import { JobTargetModel, ResumeModel, type ExtractionRecord } from '@cbi/db';
-import { cleanText, ExtractionError, extractDocumentText } from '@cbi/documents';
+import {
+  cleanText,
+  ExtractionError,
+  extractDocumentText,
+  parseLinkedInProfile,
+} from '@cbi/documents';
 import {
   extractReadableText,
   safeFetchText,
@@ -165,25 +170,38 @@ export async function processResumeExtract(
       const extracted = await extractDocumentText(file, {
         ocr: ocrFor(deps, { userId: String(resume.userId), kind: 'resume' }),
       });
-      // Contact details and the candidate's name never leave for the model.
-      const forAi = redactForAi(deps.logger, extracted.text.slice(0, STRUCTURE_INPUT_CHARS), {
-        what: 'resume.structure',
-        userId: String(resume.userId),
-        names: await knownNames(resume.userId),
-      });
-      const structured = await structure(
-        deps,
-        'resume.structure',
-        ResumeStructured,
-        { resume: untrusted(forAi) },
-        String(resume.userId),
-      );
+      // A LinkedIn profile (PDF export or pasted text) has a fixed layout: it is parsed
+      // deterministically, with no AI call, unless the parse finds no roles or schooling.
+      const linkedIn = parseLinkedInProfile(extracted.text);
+      const linkedInUsable =
+        linkedIn !== null &&
+        (linkedIn.structured.experience.length > 0 || linkedIn.structured.education.length > 0);
+      let structured: Structured<ResumeStructured>;
+      if (linkedInUsable) {
+        structured = { data: linkedIn.structured, promptVersion: null };
+      } else {
+        // Contact details and the candidate's name never leave for the model.
+        const forAi = redactForAi(deps.logger, extracted.text.slice(0, STRUCTURE_INPUT_CHARS), {
+          what: 'resume.structure',
+          userId: String(resume.userId),
+          names: await knownNames(resume.userId),
+        });
+        structured = await structure(
+          deps,
+          'resume.structure',
+          ResumeStructured,
+          { resume: untrusted(forAi) },
+          String(resume.userId),
+        );
+      }
       await ResumeModel.updateOne(
         { _id: resume._id },
         {
           $set: {
             mime: extracted.mime,
             rawText: extracted.text,
+            layout: extracted.layout,
+            format: linkedIn ? 'LINKEDIN' : 'STANDARD',
             structured: structured.data,
             extraction: readyExtraction(
               resume.extraction,
@@ -197,7 +215,12 @@ export async function processResumeExtract(
         },
       );
       deps.logger.info(
-        { resumeId, parser: extracted.parser, chars: extracted.text.length },
+        {
+          resumeId,
+          parser: extracted.parser,
+          chars: extracted.text.length,
+          linkedIn: linkedIn?.variant ?? null,
+        },
         'resume extracted',
       );
     },

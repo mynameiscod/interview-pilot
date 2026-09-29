@@ -6,7 +6,12 @@ import {
   ResumeModel,
   RoleModel,
 } from '@cbi/db';
-import { buildDocx, buildPdf, SAMPLE_RESUME_LINES } from '@cbi/documents/testing';
+import {
+  buildDocx,
+  buildPdf,
+  LINKEDIN_PASTED_TEXT,
+  SAMPLE_RESUME_LINES,
+} from '@cbi/documents/testing';
 import { InterviewSummary, JobTargetSummary, ResumeSummary } from '@cbi/shared-types';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -115,6 +120,25 @@ describe('resumes', () => {
     expect(t.storage.objects.size).toBe(0);
     await asha.call('get', `/resumes/${id}`).expect(404);
     await asha.call('get', '/resumes/not-an-id').expect(404);
+  });
+
+  it('accepts pasted profile text as a text resume and de-duplicates it', async () => {
+    const { call, userId } = await candidate();
+    const res = await call('post', '/resumes/text')
+      .send({ text: LINKEDIN_PASTED_TEXT, label: 'My LinkedIn' })
+      .expect(201);
+    const resume = ResumeSummary.parse(res.body.data);
+    expect(resume).toMatchObject({
+      source: 'PASTE',
+      mime: 'text/plain',
+      originalName: 'My LinkedIn.txt',
+      format: 'STANDARD',
+    });
+    const stored = await ResumeModel.findById(resume.id).lean();
+    expect(stored!.storageKey).toBe(`resumes/${userId}/${resume.id}.txt`);
+    expect(t.jobs.jobs).toEqual([{ kind: 'resume', id: resume.id }]);
+    await call('post', '/resumes/text').send({ text: LINKEDIN_PASTED_TEXT }).expect(200);
+    await call('post', '/resumes/text').send({ text: 'too short' }).expect(400);
   });
 
   it('requires a candidate session', async () => {

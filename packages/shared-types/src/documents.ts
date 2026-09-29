@@ -54,6 +54,27 @@ export const ExtractionWarning = z.enum([
 ]);
 export type ExtractionWarning = z.infer<typeof ExtractionWarning>;
 
+/**
+ * Layout signals measured while extracting (used to flag formatting that
+ * applicant tracking systems often misread). "Suspected" because they are
+ * heuristics over text positions, not a rendering of the page.
+ */
+export const DocumentLayout = z.object({
+  pages: z.number().int().nullable(),
+  words: z.number().int(),
+  /** Rows of three or more separated cells (PDF), Word tables, or tab-separated lines. */
+  tablesSuspected: z.boolean(),
+  /** A second text column starting at a consistent position mid-page. */
+  columnsSuspected: z.boolean(),
+  /** No usable text layer: the document is an image (a scan or a picture of text). */
+  imageOnly: z.boolean(),
+});
+export type DocumentLayout = z.infer<typeof DocumentLayout>;
+
+/** How a resume was recognised: a regular resume, or a LinkedIn profile (PDF export or pasted text). */
+export const ResumeFormat = z.enum(['STANDARD', 'LINKEDIN']);
+export type ResumeFormat = z.infer<typeof ResumeFormat>;
+
 export const Extraction = z.object({
   status: ExtractionStatus,
   errorCode: ExtractionErrorCode.nullable(),
@@ -121,16 +142,40 @@ export const ResumeStructured = z.object({
 });
 export type ResumeStructured = z.infer<typeof ResumeStructured>;
 
+/** How a resume arrived: an uploaded file, or text the candidate pasted. */
+export const ResumeSource = z.enum(['UPLOAD', 'PASTE']);
+export type ResumeSource = z.infer<typeof ResumeSource>;
+
 export const ResumeSummary = z.object({
   id: z.string(),
   originalName: z.string(),
   mime: DocumentMime,
   size: z.number().int(),
+  source: ResumeSource,
+  /** LINKEDIN once the worker recognises a LinkedIn PDF export or pasted profile. */
+  format: ResumeFormat,
   extraction: Extraction,
+  /** Null until extraction finishes (and for resumes read before layout checks existed). */
+  layout: DocumentLayout.nullable(),
   structured: ResumeStructured.nullable(),
   createdAt: z.iso.datetime(),
 });
 export type ResumeSummary = z.infer<typeof ResumeSummary>;
+
+/**
+ * A resume from pasted text, e.g. the candidate's LinkedIn profile copied
+ * from their own page (the platform never fetches linkedin.com).
+ */
+export const CreateResumeTextBody = z.object({
+  text: z
+    .string()
+    .trim()
+    .min(DOCUMENT_LIMITS.minTextChars)
+    .max(DOCUMENT_LIMITS.maxPasteChars),
+  /** Shown in the resume list; defaults to "Pasted profile". */
+  label: text(120).optional(),
+});
+export type CreateResumeTextBody = z.infer<typeof CreateResumeTextBody>;
 
 // ---- Job targets ------------------------------------------------------------------
 
