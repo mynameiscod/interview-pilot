@@ -43,7 +43,7 @@ The tests check worked examples, order independence, monotonicity (raising one s
 - Evidence extraction sees the round's questions and answers (as untrusted data) and the competency list. It never sees scores, names, contact details, audio or video.
 - Dimension scoring sees only that dimension's rubric and its evidence items, never the transcript. So communication is judged from what was said, not how it sounded (design §33).
 - Every prompt forbids using protected characteristics, appearance, accent or fluency, and tells the model to ignore instructions inside answers. The regression suite checks both.
-- Report text is generated in English for now, so the PDF can use standard fonts; the UI chrome is translated.
+- Report text is generated in English for now; the UI chrome is translated. Candidate-supplied text (titles, quotes) can still be Hindi or Telugu, which the PDF renders with embedded fonts (see PDF fonts below).
 
 ## Reports
 
@@ -60,6 +60,8 @@ The tests check worked examples, order independence, monotonicity (raising one s
 - the change since the previous attempt at the same role (`roleKey`: the matched library role, else the detected title);
 - the transcript, if the template's report policy allows it;
 - a disclaimer.
+
+**PDF fonts.** The PDF embeds static Noto Sans (regular, bold, italic), Noto Sans Devanagari (regular, bold) and Hind Guntur for Telugu (regular, bold) from `apps/worker/assets/fonts` (all SIL OFL 1.1, licence texts alongside; `REPORT_FONT_DIR` overrides the directory). Noto Sans Telugu is not used because fontkit, pdfkit's shaper, throws on common conjuncts such as "శ్రీ" with it. `pdf.ts` splits each string into script runs (`scriptRuns`) and writes them with the matching font on a shared baseline, chained so lines still wrap, so English, Hindi and Telugu can mix in one line. The fonts are committed and shipped through the worker package's `files`; `node infrastructure/scripts/fetch-fonts.mjs` restores them. If they are missing, or shaping throws, the PDF falls back to the standard fonts and `pdfSafe`, which prints non-Latin-1 text as "?".
 
 | Endpoint                                  | Returns                                                                       |
 | ----------------------------------------- | ----------------------------------------------------------------------------- |

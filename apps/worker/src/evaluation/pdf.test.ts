@@ -1,0 +1,168 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ReportContent } from '@cbi/shared-types';
+import PDFDocument from 'pdfkit';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { fontsAvailable, pdfSafe, renderReportPdf, scriptRuns } from './pdf.js';
+
+const HINDI = 'आपने अच्छा उत्तर दिया।';
+// "శ్రీ" and "ప్రశ్నలు" crash fontkit with Noto Sans Telugu (why Hind Guntur is used).
+const TELUGU = 'శ్రీ, మీరు ప్రశ్నలు బాగా సమాధానం ఇచ్చారు';
+
+/** A minimal report with Hindi and Telugu in the free-text fields. */
+const content = ReportContent.parse({
+  schemaVersion: 1,
+  integrity: null,
+  header: {
+    title: 'बैकएंड इंजीनियर',
+    companyName: 'Acme',
+    mode: 'TEXT',
+    language: 'hi',
+    startedAt: '2026-09-01T10:00:00.000Z',
+    endedAt: '2026-09-01T10:30:00.000Z',
+    durationSec: 1800,
+    endReason: null,
+  },
+  overall: {
+    score: 72,
+    band: 'READY_WITH_GAPS',
+    confidence: {
+      level: 'MEDIUM',
+      value: 0.6,
+      factors: {
+        independentQuestions: 0.5,
+        practicalEvidence: 0.6,
+        consistency: 0.7,
+        completeness: 0.6,
+      },
+    },
+    assessedWeight: 1,
+  },
+  summary: `Good answers overall. ${HINDI} ${TELUGU}`,
+  dimensions: [
+    {
+      key: 'api-design',
+      name: 'API design',
+      category: 'TECHNICAL',
+      weight: 100,
+      score: 72,
+      rationale: `Clear reasoning (${TELUGU}).`,
+      evidence: [
+        {
+          id: 'e1',
+          claim: HINDI,
+          strength: 3,
+          quote: null,
+          questionId: 'q1',
+          question: 'Design a rate limiter.',
+        },
+      ],
+      fallback: false,
+    },
+  ],
+  strengths: [{ text: TELUGU, dimensionKey: 'api-design' }],
+  gaps: [{ text: `Mixed: REST ${HINDI} and ${TELUGU}`, dimensionKey: null }],
+  rounds: [],
+  coverage: [],
+  plan: {
+    next24h: [{ action: 'अभ्यास करें', why: 'Practice helps.', dimensionKey: null }],
+    next3Days: [{ action: 'Review caching', why: TELUGU, dimensionKey: null }],
+    next7Days: [{ action: 'Mock interview', why: 'Build confidence.', dimensionKey: null }],
+  },
+  previous: null,
+  transcript: null,
+  disclaimer: 'This report is guidance, not a hiring decision.',
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('scriptRuns', () => {
+  it('splits mixed English, Hindi and Telugu into script runs', () => {
+    expect(scriptRuns(`Score: ${HINDI} then ${TELUGU}!`)).toEqual([
+      { script: 'latin', text: 'Score: ' },
+      { script: 'devanagari', text: `${HINDI} ` },
+      { script: 'latin', text: 'then ' },
+      { script: 'telugu', text: `${TELUGU}!` },
+    ]);
+  });
+
+  it('keeps marks, joiners, digits and punctuation with the current run', () => {
+    const zwj = String.fromCodePoint(0x200d);
+    const acute = String.fromCodePoint(0x0301);
+    // Leading neutrals join the first script that follows.
+    const hindi = `- 2 क्ष${zwj}त्र, 3.`;
+    expect(scriptRuns(hindi)).toEqual([{ script: 'devanagari', text: hindi }]);
+    expect(scriptRuns(`cafe${acute} (x)`)).toEqual([{ script: 'latin', text: `cafe${acute} (x)` }]);
+    // Only the Devanagari font has the danda (Telugu text uses it too) and NBSP is Latin.
+    const danda = String.fromCodePoint(0x0964);
+    const nbsp = String.fromCodePoint(0xa0);
+    expect(scriptRuns(`${TELUGU}${danda}${nbsp}`)).toEqual([
+      { script: 'telugu', text: TELUGU },
+      { script: 'devanagari', text: danda },
+      { script: 'latin', text: nbsp },
+    ]);
+    expect(scriptRuns('12 - 3')).toEqual([{ script: 'latin', text: '12 - 3' }]);
+    expect(scriptRuns('')).toEqual([]);
+  });
+
+  it('never loses characters', () => {
+    const text = `A ${HINDI} & ${TELUGU} @ 5 ${String.fromCodePoint(0xa8f2)}`;
+    expect(
+      scriptRuns(text)
+        .map((r) => r.text)
+        .join(''),
+    ).toBe(text);
+  });
+});
+
+describe('renderReportPdf', () => {
+  it.skipIf(!fontsAvailable())('embeds the fonts and keeps Hindi and Telugu text', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    const pdf = await renderReportPdf(content, { compress: false });
+
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    const written = text.mock.calls.map((c) => String(c[0])).join('');
+    expect(written).toContain(HINDI);
+    expect(written).toContain(TELUGU);
+    expect(written).toContain('बैकएंड इंजीनियर');
+
+    const raw = pdf.toString('latin1');
+    expect(raw).toMatch(/\/BaseFont \/[A-Z]{6}\+NotoSansDevanagari-Regular/);
+    expect(raw).toMatch(/\/BaseFont \/[A-Z]{6}\+HindGuntur-Regular/);
+    expect(raw).toMatch(/\/BaseFont \/[A-Z]{6}\+NotoSans-Bold/);
+    expect(raw).not.toContain('/Helvetica');
+  });
+
+  it.skipIf(!fontsAvailable())('falls back to the standard fonts if shaping throws', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    text.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read properties of null (reading 'xCoordinate')");
+    });
+    const raw = (await renderReportPdf(content, { compress: false })).toString('latin1');
+    expect(raw).toContain('/BaseFont /Helvetica');
+    expect(raw).not.toContain('Noto');
+  });
+
+  it('falls back to the standard fonts and pdfSafe without the font files', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    const empty = mkdtempSync(join(tmpdir(), 'no-fonts-'));
+    expect(fontsAvailable(empty)).toBe(false);
+
+    const pdf = await renderReportPdf(content, { fontDir: empty, compress: false });
+    const raw = pdf.toString('latin1');
+    expect(raw).toContain('/BaseFont /Helvetica');
+    expect(raw).not.toContain('Noto');
+    const written = text.mock.calls.map((c) => String(c[0])).join('');
+    expect(written).not.toContain(HINDI);
+    expect(written).toContain('Good answers overall. ??');
+  });
+});
+
+describe('pdfSafe', () => {
+  it('maps typographic punctuation and replaces non-Latin-1 text with "?"', () => {
+    expect(pdfSafe('“Hi” – ok…')).toBe('"Hi" - ok...');
+    expect(pdfSafe('नमस्ते')).toBe('??????');
+    expect(pdfSafe('తె')).toBe('??');
+  });
+});
