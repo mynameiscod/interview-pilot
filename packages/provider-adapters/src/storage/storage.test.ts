@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Readable } from 'node:stream';
 import { afterAll, describe, expect, it } from 'vitest';
 import { ProviderError } from '../errors.js';
 import { createBunnyStorage } from './bunny.js';
 import { createLocalStorage } from './local.js';
+import { createMemoryStorage } from '../testing.js';
 import { assertStorageKey, StorageNotFoundError } from './types.js';
 
 describe('storage keys', () => {
@@ -26,6 +28,25 @@ describe('storage keys', () => {
     expect(() => assertStorageKey(key)).toThrow('invalid storage key');
   });
 });
+
+const dirs: string[] = [];
+afterAll(async () => {
+  for (const d of dirs) await rm(d, { recursive: true, force: true });
+});
+
+async function tempFile(content: Buffer) {
+  const dir = await mkdtemp(join(tmpdir(), 'cbi-storage-'));
+  dirs.push(dir);
+  const path = join(dir, 'upload.bin');
+  await writeFile(path, content);
+  return path;
+}
+
+async function readAll(stream: Readable) {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
 
 describe('Bunny storage', () => {
   function fake(status: number, body: string | null = null) {
@@ -76,6 +97,34 @@ describe('Bunny storage', () => {
     expect(denied.retryable).toBe(false);
   });
 
+  it('streams file uploads with the length and checksum of the whole file', async () => {
+    const t = fake(201);
+    const body = Buffer.alloc(300_000, 7);
+    await t.storage.putFile('exports/c1/e1.zip', await tempFile(body), 'application/zip');
+    const { init } = t.calls[0]!;
+    expect(init.method).toBe('PUT');
+    // A stream, not a buffer: the file is never read into memory at once.
+    expect(init.body).toBeInstanceOf(ReadableStream);
+    expect((init as { duplex?: string }).duplex).toBe('half');
+    expect(init.headers).toMatchObject({
+      'Content-Type': 'application/zip',
+      'Content-Length': '300000',
+      Checksum: createHash('sha256').update(body).digest('hex').toUpperCase(),
+    });
+    await expect(
+      fake(503).storage.putFile('a/b.zip', await tempFile(body), 'application/zip'),
+    ).rejects.toBeInstanceOf(ProviderError);
+  });
+
+  it('streams downloads and maps 404 to not-found', async () => {
+    expect(
+      (await readAll(await fake(200, 'zip-bytes').storage.getStream('a/b.zip'))).toString(),
+    ).toBe('zip-bytes');
+    await expect(fake(404).storage.getStream('a/b.zip')).rejects.toBeInstanceOf(
+      StorageNotFoundError,
+    );
+  });
+
   it('refuses unsafe keys before any request', async () => {
     const t = fake(200);
     await expect(t.storage.get('../other-zone/x')).rejects.toThrow('invalid storage key');
@@ -84,11 +133,6 @@ describe('Bunny storage', () => {
 });
 
 describe('local storage', () => {
-  const dirs: string[] = [];
-  afterAll(async () => {
-    for (const d of dirs) await rm(d, { recursive: true, force: true });
-  });
-
   it('round-trips, deletes idempotently and stays inside its root', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'cbi-storage-'));
     dirs.push(dir);
@@ -101,5 +145,24 @@ describe('local storage', () => {
     await expect(storage.put('../escape.txt', Buffer.from('x'), 'text/plain')).rejects.toThrow(
       'invalid storage key',
     );
+  });
+});
+
+describe('streaming files', () => {
+  it('round-trips through local and in-memory storage', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cbi-storage-'));
+    dirs.push(dir);
+    const body = Buffer.from('PK package bytes');
+    const source = await tempFile(body);
+    for (const storage of [createLocalStorage(dir), createMemoryStorage().storage]) {
+      await storage.putFile('exports/c1/e1.zip', source, 'application/zip');
+      expect(await readAll(await storage.getStream('exports/c1/e1.zip'))).toEqual(body);
+      await expect(storage.getStream('exports/c1/missing.zip')).rejects.toBeInstanceOf(
+        StorageNotFoundError,
+      );
+      await expect(storage.putFile('../x.zip', source, 'application/zip')).rejects.toThrow(
+        'invalid storage key',
+      );
+    }
   });
 });

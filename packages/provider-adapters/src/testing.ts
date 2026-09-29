@@ -2,6 +2,8 @@
  * TEST DOUBLES ONLY — imported from '@cbi/provider-adapters/testing' by test
  * suites. Never wire these into application bootstrap code.
  */
+import { readFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import type { EmailMessage, EmailProvider } from './email/types.js';
 import { ProviderError } from './errors.js';
 import type { OtpSms, OtpSmsProvider } from './sms/types.js';
@@ -49,6 +51,15 @@ export function createMemoryStorage() {
       const hit = objects.get(key);
       if (!hit) throw new StorageNotFoundError('test-memory-storage');
       return Buffer.from(hit.body);
+    },
+    async putFile(key, filePath, contentType) {
+      assertStorageKey(key);
+      objects.set(key, { body: await readFile(filePath), contentType });
+    },
+    async getStream(key) {
+      const hit = objects.get(key);
+      if (!hit) throw new StorageNotFoundError('test-memory-storage');
+      return Readable.from([Buffer.from(hit.body)]);
     },
     async delete(key) {
       objects.delete(key);

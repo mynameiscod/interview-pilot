@@ -258,6 +258,8 @@ export function buildIntegrations(opts: IntegrationsOptions) {
     },
     put: async (key, body, type) => need('storage').put(key, body, type),
     get: async (key) => need('storage').get(key),
+    putFile: async (key, path, type) => need('storage').putFile(key, path, type),
+    getStream: async (key) => need('storage').getStream(key),
     delete: async (key) => need('storage').delete(key),
   };
   const payments: PaymentGateway = {
