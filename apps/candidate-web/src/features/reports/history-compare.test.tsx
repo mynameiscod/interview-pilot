@@ -123,6 +123,34 @@ describe('compare', () => {
     expect(cells(/^Testing/)).toEqual(['Not assessed', 'Not assessed', 'Not enough data']);
   });
 
+  it('adds pace and filler changes when both attempts were spoken', async () => {
+    const base = makeCompare();
+    const spoken = makeCompare({
+      attempts: [
+        { ...base.attempts[0]!, delivery: { wpm: 182, fillerRate: 5.2 } },
+        { ...base.attempts[1]!, delivery: { wpm: 150, fillerRate: 2.1 } },
+      ],
+      delivery: { wpm: -32, fillerRate: -3.1 },
+    });
+    const api = fakeApi({ ...signedIn, 'GET /reports/compare': () => ok(spoken) });
+    await renderRoute('/app/compare?sessions=int0,int1', { api });
+    const table = await screen.findByRole('table', { name: 'Scores for each attempt' }, LOAD);
+    const cells = (name: RegExp) =>
+      within(within(table).getByRole('row', { name }))
+        .getAllByRole('cell')
+        .map((c) => c.textContent);
+    expect(cells(/^Pace \(words per minute\)/)).toEqual(['182', '150', '−32 words per minute']);
+    expect(cells(/^Filler words per 100 words/)).toEqual(['5.2', '2.1', '−3.1 per 100 words']);
+    expect(within(table).getByText(/coaching only and does not affect scores/)).toBeInTheDocument();
+  });
+
+  it('has no delivery rows for typed attempts', async () => {
+    const api = fakeApi({ ...signedIn, 'GET /reports/compare': () => ok(makeCompare()) });
+    await renderRoute('/app/compare?sessions=int0,int1', { api });
+    const table = await screen.findByRole('table', { name: 'Scores for each attempt' }, LOAD);
+    expect(within(table).queryByText(/Pace/)).toBeNull();
+  });
+
   it('explains when the attempts cannot be compared', async () => {
     const api = fakeApi({
       ...signedIn,

@@ -137,22 +137,24 @@ describe('readiness report', () => {
   it('switches plan tabs with the arrow keys, Home and End', async () => {
     await openReport();
     const user = userEvent.setup();
-    const first = screen.getByRole('tab', { name: 'Next 24 hours' });
-    const second = screen.getByRole('tab', { name: 'Next 3 days' });
-    const third = screen.getByRole('tab', { name: 'Next 7 days' });
+    await user.click(screen.getByRole('tab', { name: 'Plan' }));
+    const plan = within(screen.getByRole('region', { name: 'Your improvement plan' }));
+    const first = plan.getByRole('tab', { name: 'Next 24 hours' });
+    const second = plan.getByRole('tab', { name: 'Next 3 days' });
+    const third = plan.getByRole('tab', { name: 'Next 7 days' });
     expect(first).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Read how B-tree indexes work.');
+    expect(plan.getByRole('tabpanel')).toHaveTextContent('Read how B-tree indexes work.');
 
     first.focus();
     await user.keyboard('{ArrowRight}');
     expect(second).toHaveAttribute('aria-selected', 'true');
     expect(first).toHaveAttribute('aria-selected', 'false');
     expect(second).toHaveFocus();
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Optimise three slow queries');
+    expect(plan.getByRole('tabpanel')).toHaveTextContent('Optimise three slow queries');
 
     await user.keyboard('{End}');
     expect(third).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Write integration tests');
+    expect(plan.getByRole('tabpanel')).toHaveTextContent('Write integration tests');
     await user.keyboard('{ArrowRight}');
     expect(first).toHaveAttribute('aria-selected', 'true');
     expect(first).toHaveFocus();

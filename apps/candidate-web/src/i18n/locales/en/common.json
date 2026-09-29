@@ -986,6 +986,120 @@
       "passed": "{{passed}} of {{total}} tests passed",
       "notRun": "Not run (the code judge was unavailable) — reviewed from your code",
       "notSubmitted": "Not submitted before time ran out"
+    },
+    "tabs": {
+      "label": "Report sections",
+      "summary": "Summary",
+      "questions": "Questions",
+      "delivery": "Delivery",
+      "plan": "Plan"
+    },
+    "benchmark": {
+      "title": "How you compare",
+      "role": "Better than {{percentile}}% of candidates practising for {{role}}",
+      "family": "Better than {{percentile}}% of candidates practising for {{family}} roles",
+      "note": "Compared with the overall scores of {{total}} other candidates in the last {{days}} days. Only totals are used; nobody else's answers are shared.",
+      "families": {
+        "ENGINEERING": "engineering",
+        "DATA": "data",
+        "QUALITY": "quality",
+        "INFRASTRUCTURE": "infrastructure",
+        "PRODUCT": "product",
+        "DESIGN": "design",
+        "BUSINESS": "business",
+        "OTHER": "other"
+      }
+    },
+    "questions": {
+      "title": "Question by question",
+      "intro": "Feedback on each answer, with an example of how it could be stronger. This is coaching only and does not change your scores.",
+      "empty": "There are no answered questions to review.",
+      "question": "Question {{n}}",
+      "spoken": "Spoken answer",
+      "showAnswer": "Show your answer",
+      "hideAnswer": "Hide your answer",
+      "answerHidden": "Your answer is not shown in this report.",
+      "verdict": {
+        "STRONG": "Strong",
+        "ADEQUATE": "Adequate",
+        "WEAK": "Needs work",
+        "UNASSESSED": "Not assessed"
+      },
+      "verdictLabel": "Verdict: {{verdict}}",
+      "worked": "What worked",
+      "missing": "What was missing",
+      "missingFallback": "What a strong answer usually covers",
+      "nothingWorked": "Nothing stood out in this answer yet.",
+      "nothingMissing": "Nothing important was missing.",
+      "improved": "Example answer",
+      "improvedNote": "An example built from your own answer, not a script. Replace anything in [brackets] with your real details, and only say what you have actually done.",
+      "noImproved": "There was not enough in this answer to build an example from.",
+      "fallback": "Detailed feedback was unavailable for this answer, so this card is based on the assessment made during the interview."
+    },
+    "star": {
+      "title": "Answer structure (STAR)",
+      "parts": {
+        "situation": "Situation",
+        "task": "Task",
+        "action": "Action",
+        "result": "Result"
+      },
+      "short": {
+        "situation": "S",
+        "task": "T",
+        "action": "A",
+        "result": "R"
+      },
+      "covered": "{{part}}: covered",
+      "missing": "{{part}}: missing",
+      "estimated": "Estimated from the wording of your answer."
+    },
+    "structure": {
+      "title": "Structure of your behavioural answers",
+      "complete": "{{complete}} of {{total}} behavioural answers covered the situation, task, action and result.",
+      "weakest": "Most often missing: {{part}}.",
+      "allComplete": "Every behavioural answer covered all four parts. Keep it up.",
+      "tips": {
+        "situation": "Start with one or two sentences of context: where you were and what was at stake.",
+        "task": "Say what your goal or responsibility was before describing what you did.",
+        "action": "Focus on what you personally did: say “I”, not only “we”.",
+        "result": "End with the outcome, with a number if you have one, and what you learned."
+      }
+    },
+    "delivery": {
+      "title": "Delivery",
+      "intro": "How your spoken answers came across: pace, filler words, long pauses and hedging.",
+      "fairness": "Delivery is coaching only and never affects your scores. Pace and filler words vary with accent, language, nerves and speech differences, and your answers are scored on what you said, not how you said it.",
+      "pace": "Pace",
+      "paceValue": "{{wpm}} words per minute",
+      "paceNone": "Not enough speech to measure",
+      "paceTarget": "Target: {{min}}–{{max}} words per minute",
+      "fillers": "Filler words",
+      "fillersValue": "{{total}} ({{rate}} per 100 words)",
+      "fillersTarget": "Target: at most {{max}} per 100 words",
+      "common": "Most common: {{words}}",
+      "pauses": "Long pauses (2 seconds or more)",
+      "pausesShort": "Long pauses",
+      "notMeasured": "Not measured",
+      "pausesTarget": "Target: at most {{max}} per minute",
+      "hedges": "Hedging phrases",
+      "hedgesTarget": "Target: at most {{max}} per 100 words",
+      "onTarget": "On target",
+      "offTarget": "Worth practising",
+      "tipsTitle": "Tips",
+      "noTips": "Your delivery was on target. Keep practising out loud to stay consistent.",
+      "tips": {
+        "PACE_FAST": "Slow down a little. Pause briefly after each key point so the interviewer can follow.",
+        "PACE_SLOW": "Pick up the pace a little. Outline your answer in your head (situation, action, result) before you start speaking.",
+        "FILLERS": "Replace filler words with a short silent pause. A pause sounds more confident than “um” or “like”.",
+        "PAUSES": "Pausing to think is fine. Say “let me think for a moment” so the silence is clearly yours, then answer in short sentences.",
+        "HEDGING": "State what you did plainly (“I led”, “I decided”) instead of “I think” or “maybe”."
+      },
+      "perAnswer": "Per answer",
+      "tableCaption": "Delivery for each spoken answer",
+      "question": "Question",
+      "length": "Length",
+      "seconds": "{{value}} s"
     }
   },
   "history": {
@@ -1025,7 +1139,12 @@
     "invalidTitle": "These attempts cannot be compared",
     "invalidBody": "Choose 2 to 4 attempts at the same role from your history.",
     "loadError": "We could not load this comparison",
-    "backToHistory": "Back to history"
+    "backToHistory": "Back to history",
+    "pace": "Pace (words per minute)",
+    "fillerRate": "Filler words per 100 words",
+    "deliveryNote": "Delivery is coaching only and does not affect scores.",
+    "paceChange": "{{value}} words per minute",
+    "fillerChange": "{{value}} per 100 words"
   },
   "pricing": {
     "title": "Pricing",

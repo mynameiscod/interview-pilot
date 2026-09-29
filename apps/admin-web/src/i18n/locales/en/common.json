@@ -332,6 +332,7 @@
       "evaluation_extractEvidence": "Extract evidence from a round",
       "evaluation_scoreDimension": "Score one dimension from evidence",
       "report_recommendations": "Write the improvement plan",
+      "report_questionFeedback": "Coach each answer (feedback, example answer, STAR)",
       "stt_live": "Speech to text (live interviews)",
       "tts_live": "Text to speech (live interviews)",
       "ocr_document": "Read scanned documents (Phase 3)",

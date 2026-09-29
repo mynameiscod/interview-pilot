@@ -27,7 +27,7 @@ const OUTCOME_ICON: Record<Outcome, string> = {
 const STEPS: { key: string; stages: ProcessingStage[] }[] = [
   { key: 'reviewing', stages: ['FINALIZE_TRANSCRIPT', 'EXTRACT_EVIDENCE'] },
   { key: 'scoring', stages: ['SCORE_DIMENSIONS', 'AGGREGATE'] },
-  { key: 'planning', stages: ['RECOMMENDATIONS'] },
+  { key: 'planning', stages: ['RECOMMENDATIONS', 'COACHING'] },
   { key: 'preparing', stages: ['BUILD_REPORT'] },
 ];
 

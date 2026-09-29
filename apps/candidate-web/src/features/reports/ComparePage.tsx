@@ -5,7 +5,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, inputErrorMessage } from '../interviews/messages';
-import { CONFIDENCE_ICON, DELTA_ICON, deltaText, scoreText } from './report-format';
+import { CONFIDENCE_ICON, DELTA_ICON, deltaText, scoreText, signed } from './report-format';
 import { useCompare } from './reports-api';
 
 function ScoreCell({ score }: { score: number | null }) {
@@ -82,6 +82,35 @@ function CompareTable({ result }: { result: CompareResult }) {
             ))}
             <td>–</td>
           </tr>
+          {result.delivery && (
+            <>
+              <tr>
+                <th scope="row">
+                  {t('compare.pace')}
+                  <span className="d-block small fw-normal cb-text-secondary">
+                    {t('compare.deliveryNote')}
+                  </span>
+                </th>
+                {attempts.map((a) => (
+                  <td key={a.sessionId}>{a.delivery?.wpm ?? '–'}</td>
+                ))}
+                <td className="text-nowrap">
+                  {result.delivery.wpm === null
+                    ? t('compare.noDelta')
+                    : t('compare.paceChange', { value: signed(result.delivery.wpm) })}
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('compare.fillerRate')}</th>
+                {attempts.map((a) => (
+                  <td key={a.sessionId}>{a.delivery ? a.delivery.fillerRate : '–'}</td>
+                ))}
+                <td className="text-nowrap">
+                  {t('compare.fillerChange', { value: signed(result.delivery.fillerRate) })}
+                </td>
+              </tr>
+            </>
+          )}
           {result.dimensions.map((d) => (
             <tr key={d.key}>
               <th scope="row" className="fw-normal">
