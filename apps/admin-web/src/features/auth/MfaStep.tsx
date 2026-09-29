@@ -2,6 +2,7 @@ import { TOTP_DIGITS, type MfaChallenge, type MfaSessionResponse } from '@cbi/sh
 import { errorMessage, type ApiClient } from '@cbi/web-core';
 import { useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { QrCode } from './QrCode';
 
 /** Copies text, reporting whether it worked (clipboard access can be refused). */
 async function copy(text: string) {
@@ -13,7 +14,10 @@ async function copy(text: string) {
   }
 }
 
-/** Secret and otpauth:// URI for adding the account to an authenticator app. */
+/**
+ * A QR code of the otpauth:// URI to scan, with the setup key (copyable) and
+ * the URI itself as fallbacks for apps or devices that cannot scan.
+ */
 export function EnrollmentDetails({ secret, otpauthUri }: { secret: string; otpauthUri: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -26,7 +30,11 @@ export function EnrollmentDetails({ secret, otpauthUri }: { secret: string; otpa
         <li>{t('mfa.enrollStep2')}</li>
         <li>{t('mfa.enrollStep3')}</li>
       </ol>
+      <div className="mb-2">
+        <QrCode text={otpauthUri} label={t('mfa.qrLabel')} />
+      </div>
       <div className="p-3 border cb-border rounded-3 cb-surface-muted">
+        <p className="small mb-2">{t('mfa.cannotScan')}</p>
         <div className="small cb-text-secondary">{t('mfa.secretLabel')}</div>
         <div className="d-flex flex-wrap align-items-center gap-2">
           <code className="fs-6 text-break" data-testid="mfa-secret">
