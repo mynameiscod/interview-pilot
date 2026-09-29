@@ -14,6 +14,12 @@ import { InterviewSessionModel } from './models/interview-session.js';
 import { InterviewTurnModel } from './models/interview-turn.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import { AnalyticsEventModel, ShareLinkModel } from './models/ops.js';
+import {
+  BadgeAwardModel,
+  CertificateModel,
+  PlanItemProgressModel,
+  UserProgressModel,
+} from './models/progress.js';
 import { OtpChallengeModel } from './models/otp-challenge.js';
 import { RefreshTokenModel } from './models/refresh-token.js';
 import { UserProfileModel } from './models/user-profile.js';
@@ -103,16 +109,18 @@ export async function eraseAccount(
   if (!user) return null;
   const uid = user._id;
 
-  const [resumes, jobTargets, sessions, reports, media] = await Promise.all([
+  const [resumes, jobTargets, sessions, reports, media, certificates] = await Promise.all([
     ResumeModel.find({ userId: uid }, { storageKey: 1 }).lean(),
     JobTargetModel.find({ userId: uid }, { storageKey: 1 }).lean(),
     InterviewSessionModel.find({ userId: uid }, { _id: 1 }).lean(),
     InterviewReportModel.find({ userId: uid }, { pdf: 1 }).lean(),
     MediaAssetModel.find({ userId: uid }, { _id: 1 }).lean(),
+    CertificateModel.find({ userId: uid }, { pdf: 1 }).lean(),
   ]);
 
   // 1. Stored objects (idempotent; a failure aborts before any record is removed).
-  const keys = erasureStorageKeys({ resumes, jobTargets, reports });
+  // Certificate PDFs are stored like report PDFs.
+  const keys = erasureStorageKeys({ resumes, jobTargets, reports: [...reports, ...certificates] });
   for (const key of keys) await storage.delete(key);
   for (const asset of media) {
     await deleteMediaAsset(asset._id, storage, { reason: 'ACCOUNT_ERASURE', by: 'SYSTEM', now });
@@ -136,6 +144,10 @@ export async function eraseAccount(
     reviewRevisions: await hardDelete(ReviewRevisionModel, bySession),
     campaignApplications: await hardDelete(CampaignApplicationModel, { userId: uid }),
     shareLinks: await hardDelete(ShareLinkModel, { userId: uid }),
+    certificates: await hardDelete(CertificateModel, { userId: uid }),
+    planItemProgress: await hardDelete(PlanItemProgressModel, { userId: uid }),
+    userProgress: await hardDelete(UserProgressModel, { userId: uid }),
+    badgeAwards: await hardDelete(BadgeAwardModel, { userId: uid }),
     interviewSessions: await hardDelete(InterviewSessionModel, { userId: uid }),
     authIdentities: await hardDelete(AuthIdentityModel, { userId: uid }),
     refreshTokens: await hardDelete(RefreshTokenModel, { userId: uid }),

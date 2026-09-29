@@ -601,6 +601,34 @@ export const SEED_TEMPLATES: SeedTemplate[] = [
       ...commonPolicies,
     },
   },
+  {
+    // Practice drills (progress hub): one round on one competency. The round type is
+    // chosen per drill from the competency, and the question count from the `practice`
+    // setting (the budget scales with it: about 2 min 20 s per question).
+    key: 'skill-drill',
+    content: {
+      name: 'Practice drill',
+      description:
+        'A 5–8 minute drill: three questions on one skill from your latest interview, with quick feedback.',
+      modes: ['TEXT', 'VOICE'],
+      rounds: [
+        {
+          type: 'TECHNICAL',
+          durationSec: 420,
+          questionCount: 3,
+          difficulty: 'ADAPTIVE',
+          followUpDepth: 0,
+          minEvidence: 0,
+        },
+      ],
+      ...commonPolicies,
+      creditCost: 0,
+      proctoringPolicy: { recording: 'OFF', tabSwitchTracking: false },
+      reportPolicy: { showDimensionScores: true, showTranscript: false },
+    },
+  },
 ];
 
 export const DEFAULT_TEMPLATE_KEY = 'standard-practice';
+/** The versioned template practice drills use. */
+export const DRILL_TEMPLATE_KEY = 'skill-drill';

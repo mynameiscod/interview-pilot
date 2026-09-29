@@ -20,6 +20,8 @@ import { inTransaction } from './credits.js';
  */
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+/** Sessions and reports that are interviews (older documents have no kind). */
+const interviewsOnly = { kind: { $ne: 'DRILL' as const } };
 const DAY_MS = 24 * 3600 * 1000;
 
 /** The India-time calendar day of an instant. */
@@ -79,18 +81,21 @@ export async function computeDay(day: string): Promise<Row[]> {
   ] = await Promise.all([
     UserModel.countDocuments({ ...candidates, createdAt: inDay }),
     UserModel.countDocuments({ ...candidates, onboardingCompletedAt: inDay }),
-    InterviewSessionModel.countDocuments({ createdAt: inDay }),
-    InterviewSessionModel.countDocuments({ startedAt: inDay }),
+    // Interviews only: practice drills are not interviews (they have no credit or PDF).
+    InterviewSessionModel.countDocuments({ ...interviewsOnly, createdAt: inDay }),
+    InterviewSessionModel.countDocuments({ ...interviewsOnly, startedAt: inDay }),
     InterviewSessionModel.countDocuments({
+      ...interviewsOnly,
       endedAt: inDay,
       state: { $in: ['PROCESSING', 'REPORT_READY'] },
     }),
     // Started interviews that failed or expired that day (analysis failures are not counted).
     InterviewSessionModel.countDocuments({
+      ...interviewsOnly,
       startedAt: { $ne: null },
       stateHistory: { $elemMatch: { to: { $in: ['FAILED', 'EXPIRED'] }, at: inDay } },
     }),
-    InterviewReportModel.countDocuments({ revision: 0, generatedAt: inDay }),
+    InterviewReportModel.countDocuments({ ...interviewsOnly, revision: 0, generatedAt: inDay }),
     PurchaseModel.aggregate<{ count: number; amount: number }>([
       { $match: { statusHistory: { $elemMatch: { status: 'PAID', at: inDay } } } },
       { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountMinor' } } },

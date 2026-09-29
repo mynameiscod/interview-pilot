@@ -16,6 +16,7 @@ export * from './models/library.js';
 export * from './models/media.js';
 export * from './models/auth-identity.js';
 export * from './models/otp-challenge.js';
+export * from './models/progress.js';
 export * from './models/refresh-token.js';
 export * from './models/user-profile.js';
 export * from './models/user.js';
@@ -25,6 +26,7 @@ export * from './erasure.js';
 export * from './evaluation-state.js';
 export * from './indexes.js';
 export * from './purchases.js';
+export * from './progress.js';
 export * from './interview-state.js';
 export * from './media.js';
 export * from './mongo.js';
@@ -32,5 +34,10 @@ export * from './redis.js';
 export * from './seed/consent-texts.js';
 export * from './seed/library.js';
 export * from './seed/problems.js';
-export { DEFAULT_TEMPLATE_KEY, SEED_ROLES, SEED_TEMPLATES } from './seed/library-content.js';
+export {
+  DEFAULT_TEMPLATE_KEY,
+  DRILL_TEMPLATE_KEY,
+  SEED_ROLES,
+  SEED_TEMPLATES,
+} from './seed/library-content.js';
 export { SEED_PROMPTS } from './seed/prompts-content.js';

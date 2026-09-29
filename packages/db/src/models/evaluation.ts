@@ -208,6 +208,8 @@ export interface InterviewReportRecord {
   userId: Types.ObjectId;
   revision: number;
   scoreRevision: number;
+  /** DRILL reports feed dimension trends only (no history entry, PDF or email). */
+  kind: 'INTERVIEW' | 'DRILL';
   content: ReportContent;
   pdf: { status: PdfStatus; storageKey: string | null; generatedAt: Date | null };
   visibility: { candidate: boolean };
@@ -224,6 +226,7 @@ const reportSchema = new Schema<InterviewReportRecord>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     revision: { type: Number, required: true },
     scoreRevision: { type: Number, required: true },
+    kind: { type: String, enum: ['INTERVIEW', 'DRILL'], required: true, default: 'INTERVIEW' },
     content: { type: Schema.Types.Mixed, required: true },
     pdf: {
       type: new Schema(
