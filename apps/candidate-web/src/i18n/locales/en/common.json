@@ -33,7 +33,9 @@
       "title": "Know exactly where you stand before the real interview.",
       "subtitle": "Upload your resume. Add the job description. Take a realistic AI interview. See where you are strong, where you are weak and what to improve.",
       "getStarted": "Get started",
-      "howItWorksCta": "See how it works"
+      "howItWorksCta": "See how it works",
+      "eyebrow": "AI interview practice",
+      "freeNote": "Your first interview credit is free. No card needed to sign up."
     },
     "how": {
       "title": "How it works",
@@ -47,6 +49,61 @@
     "fair": {
       "title": "Assessed on what you say and build",
       "body": "Your answers, reasoning and code are what count. Accent, appearance and facial expressions are never scored."
+    },
+    "features": {
+      "title": "What you get",
+      "subtitle": "Everything you need to prepare for a specific role, not a generic quiz.",
+      "tailoredTitle": "Questions built for your target role",
+      "tailoredBody": "Questions follow your resume and the job description, and go deeper based on your answers.",
+      "modesTitle": "Text, voice or video",
+      "modesBody": "Type your answers, speak them aloud, or take a face-to-face style interview with your camera on.",
+      "codingTitle": "Coding in a real editor",
+      "codingBody": "Solve coding questions in Python, JavaScript, Java or C++ and run your code against test cases.",
+      "reportTitle": "An evidence-backed report",
+      "reportBody": "See your strengths and gaps, backed by what you actually said, with a clear plan to improve.",
+      "progressTitle": "Track your progress",
+      "progressBody": "Keep every report in your history and compare interviews to see what improved.",
+      "proofTitle": "Share a proof",
+      "proofBody": "Share a read-only summary of your results with a recruiter, and revoke the link at any time."
+    },
+    "languages": {
+      "title": "Practise in English, Hindi or Telugu",
+      "body": "Use the site in the language you are most comfortable with, and choose the language of the interview itself. Auto-detect follows the language you speak during the interview.",
+      "listLabel": "Supported languages"
+    },
+    "pricing": {
+      "title": "Simple, credit-based pricing",
+      "body": "Every account starts with one free interview credit. Each interview uses 1 credit, and you can buy more whenever you need them.",
+      "cta": "See plans and prices"
+    },
+    "trust": {
+      "title": "Your data, your choice",
+      "consentTitle": "You decide what is recorded",
+      "consentBody": "You are asked before voice processing or recording starts, and every choice you make is listed in your profile.",
+      "recordingsTitle": "Recordings do not stay forever",
+      "recordingsBody": "Interview recordings are deleted automatically after a set time, and you can delete them sooner.",
+      "paymentsTitle": "Secure payments",
+      "paymentsBody": "Payments are processed securely by Razorpay."
+    },
+    "faq": {
+      "title": "Frequently asked questions",
+      "freeQ": "Is it free to try?",
+      "freeA": "Yes. Every account starts with one free interview credit, so you can take a full interview before you decide to buy more.",
+      "needQ": "What do I need to take an interview?",
+      "needA": "A recent version of Chrome, Edge, Firefox or Safari. Voice interviews also need a microphone and video interviews a camera; a quick device check runs before you start.",
+      "languagesQ": "Which languages are supported?",
+      "languagesA": "The site and the interviews are available in English, Hindi and Telugu. You can also let the interview detect the language you speak.",
+      "assessedQ": "How are my answers assessed?",
+      "assessedA": "On what you say and build: your answers, reasoning and code. Accent, appearance and facial expressions are never scored.",
+      "privateQ": "Who can see my report?",
+      "privateA": "Only you, unless you choose to share a proof link. If you join an interview through a company invite link, you are told before you start what that company will see.",
+      "creditsQ": "How do credits work?",
+      "creditsA": "Each interview uses 1 credit, and credits are only used when you start the interview. Purchased credits are added as soon as the payment is confirmed."
+    },
+    "finalCta": {
+      "title": "Ready to see where you stand?",
+      "body": "Take your first interview today and get a clear plan for what to work on next.",
+      "cta": "Start practising"
     }
   },
   "auth": {

@@ -79,6 +79,13 @@ The web images (`candidate-web`, `admin-web`) are not run as containers. On each
 
 Steady-state limits add up to about 24 GB, which leaves headroom for the page cache and a second API colour during deploys. The design assumes 200 concurrent interviews, which is I/O-bound because AI runs externally. Confirm the numbers with the k6 results in `tests/load/` before launch.
 
+### Candidate site: bundle budget, prerender and robots
+
+- **Budget:** the first load (main JS + CSS) should stay under about 360 KB JS / 180 KB CSS raw (110 KB / 26 KB gzip); `vite build` prints both. Routes are lazy-loaded, Hindi and Telugu strings load only when chosen, the design system compiles only the Bootstrap partials in use (`packages/design-system/src/styles/index.scss`) and production builds keep only the Bootstrap Icons that appear literally in source (`bi-name`, never built at runtime).
+- **Prerender:** the build writes `index.html` and `pricing/index.html` with their own title, description, canonical, Open Graph/Twitter tags and JSON-LD (Organization, SoftwareApplication, FAQPage for `/`), plus `robots.txt`, `sitemap.xml` and `manifest.webmanifest` (`apps/candidate-web/src/seo/`). The page body is still client-rendered. The SPA server's `try_files $uri $uri/index.html /index.html` serves the prerendered pricing page.
+- **Indexing:** only a build with `VITE_APP_ENV=production` is indexable. Other builds (staging, local) get `Disallow: /` and a `noindex` meta, on top of staging's basic auth and `X-Robots-Tag`. The canonical origin is `VITE_CANDIDATE_URL` (default `https://interview.codebegun.com`).
+- **Not done yet:** there's no service worker (it would complicate token refresh and deploys). The manifest, favicon, apple-touch-icon and `og:image` pick up `public/favicon.svg|ico`, `public/apple-touch-icon.png`, `public/brand/icon-192.png`, `public/brand/icon-512.png` and `public/brand/og-image.png` automatically once the official assets are added.
+
 ## 2. Host layout (`/srv/cbi`)
 
 ```text

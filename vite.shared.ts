@@ -1,6 +1,50 @@
 import react from '@vitejs/plugin-react';
-import { defaultClientConditions, type UserConfig } from 'vite';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defaultClientConditions, type Plugin, type UserConfig } from 'vite';
+import {
+  collectIconNames,
+  subsetBootstrapIconsCss,
+} from './packages/design-system/src/build/bootstrap-icons-subset.ts';
 import { SOURCE_CONDITION } from './vitest.shared.ts';
+
+const repoRoot = fileURLToPath(new URL('.', import.meta.url));
+
+/**
+ * Production builds ship only the Bootstrap Icons rules referenced in the app's
+ * own sources and the shared packages (dev keeps the full sheet). The icon font
+ * itself stays a separate, cached asset that the browser fetches on first use.
+ */
+function bootstrapIconsSubset(appRoot: string): Plugin {
+  const sourceDirs = [
+    join(appRoot, 'src'),
+    ...readdirSync(join(repoRoot, 'packages')).map((pkg) => join(repoRoot, 'packages', pkg, 'src')),
+  ];
+  return {
+    name: 'cbi:bootstrap-icons-subset',
+    apply: 'build',
+    enforce: 'pre',
+    transform(code, id) {
+      if (!/bootstrap-icons[\\/]font[\\/]bootstrap-icons(\.min)?\.css/.test(id)) return null;
+      const used = new Set<string>();
+      for (const dir of sourceDirs) {
+        let files: string[];
+        try {
+          files = readdirSync(dir, { recursive: true, encoding: 'utf8' });
+        } catch {
+          continue; // Package without a src folder.
+        }
+        for (const file of files) {
+          if (/\.(tsx?|scss)$/.test(file) && !/\.test\.tsx?$/.test(file)) {
+            collectIconNames(readFileSync(join(dir, file), 'utf8'), used);
+          }
+        }
+      }
+      return { code: subsetBootstrapIconsCss(code, used), map: null };
+    },
+  };
+}
 
 /**
  * Shared Vite/Vitest settings for the React apps.
@@ -8,9 +52,11 @@ import { SOURCE_CONDITION } from './vitest.shared.ts';
  * - Bootstrap 5.3 SCSS still uses @import and legacy colour functions;
  *   those deprecation warnings are silenced until Bootstrap migrates.
  */
-export function webConfig(opts: { port: number }): UserConfig & { test: object } {
+export function webConfig(opts: { port: number; plugins?: Plugin[] }): UserConfig & {
+  test: object;
+} {
   return {
-    plugins: [react()],
+    plugins: [react(), bootstrapIconsSubset(process.cwd()), ...(opts.plugins ?? [])],
     // Read VITE_* variables from the monorepo root .env; other variables are never exposed.
     envDir: '../..',
     resolve: { conditions: [SOURCE_CONDITION, ...defaultClientConditions] },
