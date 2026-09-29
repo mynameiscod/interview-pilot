@@ -30,6 +30,7 @@
     "purchases": "Purchases",
     "plans": "Plans",
     "coupons": "Coupons",
+    "credits": "Credits",
     "recordings": "Recordings",
     "consentTexts": "Consent texts",
     "campaigns": "Campaigns",
@@ -831,6 +832,7 @@
       "AUTHORIZED": "Authorized",
       "CAPTURED": "Captured",
       "FAILED": "Failed",
+      "REFUND_REQUESTED": "Refund requested",
       "REFUND_PENDING": "Refund pending",
       "REFUNDED": "Refunded"
     },
@@ -967,7 +969,11 @@
       "plan": "Plan",
       "coupon": "Coupon",
       "total": "Total",
-      "openLabel": "Open purchase {{id}}"
+      "openLabel": "Open purchase {{id}}",
+      "refundFailed": "Refund failed",
+      "adjustCredits": "Adjust credits",
+      "userCreditsLabel": "Credits of {{user}}",
+      "partlyRefunded": "{{amount}} refunded"
     },
     "detail": {
       "title": "Purchase",
@@ -990,25 +996,59 @@
       "history": "Payment history",
       "noHistory": "No status changes recorded.",
       "historyLine": "{{at}} · via {{source}}",
-      "actions": "Actions"
+      "actions": "Actions",
+      "refunded": "Refunded",
+      "invoiceNumber": "Invoice number",
+      "receipt": "Download receipt",
+      "receiptError": "The receipt could not be downloaded. Try again.",
+      "refunds": "Refunds",
+      "refundLine": "{{amount}} · {{at}}",
+      "refundCredits_one": "{{count}} credit withdrawn",
+      "refundCredits_other": "{{count}} credits withdrawn",
+      "refundStatus": {
+        "requested": "Requested",
+        "pending": "Pending",
+        "processed": "Processed",
+        "failed": "Failed"
+      },
+      "refundFailedAlert": "The payment provider reported a refund of this purchase as failed. Check the provider dashboard, then refund again if needed.",
+      "adjustCredits": "Adjust this candidate's credits"
     },
     "refund": {
       "button": "Refund",
-      "title": "Refund {{total}}?",
-      "explainMoney": "{{total}} is refunded in full to the original payment method through the payment provider.",
-      "explainCredits_one": "Any unused credit from this purchase ({{count}} credit granted) is withdrawn from the candidate.",
-      "explainCredits_other": "Any unused credits from this purchase ({{count}} credits granted) are withdrawn from the candidate.",
+      "title": "Refund this purchase",
+      "loading": "Checking how the credits from this purchase were used…",
+      "paid": "Paid",
+      "alreadyRefunded": "Already refunded",
+      "left": "Left to refund",
+      "credits": "Credits from this purchase",
+      "creditsLine": "{{granted}} granted · {{used}} used · {{unused}} unused · {{expired}} expired · {{withdrawn}} withdrawn",
+      "usedWarning_one": "The candidate has already used {{count}} credit from this purchase. Refunding money for used credits needs your explicit confirmation.",
+      "usedWarning_other": "The candidate has already used {{count}} credits from this purchase. Refunding money for used credits needs your explicit confirmation.",
+      "acknowledgeUsed": "I have checked the credits already used and want to refund anyway.",
+      "amount": "Amount to refund (rupees)",
+      "amountHint": "Suggested {{suggested}}: the amount paid, prorated to the unused credits. At most {{max}}.",
+      "amountError": "Enter an amount of at most {{max}} (at most 2 decimals).",
+      "useSuggested": "Use suggested",
+      "useFull": "Refund everything left",
+      "withdraw": "Unused credits to withdraw",
+      "withdrawHint": "At most {{count}}. Credits already used stay with the candidate.",
+      "withdrawAll_one": "Refunding everything left withdraws the unused credit ({{count}}).",
+      "withdrawAll_other": "Refunding everything left withdraws every unused credit ({{count}}).",
+      "withdrawError": "Enter a whole number from 0 to {{count}}.",
+      "explainMoney": "{{total}} is refunded to the original payment method through the payment provider.",
       "explainUsed": "Credits already used stay with the candidate; their interviews and reports are not affected.",
-      "acknowledge": "I understand that unused credits are withdrawn and this cannot be undone.",
+      "acknowledge": "I understand that the withdrawn credits are removed and this cannot be undone.",
       "confirm": "Refund {{total}}",
-      "notRefundable": "Only paid purchases with a captured payment can be refunded.",
+      "notRefundable": "Only paid purchases with a captured payment and an amount left to refund can be refunded.",
+      "inProgress": "A refund is in progress with the payment provider.",
       "result": {
         "processed_one": "Refund processed. {{count}} credit was withdrawn.",
         "processed_other": "Refund processed. {{count}} credits were withdrawn.",
-        "pending_one": "Refund requested; the provider is still processing it. {{count}} credit was withdrawn.",
-        "pending_other": "Refund requested; the provider is still processing it. {{count}} credits were withdrawn.",
-        "failed_one": "The provider reported the refund as failed. {{count}} credit was withdrawn; check the provider dashboard.",
-        "failed_other": "The provider reported the refund as failed. {{count}} credits were withdrawn; check the provider dashboard."
+        "pending_one": "Refund requested; the provider is still processing it. Credits are withdrawn when it completes.",
+        "pending_other": "Refund requested; the provider is still processing it. Credits are withdrawn when it completes.",
+        "failed_one": "The provider reported the refund as failed; check the provider dashboard.",
+        "failed_other": "The provider reported the refund as failed; check the provider dashboard."
       }
     },
     "reconcile": {
@@ -1022,6 +1062,60 @@
         "AMOUNT_MISMATCH": "Reconciled: the amount paid does not match the order. No credits were issued; investigate before acting.",
         "UNCHANGED": "Reconciled: nothing changed; the purchase already matches the provider."
       }
+    },
+    "credits": {
+      "title": "Credits",
+      "subtitle": "Look up a candidate's interview credits by email or user id, and grant or deduct credits by hand. Every adjustment needs a reason and is recorded in the audit log.",
+      "lookupLabel": "Find a candidate",
+      "user": "Email or user id",
+      "find": "Find",
+      "account": "Account",
+      "available": "Available",
+      "reserved": "Held by interviews in progress",
+      "lots": "Usable credit lots",
+      "lotSource": {
+        "FREE_GRANT": "Free credit",
+        "PURCHASE": "Purchase",
+        "ADMIN_ADJUSTMENT": "Adjustment"
+      },
+      "remaining": "Remaining",
+      "expires": "Expires",
+      "never": "Never",
+      "noLots": "No usable credits.",
+      "ledger": "Recent ledger entries",
+      "entry": "Entry",
+      "change": "Change",
+      "reason": "Reason",
+      "when": "When",
+      "noLedger": "No ledger entries yet.",
+      "entryType": {
+        "FREE_GRANT": "Free credit",
+        "PURCHASE": "Purchase",
+        "INTERVIEW_RESERVE": "Interview started",
+        "INTERVIEW_CONSUME": "Interview completed",
+        "INTERVIEW_REFUND": "Interview credit returned",
+        "ADMIN_ADJUSTMENT": "Adjustment",
+        "EXPIRY": "Expired"
+      },
+      "adjust": "Adjust credits",
+      "direction": "Adjustment",
+      "grant": "Grant credits",
+      "deduct": "Deduct credits",
+      "count": "Credits",
+      "countError": "Enter a whole number from 1 to 500.",
+      "expiresInDays": "Expires after (days, optional)",
+      "expiresInDaysHint": "Leave empty for credits that never expire.",
+      "expiresInDaysError": "Enter 1–3650 days, or leave it empty.",
+      "deductHint": "Deducts usable credits, earliest-expiring first. Credits held by an interview in progress cannot be deducted.",
+      "submitGrant_one": "Grant {{count}} credit",
+      "submitGrant_other": "Grant {{count}} credits",
+      "submitDeduct_one": "Deduct {{count}} credit",
+      "submitDeduct_other": "Deduct {{count}} credits",
+      "granted_one": "Granted {{count}} credit.",
+      "granted_other": "Granted {{count}} credits.",
+      "deducted_one": "Deducted {{count}} credit.",
+      "deducted_other": "Deducted {{count}} credits.",
+      "readOnly": "Only finance admins can adjust credits."
     }
   },
   "privacy": {
@@ -1785,6 +1879,31 @@
           "freeToPaidRate": "Enter a percentage from 0 to 100.",
           "grossMargin": "Enter a percentage from 0 to 100.",
           "maxFailureRate": "Enter a percentage from 0 to 100."
+        }
+      },
+      "billing": {
+        "title": "Billing",
+        "explain": "The seller details printed on purchase receipts. With a GSTIN, receipts are GST tax invoices (prices include GST); without one they are plain receipts.",
+        "save": "Save billing settings",
+        "fields": {
+          "legalName": "Legal name",
+          "address": "Registered address",
+          "gstin": "GSTIN",
+          "sacCode": "SAC code",
+          "taxRatePercent": "GST rate included in prices"
+        },
+        "hints": {
+          "legalName": "Leave blank to print the product name.",
+          "gstin": "Leave blank to issue plain receipts.",
+          "sacCode": "Printed on tax invoices, for example 999293.",
+          "taxRatePercent": "0–28%. Used only with a GSTIN."
+        },
+        "errors": {
+          "legalName": "Keep the legal name to 120 characters.",
+          "address": "Keep the address to 300 characters.",
+          "gstin": "Enter a valid 15-character GSTIN, or leave it blank.",
+          "sacCode": "Enter 4–8 digits, or leave it blank.",
+          "taxRatePercent": "Enter a percentage from 0 to 28."
         }
       }
     },

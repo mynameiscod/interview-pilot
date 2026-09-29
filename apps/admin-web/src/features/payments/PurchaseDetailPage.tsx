@@ -4,10 +4,12 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 import { useAdminAuth, useCan } from '../../app/session';
-import { ErrorAlert, LoadingRow, ReasonForm } from '../ai/shared';
+import { ErrorAlert, LoadingRow } from '../ai/shared';
+import { downloadExport } from '../campaigns/format';
 import { formatDateTime } from '../library/format';
 import { formatMoney, paymentsError } from './format';
 import { paymentsKeys, usePurchase } from './queries';
+import { RefundForm } from './RefundForm';
 import { PaymentStatusBadge, PurchaseStatusBadge } from './shared';
 
 type Notice = { tone: 'success' | 'warning' | 'danger'; text: string };
@@ -43,6 +45,9 @@ function Summary({ purchase }: { purchase: AdminPurchase }) {
             <dd className="col-sm-7">
               {purchase.userEmail ?? '—'}
               <div className="font-monospace cb-text-secondary">{purchase.userId}</div>
+              <Link to={`/credits?user=${encodeURIComponent(purchase.userId)}`}>
+                {t('payments.detail.adjustCredits')}
+              </Link>
             </dd>
             <dt className="col-sm-5">{t('payments.purchases.plan')}</dt>
             <dd className="col-sm-7">
@@ -67,6 +72,18 @@ function Summary({ purchase }: { purchase: AdminPurchase }) {
             <dd className="col-sm-7">{money(purchase.discountMinor)}</dd>
             <dt className="col-sm-5">{t('payments.purchases.total')}</dt>
             <dd className="col-sm-7 fw-semibold">{money(purchase.totalMinor)}</dd>
+            {purchase.refundedMinor > 0 && (
+              <>
+                <dt className="col-sm-5">{t('payments.detail.refunded')}</dt>
+                <dd className="col-sm-7">{money(purchase.refundedMinor)}</dd>
+              </>
+            )}
+            {purchase.invoiceNumber && (
+              <>
+                <dt className="col-sm-5">{t('payments.detail.invoiceNumber')}</dt>
+                <dd className="col-sm-7 font-monospace">{purchase.invoiceNumber}</dd>
+              </>
+            )}
             <dt className="col-sm-5">{t('library.created')}</dt>
             <dd className="col-sm-7">{date(purchase.createdAt)}</dd>
             <dt className="col-sm-5">{t('library.updated')}</dt>
@@ -124,10 +141,74 @@ function Summary({ purchase }: { purchase: AdminPurchase }) {
                   ))}
                 </ol>
               )}
+              {purchase.payment.refunds.length > 0 && (
+                <>
+                  <h3 className="h6 mt-3">{t('payments.detail.refunds')}</h3>
+                  <ul
+                    className="list-unstyled small mb-0"
+                    aria-label={t('payments.detail.refunds')}
+                  >
+                    {purchase.payment.refunds.map((r, i) => (
+                      <li key={r.id ?? i} className="mb-2">
+                        <span className="fw-semibold">
+                          {t('payments.detail.refundLine', {
+                            amount: money(r.amountMinor),
+                            at: formatDateTime(r.processedAt ?? r.requestedAt, i18n.language),
+                          })}
+                        </span>{' '}
+                        <span
+                          className={`badge ${r.status === 'failed' ? 'text-bg-danger' : r.status === 'processed' ? 'text-bg-success' : 'text-bg-warning'}`}
+                        >
+                          {t(`payments.detail.refundStatus.${r.status}`)}
+                        </span>
+                        {r.status === 'processed' && (
+                          <span className="cb-text-secondary">
+                            {' '}
+                            · {t('payments.detail.refundCredits', { count: r.creditsWithdrawn })}
+                          </span>
+                        )}
+                        {r.reason && <div className="cb-text-secondary">{r.reason}</div>}
+                        {r.id && <div className="font-monospace cb-text-secondary">{r.id}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </>
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ReceiptButton({ purchase }: { purchase: AdminPurchase }) {
+  const { t } = useTranslation();
+  const { manager } = useAdminAuth();
+  const [error, setError] = useState<string | null>(null);
+  const download = useMutation({
+    mutationFn: () =>
+      downloadExport(
+        manager,
+        `/admin/purchases/${encodeURIComponent(purchase.id)}/receipt`,
+        `receipt-${purchase.id}.pdf`,
+      ),
+    onSuccess: () => setError(null),
+    onError: () => setError(t('payments.detail.receiptError')),
+  });
+  if (!purchase.receiptAvailable) return null;
+  return (
+    <div className="mb-3">
+      <button
+        type="button"
+        className="btn btn-sm btn-outline-secondary"
+        disabled={download.isPending}
+        onClick={() => download.mutate()}
+      >
+        <i className="bi bi-file-earmark-pdf me-1" aria-hidden="true" />
+        {t('payments.detail.receipt')}
+      </button>
+      <ErrorAlert error={error} />
     </div>
   );
 }
@@ -144,33 +225,32 @@ function Actions({
   const { manager } = useAdminAuth();
   const queryClient = useQueryClient();
   const [refunding, setRefunding] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const refundable = purchase.status === 'PAID' && purchase.payment?.status === 'CAPTURED';
-  const total = formatMoney(purchase.totalMinor, purchase.currency);
+  const refundable =
+    purchase.status === 'PAID' &&
+    purchase.payment?.status === 'CAPTURED' &&
+    purchase.refundedMinor < purchase.totalMinor;
+  const refundInProgress =
+    purchase.payment?.status === 'REFUND_REQUESTED' ||
+    purchase.payment?.status === 'REFUND_PENDING';
 
   const updated = async (next: AdminPurchase) => {
     queryClient.setQueryData(paymentsKeys.purchase(purchase.id), next);
     await queryClient.invalidateQueries({ queryKey: paymentsKeys.purchases });
+    await queryClient.invalidateQueries({ queryKey: paymentsKeys.refundPreview(purchase.id) });
   };
 
-  const refund = useMutation({
-    mutationFn: (reason: string) =>
-      manager.api.post<AdminRefundResult>(`/admin/purchases/${purchase.id}/refund`, { reason }),
-    onSuccess: async (result) => {
-      setRefunding(false);
-      setConfirmed(false);
-      setError(null);
-      await updated(result.purchase);
-      onNotice({
-        tone: REFUND_TONE[result.refundStatus],
-        text: t(`payments.refund.result.${result.refundStatus}`, {
-          count: result.creditsWithdrawn,
-        }),
-      });
-    },
-    onError: (err) => setError(paymentsError(t, err)),
-  });
+  const refunded = async (result: AdminRefundResult) => {
+    setRefunding(false);
+    setError(null);
+    await updated(result.purchase);
+    onNotice({
+      tone: REFUND_TONE[result.refundStatus],
+      text: t(`payments.refund.result.${result.refundStatus}`, {
+        count: result.creditsWithdrawn,
+      }),
+    });
+  };
 
   const reconcile = useMutation({
     mutationFn: () =>
@@ -222,8 +302,12 @@ function Actions({
           <p id={`${id}-reconcile-hint`} className="small cb-text-secondary mt-2 mb-0">
             {t('payments.reconcile.hint')}
           </p>
-          {!refundable && (
-            <p className="small cb-text-secondary mb-0">{t('payments.refund.notRefundable')}</p>
+          {refundInProgress ? (
+            <p className="small cb-text-secondary mb-0">{t('payments.refund.inProgress')}</p>
+          ) : (
+            !refundable && (
+              <p className="small cb-text-secondary mb-0">{t('payments.refund.notRefundable')}</p>
+            )
           )}
           <div className="mt-2">
             <ErrorAlert error={error} />
@@ -231,38 +315,14 @@ function Actions({
         </>
       )}
       {refunding && (
-        <ReasonForm
-          submitLabel={t('payments.refund.confirm', { total })}
-          danger
-          pending={refund.isPending}
-          disabled={!confirmed}
-          error={error}
-          onSubmit={(reason) => refund.mutate(reason)}
+        <RefundForm
+          purchase={purchase}
+          onDone={(result) => void refunded(result)}
           onCancel={() => {
             setRefunding(false);
-            setConfirmed(false);
             setError(null);
           }}
-        >
-          <p className="fw-semibold mb-1">{t('payments.refund.title', { total })}</p>
-          <ul className="small">
-            <li>{t('payments.refund.explainMoney', { total })}</li>
-            <li>{t('payments.refund.explainCredits', { count: purchase.plan.credits })}</li>
-            <li>{t('payments.refund.explainUsed')}</li>
-          </ul>
-          <div className="form-check mb-2">
-            <input
-              id={`${id}-confirm`}
-              type="checkbox"
-              className="form-check-input"
-              checked={confirmed}
-              onChange={(e) => setConfirmed(e.target.checked)}
-            />
-            <label htmlFor={`${id}-confirm`} className="form-check-label">
-              {t('payments.refund.acknowledge')}
-            </label>
-          </div>
-        </ReasonForm>
+        />
       )}
     </section>
   );
@@ -299,6 +359,13 @@ export function PurchaseDetailPage() {
       {purchase.isError && <ErrorAlert error={paymentsError(t, purchase.error)} />}
       {purchase.data && (
         <>
+          {purchase.data.refundFailed && (
+            <div className="alert alert-danger py-2" role="alert">
+              <i className="bi bi-exclamation-octagon me-1" aria-hidden="true" />
+              {t('payments.detail.refundFailedAlert')}
+            </div>
+          )}
+          <ReceiptButton purchase={purchase.data} />
           <Summary purchase={purchase.data} />
           {canManage && <Actions purchase={purchase.data} onNotice={setNotice} />}
         </>

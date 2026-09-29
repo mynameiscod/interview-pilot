@@ -25,7 +25,13 @@ export function PurchasesPage() {
 
   return (
     <>
-      <h1 className="h3 mb-2">{t('payments.purchases.title')}</h1>
+      <div className="d-flex flex-wrap align-items-start justify-content-between gap-2">
+        <h1 className="h3 mb-2">{t('payments.purchases.title')}</h1>
+        <Link to="/credits" className="btn btn-sm btn-outline-primary">
+          <i className="bi bi-coin me-1" aria-hidden="true" />
+          {t('payments.purchases.adjustCredits')}
+        </Link>
+      </div>
       <p className="cb-text-secondary">{t('payments.purchases.subtitle')}</p>
       <form
         role="search"
@@ -129,16 +135,39 @@ export function PurchasesPage() {
                       </Link>
                     </th>
                     <td className="small">
-                      {p.userEmail ?? <span className="cb-text-secondary">{p.userId}</span>}
+                      <Link
+                        to={`/credits?user=${encodeURIComponent(p.userId)}`}
+                        aria-label={t('payments.purchases.userCreditsLabel', {
+                          user: p.userEmail ?? p.userId,
+                        })}
+                        className={p.userEmail ? undefined : 'cb-text-secondary'}
+                      >
+                        {p.userEmail ?? p.userId}
+                      </Link>
                     </td>
                     <td>
                       {p.plan.name}
                       <div className="small cb-text-secondary font-monospace">{p.plan.code}</div>
                     </td>
                     <td>{p.couponCode ? <code>{p.couponCode}</code> : '—'}</td>
-                    <td className="text-end">{formatMoney(p.totalMinor, p.currency)}</td>
+                    <td className="text-end">
+                      {formatMoney(p.totalMinor, p.currency)}
+                      {p.status === 'PAID' && p.refundedMinor > 0 && (
+                        <div className="small cb-text-secondary">
+                          {t('payments.purchases.partlyRefunded', {
+                            amount: formatMoney(p.refundedMinor, p.currency),
+                          })}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       <PurchaseStatusBadge status={p.status} />
+                      {p.refundFailed && (
+                        <span className="badge text-bg-danger ms-1">
+                          <i className="bi bi-exclamation-octagon me-1" aria-hidden="true" />
+                          {t('payments.purchases.refundFailed')}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

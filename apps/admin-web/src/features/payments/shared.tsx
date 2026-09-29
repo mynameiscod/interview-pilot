@@ -14,6 +14,7 @@ const PAYMENT_BADGE: Record<PaymentStatus, string> = {
   AUTHORIZED: 'text-bg-info',
   CAPTURED: 'text-bg-success',
   FAILED: 'text-bg-danger',
+  REFUND_REQUESTED: 'text-bg-warning',
   REFUND_PENDING: 'text-bg-warning',
   REFUNDED: 'text-bg-warning',
 };

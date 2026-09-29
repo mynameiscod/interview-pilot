@@ -1,5 +1,11 @@
 /** TEST SUPPORT ONLY: payments fixtures shared by the admin payments tests. */
-import type { AdminPurchase, CouponSummary, PlanSummary } from '@cbi/shared-types';
+import type {
+  AdminCreditAccount,
+  AdminPurchase,
+  CouponSummary,
+  PlanSummary,
+  RefundPreview,
+} from '@cbi/shared-types';
 
 const now = new Date().toISOString();
 
@@ -47,10 +53,14 @@ export const purchase = (overrides: Partial<AdminPurchase> = {}): AdminPurchase 
   totalMinor: 79_920,
   currency: 'INR',
   creditsIssuedAt: now,
+  refundedMinor: 0,
+  invoiceNumber: 'CPI/26-27/000042',
+  receiptAvailable: true,
   createdAt: now,
   updatedAt: now,
   userId: 'user-7',
   userEmail: 'asha@example.com',
+  refundFailed: false,
   payment: {
     provider: 'razorpay',
     orderId: 'order_ABC',
@@ -61,6 +71,44 @@ export const purchase = (overrides: Partial<AdminPurchase> = {}): AdminPurchase 
       { status: 'CREATED', at: now, source: 'checkout' },
       { status: 'CAPTURED', at: now, source: 'webhook' },
     ],
+    refunds: [],
   },
+  ...overrides,
+});
+
+export const refundPreview = (overrides: Partial<RefundPreview> = {}): RefundPreview => ({
+  currency: 'INR',
+  capturedMinor: 79_920,
+  refundedMinor: 0,
+  refundableMinor: 79_920,
+  refundable: true,
+  creditsGranted: 10,
+  creditsUnused: 10,
+  creditsUsed: 0,
+  creditsExpired: 0,
+  creditsWithdrawn: 0,
+  suggestedMinor: 79_920,
+  ...overrides,
+});
+
+export const creditAccount = (overrides: Partial<AdminCreditAccount> = {}): AdminCreditAccount => ({
+  userId: '0123456789abcdef01234567',
+  userEmail: 'asha@example.com',
+  balance: {
+    available: 3,
+    reserved: 1,
+    lots: [{ source: 'PURCHASE', remaining: 3, expiresAt: now }],
+  },
+  ledger: [
+    {
+      id: 'l1',
+      type: 'PURCHASE',
+      amount: 4,
+      refType: 'purchase',
+      refId: 'pur1',
+      reason: 'Sprint plan',
+      createdAt: now,
+    },
+  ],
   ...overrides,
 });

@@ -12,7 +12,7 @@ import { routes } from '../../app/routes';
 import { loadAdminUser } from '../../app/session';
 import { initI18n } from '../../i18n';
 import { formatMoney, paiseToRupees, rupeesToPaise } from './format';
-import { coupon, plan, purchase } from './test-fixtures';
+import { coupon, creditAccount, plan, purchase, refundPreview } from './test-fixtures';
 
 const REASON = 'Reason (recorded in the audit log)';
 
@@ -150,34 +150,36 @@ describe('purchases', () => {
     expect(within(history).getByText(/via webhook/)).toBeInTheDocument();
   });
 
-  it('requires a reason and confirmation before refunding', async () => {
+  it('requires a reason and confirmation before refunding in full', async () => {
     const refunded = purchase({
       status: 'REFUNDED',
+      refundedMinor: 79_920,
       payment: { ...purchase().payment!, status: 'REFUNDED' },
     });
     const { api } = await renderAt('/purchases/pur1', ['FINANCE_ADMIN'], {
       'GET /admin/purchases/pur1': () => ok(purchase()),
+      'GET /admin/purchases/pur1/refund-preview': () => ok(refundPreview()),
       'POST /admin/purchases/pur1/refund': () =>
         ok({ purchase: refunded, refundStatus: 'processed', creditsWithdrawn: 7 }),
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Refund' }));
     expect(
-      screen.getByText(
-        'Any unused credits from this purchase (10 credits granted) are withdrawn from the candidate.',
-      ),
+      await screen.findByText('10 granted · 0 used · 10 unused · 0 expired · 0 withdrawn'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        'Credits already used stay with the candidate; their interviews and reports are not affected.',
-      ),
+      screen.getByText('Refunding everything left withdraws every unused credit (10).'),
     ).toBeInTheDocument();
+    // Nothing used: no extra confirmation for used credits.
+    expect(
+      screen.queryByLabelText('I have checked the credits already used and want to refund anyway.'),
+    ).not.toBeInTheDocument();
     const submit = screen.getByRole('button', { name: 'Refund ₹799.20' });
     await user.type(screen.getByLabelText(REASON), 'Customer asked within 7 days');
     expect(submit).toBeDisabled();
     await user.click(
       screen.getByLabelText(
-        'I understand that unused credits are withdrawn and this cannot be undone.',
+        'I understand that the withdrawn credits are removed and this cannot be undone.',
       ),
     );
     expect(submit).toBeEnabled();
@@ -187,18 +189,136 @@ describe('purchases', () => {
     ).toBeInTheDocument();
     expect(bodyOf(api, 'POST /admin/purchases/pur1/refund')).toEqual({
       reason: 'Customer asked within 7 days',
+      amountMinor: 79_920,
+      acknowledgeUsedCredits: false,
     });
     expect(screen.queryByRole('button', { name: 'Refund' })).not.toBeInTheDocument();
+  });
+
+  it('shows used credits, requires confirming them and refunds part of the amount', async () => {
+    const { api } = await renderAt('/purchases/pur1', ['FINANCE_ADMIN'], {
+      'GET /admin/purchases/pur1': () => ok(purchase()),
+      'GET /admin/purchases/pur1/refund-preview': () =>
+        ok(
+          refundPreview({
+            creditsUsed: 4,
+            creditsUnused: 6,
+            suggestedMinor: 47_952,
+          }),
+        ),
+      'POST /admin/purchases/pur1/refund': () =>
+        ok({
+          purchase: purchase({ refundedMinor: 40_000 }),
+          refundStatus: 'processed',
+          creditsWithdrawn: 5,
+        }),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Refund' }));
+    expect(
+      await screen.findByText(/The candidate has already used 4 credits from this purchase/),
+    ).toBeInTheDocument();
+    // The prorated suggestion is the default amount.
+    const amount = screen.getByLabelText('Amount to refund (rupees)');
+    expect(amount).toHaveValue('479.52');
+    expect(screen.getByLabelText('Unused credits to withdraw')).toHaveValue('6');
+
+    await user.clear(amount);
+    await user.type(amount, '900');
+    await user.type(screen.getByLabelText(REASON), 'Partial goodwill refund');
+    await user.click(
+      screen.getByLabelText(
+        'I understand that the withdrawn credits are removed and this cannot be undone.',
+      ),
+    );
+    // Used credits need their own confirmation before the button works.
+    const submit = screen.getByRole('button', { name: /^Refund ₹/ });
+    expect(submit).toBeDisabled();
+    await user.click(
+      screen.getByLabelText('I have checked the credits already used and want to refund anyway.'),
+    );
+    await user.click(submit);
+    expect(
+      screen.getByText('Enter an amount of at most ₹799.20 (at most 2 decimals).'),
+    ).toBeInTheDocument();
+    expect(api.calls.some((c) => c.key === 'POST /admin/purchases/pur1/refund')).toBe(false);
+
+    await user.clear(amount);
+    await user.type(amount, '400');
+    const withdraw = screen.getByLabelText('Unused credits to withdraw');
+    await user.clear(withdraw);
+    await user.type(withdraw, '5');
+    await user.click(screen.getByRole('button', { name: 'Refund ₹400.00' }));
+    expect(
+      await screen.findByText('Refund processed. 5 credits were withdrawn.'),
+    ).toBeInTheDocument();
+    expect(bodyOf(api, 'POST /admin/purchases/pur1/refund')).toEqual({
+      reason: 'Partial goodwill refund',
+      amountMinor: 40_000,
+      withdrawCredits: 5,
+      acknowledgeUsedCredits: true,
+    });
+  });
+
+  it('flags a failed refund and lists the refunds', async () => {
+    const failed = purchase({
+      refundFailed: true,
+      payment: {
+        ...purchase().payment!,
+        refunds: [
+          {
+            id: 'rfnd_1',
+            amountMinor: 79_920,
+            status: 'failed',
+            creditsToWithdraw: 10,
+            creditsWithdrawn: 0,
+            reason: 'Customer request',
+            requestedAt: new Date().toISOString(),
+            processedAt: null,
+          },
+        ],
+      },
+    });
+    await renderAt('/purchases/pur1', ['SUPPORT_ADMIN'], {
+      'GET /admin/purchases/pur1': () => ok(failed),
+    });
+    expect(
+      await screen.findByText(/reported a refund of this purchase as failed/),
+    ).toBeInTheDocument();
+    const refunds = screen.getByRole('list', { name: 'Refunds' });
+    expect(within(refunds).getByText('Failed')).toBeInTheDocument();
+    expect(within(refunds).getByText('Customer request')).toBeInTheDocument();
+  });
+
+  it('marks failed refunds in the purchases list and links users to their credits', async () => {
+    const { router } = await renderAt('/purchases', ['SUPPORT_ADMIN'], {
+      'GET /admin/purchases': () => ok([purchase({ refundFailed: true, refundedMinor: 10_000 })]),
+    });
+    const row = within(await screen.findByRole('table')).getByRole('row', { name: /pur1/ });
+    expect(within(row).getByText('Refund failed')).toBeInTheDocument();
+    expect(within(row).getByText('₹100.00 refunded')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(within(row).getByRole('link', { name: 'Credits of asha@example.com' }));
+    await expect.poll(() => router.state.location.search).toBe('?user=user-7');
+  });
+
+  it('downloads the receipt of a paid purchase', async () => {
+    await renderAt('/purchases/pur1', ['SUPPORT_ADMIN'], {
+      'GET /admin/purchases/pur1': () => ok(purchase()),
+    });
+    expect(await screen.findByRole('button', { name: 'Download receipt' })).toBeInTheDocument();
+    expect(screen.getByText('CPI/26-27/000042')).toBeInTheDocument();
   });
 
   it('explains a refund the provider cannot process right now', async () => {
     await renderAt('/purchases/pur1', ['FINANCE_ADMIN'], {
       'GET /admin/purchases/pur1': () => ok(purchase()),
+      'GET /admin/purchases/pur1/refund-preview': () => ok(refundPreview()),
       'POST /admin/purchases/pur1/refund': () => fail(503, 'PROVIDER_UNAVAILABLE'),
     });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: 'Refund' }));
-    await user.type(screen.getByLabelText(REASON), 'Duplicate payment');
+    await user.type(await screen.findByLabelText(REASON), 'Duplicate payment');
     await user.click(screen.getByRole('checkbox'));
     await user.click(screen.getByRole('button', { name: 'Refund ₹799.20' }));
     expect(
@@ -216,7 +336,9 @@ describe('purchases', () => {
     });
     const user = userEvent.setup();
     expect(
-      await screen.findByText('Only paid purchases with a captured payment can be refunded.'),
+      await screen.findByText(
+        'Only paid purchases with a captured payment and an amount left to refund can be refunded.',
+      ),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Reconcile with provider' }));
     expect(
@@ -235,6 +357,75 @@ describe('purchases', () => {
     expect(
       screen.queryByRole('button', { name: 'Reconcile with provider' }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('credits', () => {
+  it('looks up a candidate and grants credits with a reason', async () => {
+    const account = creditAccount();
+    const { api } = await renderAt('/credits?user=asha@example.com', ['FINANCE_ADMIN'], {
+      'GET /admin/credits/account': () => ok(account),
+      'POST /admin/credits/adjustments': () =>
+        ok(creditAccount({ balance: { ...account.balance, available: 5 } })),
+    });
+    const region = await screen.findByRole('region', { name: 'Account' });
+    expect(within(region).getByText('asha@example.com')).toBeInTheDocument();
+    expect(within(region).getByText('Sprint plan')).toBeInTheDocument();
+    const user = userEvent.setup();
+    const count = screen.getByLabelText('Credits');
+    await user.clear(count);
+    await user.type(count, '2');
+    await user.type(screen.getByLabelText('Expires after (days, optional)'), '30');
+    await user.type(screen.getByLabelText(REASON), 'Interview failed on our side');
+    await user.click(screen.getByRole('button', { name: 'Grant 2 credits' }));
+    expect(await screen.findByText('Granted 2 credits.')).toBeInTheDocument();
+    expect(bodyOf(api, 'POST /admin/credits/adjustments')).toEqual({
+      userId: account.userId,
+      delta: 2,
+      reason: 'Interview failed on our side',
+      expiresInDays: 30,
+    });
+    expect(within(region).getByText('5')).toBeInTheDocument();
+  });
+
+  it('deducts credits and explains when there are not enough', async () => {
+    const { api } = await renderAt('/credits?user=user-7', ['SUPER_ADMIN'], {
+      'GET /admin/credits/account': () => ok(creditAccount()),
+      'POST /admin/credits/adjustments': () => fail(409, 'INSUFFICIENT_CREDITS'),
+    });
+    await screen.findByRole('region', { name: 'Account' });
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Deduct credits'));
+    const count = screen.getByLabelText('Credits');
+    await user.clear(count);
+    await user.type(count, '0');
+    await user.type(screen.getByLabelText(REASON), 'Duplicate grant');
+    await user.click(screen.getByRole('button', { name: 'Deduct 0 credits' }));
+    expect(screen.getByText('Enter a whole number from 1 to 500.')).toBeInTheDocument();
+    expect(api.calls.some((c) => c.key === 'POST /admin/credits/adjustments')).toBe(false);
+    await user.clear(count);
+    await user.type(count, '9');
+    await user.click(screen.getByRole('button', { name: 'Deduct 9 credits' }));
+    await screen.findByRole('alert');
+    expect(bodyOf(api, 'POST /admin/credits/adjustments')).toMatchObject({
+      delta: -9,
+      expiresInDays: null,
+    });
+  });
+
+  it('is read-only for support admins and reachable from purchases', async () => {
+    const { router } = await renderAt('/purchases', ['SUPPORT_ADMIN'], {
+      'GET /admin/purchases': () => ok([]),
+      'GET /admin/credits/account': () => ok(creditAccount()),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('link', { name: 'Adjust credits' }));
+    await expect.poll(() => router.state.location.pathname).toBe('/credits');
+    await user.type(await screen.findByLabelText('Email or user id'), 'asha@example.com');
+    await user.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByRole('region', { name: 'Account' })).toBeInTheDocument();
+    expect(screen.getByText('Only finance admins can adjust credits.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Grant/ })).not.toBeInTheDocument();
   });
 });
 
