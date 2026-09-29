@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Redis } from '@cbi/db';
 import type { RequestHandler } from 'express';
 import { ipKeyGenerator, rateLimit, type Options } from 'express-rate-limit';
@@ -7,6 +8,8 @@ import { AppError } from '../lib/errors.js';
 export type RateLimiterName =
   | 'public'
   | 'auth'
+  | 'refresh'
+  | 'refreshSession'
   | 'otpRequest'
   | 'otpVerify'
   | 'admin'
@@ -18,7 +21,9 @@ export type RateLimiterName =
   | 'voice'
   | 'media'
   | 'coding'
-  | 'analytics';
+  | 'analytics'
+  | 'jobCreate'
+  | 'dataExport';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -29,6 +34,14 @@ export type RateLimiterName =
 const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpen: boolean }> = {
   public: { windowMs: 60_000, limit: 300, failOpen: true },
   auth: { windowMs: 60_000, limit: 30, failOpen: false },
+  /**
+   * Token refresh, per IP. Much higher than `auth`: a campus or office NAT
+   * puts hundreds of students behind one address, and every open tab
+   * refreshes about every 10 minutes. `refreshSession` bounds each session.
+   */
+  refresh: { windowMs: 60_000, limit: 600, failOpen: false },
+  /** Token refresh, per session (refresh cookie): a runaway tab cannot starve its neighbours. */
+  refreshSession: { windowMs: 60_000, limit: 20, failOpen: false },
   otpRequest: { windowMs: 15 * 60_000, limit: 10, failOpen: false },
   otpVerify: { windowMs: 60_000, limit: 15, failOpen: false },
   admin: { windowMs: 60_000, limit: 300, failOpen: true },
@@ -50,7 +63,21 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   coding: { windowMs: 10 * 60_000, limit: 60, failOpen: false },
   /** Analytics batches (losing some events is fine when Redis is down). */
   analytics: { windowMs: 60_000, limit: 60, failOpen: true },
+  /** Job descriptions created from pasted text or links (each starts extraction work). */
+  jobCreate: { windowMs: 10 * 60_000, limit: 30, failOpen: false },
+  /** Data exports: each reads everything the person has; a few per hour is plenty. */
+  dataExport: { windowMs: 60 * 60_000, limit: 5, failOpen: false },
 };
+
+/**
+ * Key for per-session limits on cookie-authenticated endpoints: a hash of the
+ * cookies sent to the auth path (in practice, the refresh cookie), else the IP.
+ */
+export function sessionKey(cookieHeader: string | undefined, ip: string): string {
+  return cookieHeader
+    ? `session:${createHash('sha256').update(cookieHeader).digest('hex').slice(0, 32)}`
+    : ipKeyGenerator(ip);
+}
 
 /** Limiters mounted after authentication count per user rather than per IP. */
 const PER_USER = new Set<RateLimiterName>([
@@ -63,6 +90,8 @@ const PER_USER = new Set<RateLimiterName>([
   'voice',
   'media',
   'coding',
+  'jobCreate',
+  'dataExport',
 ]);
 
 /** @param redis null → in-process memory counters (single-process tests only). */
@@ -76,7 +105,11 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
       legacyHeaders: false,
       passOnStoreError: failOpen,
       keyGenerator: (req) =>
-        PER_USER.has(name) && req.auth ? `user:${req.auth.userId}` : ipKeyGenerator(req.ip ?? ''),
+        name === 'refreshSession'
+          ? sessionKey(req.headers.cookie, req.ip ?? '')
+          : PER_USER.has(name) && req.auth
+            ? `user:${req.auth.userId}`
+            : ipKeyGenerator(req.ip ?? ''),
       handler: (_req, _res, next) =>
         next(new AppError(429, 'RATE_LIMITED', 'Too many requests. Please wait and try again.')),
     };
@@ -92,6 +125,8 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
   return {
     public: make('public'),
     auth: make('auth'),
+    refresh: make('refresh'),
+    refreshSession: make('refreshSession'),
     otpRequest: make('otpRequest'),
     otpVerify: make('otpVerify'),
     admin: make('admin'),
@@ -104,5 +139,7 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     media: make('media'),
     coding: make('coding'),
     analytics: make('analytics'),
+    jobCreate: make('jobCreate'),
+    dataExport: make('dataExport'),
   };
 }

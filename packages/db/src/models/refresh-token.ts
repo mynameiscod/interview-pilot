@@ -17,9 +17,22 @@ const refreshTokenSchema = new Schema(
     revokedAt: { type: Date },
     revokedReason: {
       type: String,
-      enum: ['LOGOUT', 'LOGOUT_ALL', 'REUSE_DETECTED', 'SUSPENDED', 'ROLE_CHANGE'],
+      enum: [
+        'LOGOUT',
+        'LOGOUT_ALL',
+        'REUSE_DETECTED',
+        'SUSPENDED',
+        'ROLE_CHANGE',
+        'DEVICE_REVOKED',
+        'ACCOUNT_DELETION',
+      ],
     },
     expiresAt: { type: Date, required: true },
+    /**
+     * When the family's first token was issued (the sign-in). Copied to every
+     * rotated token so the absolute session lifetime is measured from sign-in.
+     */
+    familyCreatedAt: { type: Date },
     userAgent: { type: String, maxlength: 200 },
     ipHash: { type: String },
   },

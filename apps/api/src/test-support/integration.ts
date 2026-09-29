@@ -12,7 +12,13 @@ import {
   mongoose,
   type Redis,
 } from '@cbi/db';
-import { CSRF_HEADER, OTP_LENGTH, type SessionAudience } from '@cbi/shared-types';
+import { totpCode } from '@cbi/auth-core';
+import {
+  CSRF_HEADER,
+  OTP_LENGTH,
+  type MfaChallenge,
+  type SessionAudience,
+} from '@cbi/shared-types';
 import type { Express } from 'express';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
@@ -78,6 +84,31 @@ export function extractCode(text: string): string {
 const base = (audience: SessionAudience) =>
   audience === 'admin' ? '/api/v1/admin/auth' : '/api/v1/auth';
 
+/** Recovery codes from authenticator set-ups in this run (to pass later VERIFY steps). */
+const recoveryCodes = new Map<string, string[]>();
+
+/**
+ * Finishes the admin second factor for tests: enrols with the returned secret
+ * (ENROLL), or uses a recovery code saved from an earlier enrolment (VERIFY).
+ */
+export async function completeMfa(
+  agent: ReturnType<typeof request.agent>,
+  challenge: MfaChallenge,
+  userKey: string,
+) {
+  const body =
+    challenge.mode === 'ENROLL'
+      ? { mfaToken: challenge.mfaToken, code: totpCode(challenge.enrollment!.secret) }
+      : { mfaToken: challenge.mfaToken, recoveryCode: recoveryCodes.get(userKey)?.pop() };
+  const res = await agent
+    .post('/api/v1/admin/auth/mfa/verify')
+    .set('Origin', TEST_ORIGIN)
+    .send(body)
+    .expect(200);
+  if (res.body.data.recoveryCodes) recoveryCodes.set(userKey, [...res.body.data.recoveryCodes]);
+  return res;
+}
+
 /**
  * Full email-OTP sign-in through the public API, reading the code from the
  * recording email provider. Returns the agent (which holds the refresh cookie).
@@ -96,11 +127,15 @@ export async function signInWithEmail(
     .expect(202);
   const message = [...sent].reverse().find((m) => m.to === email.toLowerCase());
   if (!message) throw new Error(`No email sent to ${email}`);
-  const verified = await agent
+  let verified = await agent
     .post(`${base(audience)}/otp/verify`)
     .set('Origin', TEST_ORIGIN)
     .send({ challengeId: requested.body.data.challengeId, code: extractCode(message.text) })
     .expect(200);
+  // Super admins (and, when configured, every admin) complete the authenticator step.
+  if (verified.body.data.mfaRequired) {
+    verified = await completeMfa(agent, verified.body.data as MfaChallenge, email.toLowerCase());
+  }
   return {
     agent,
     accessToken: verified.body.data.accessToken as string,

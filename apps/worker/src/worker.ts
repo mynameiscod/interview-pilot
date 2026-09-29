@@ -29,6 +29,7 @@ import {
 import { sweepLiveSessions } from './processors/live-sweep.js';
 import { reconcilePayments } from './processors/payment-reconcile.js';
 import { runMediaSweep } from './processors/media-sweep.js';
+import { runAccountErasure } from './processors/account-erasure.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
@@ -37,6 +38,7 @@ export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
 export const MEDIA_SWEEP_JOB = 'media-sweep' as const;
 export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
+export const ACCOUNT_ERASURE_JOB = 'account-erasure' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -59,6 +61,8 @@ export interface WorkerRuntimeOptions {
   payments?: { gateway: ReconcileGateway; intervalMs: number };
   /** Recording finalization and retention; omit to disable. */
   media?: { storage: MediaStorage; intervalMs: number };
+  /** Erasure of accounts past their deletion grace period (DPDP); omit to disable. */
+  erasure?: { storage: MediaStorage; intervalMs: number };
   /** Analytics rollups for today and yesterday; omit to disable. */
   analyticsRollupIntervalMs?: number;
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
@@ -136,6 +140,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.erasure) {
+    await systemQueue.upsertJobScheduler(
+      ACCOUNT_ERASURE_JOB,
+      { every: opts.erasure.intervalMs },
+      { name: ACCOUNT_ERASURE_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -179,6 +191,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
           case MEDIA_SWEEP_JOB: {
             if (!opts.media) return;
             await runMediaSweep({ storage: opts.media.storage, logger: opts.logger });
+            return;
+          }
+          case ACCOUNT_ERASURE_JOB: {
+            if (!opts.erasure) return;
+            await runAccountErasure({ storage: opts.erasure.storage, logger: opts.logger });
             return;
           }
           case ANALYTICS_ROLLUP_JOB: {

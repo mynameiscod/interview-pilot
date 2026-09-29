@@ -1,7 +1,9 @@
 import { AuditLogModel, mongoose } from '@cbi/db';
 import {
   AuditLogQuery,
+  CandidateSearchQuery,
   InviteAdminBody,
+  SuspendCandidateBody,
   permissionsFor,
   RevokeAdminAccessBody,
   UpdateAdminRolesBody,
@@ -36,6 +38,7 @@ export function adminRouter(c: Container): Router {
         ...me,
         permissions: [...permissionsFor(auth.adminRoles)],
         hasPassword: await c.passwords.hasPassword(auth.userId),
+        mfaEnabled: await c.mfa.enabled(auth.userId),
       },
     };
     res.set('Cache-Control', 'no-store').json(body);
@@ -71,6 +74,54 @@ export function adminRouter(c: Container): Router {
       await c.adminUsers.revokeAccess(
         String(req.params.id),
         body.reason,
+        requireAuth(req).userId,
+        clientContext(req),
+      );
+      res.status(204).end();
+    },
+  );
+
+  // ---- Candidates (support console) --------------------------------------
+  router.get('/candidates', requirePermission('candidates.read'), async (req, res) => {
+    const query = CandidateSearchQuery.parse(req.query);
+    res.set('Cache-Control', 'no-store').json({
+      data: await c.candidatesAdmin.search(query, requireAuth(req).userId, clientContext(req)),
+    });
+  });
+
+  router.get('/candidates/:id', requirePermission('candidates.read'), async (req, res) => {
+    res.set('Cache-Control', 'no-store').json({
+      data: await c.candidatesAdmin.detail(
+        String(req.params.id),
+        requireAuth(req).userId,
+        clientContext(req),
+      ),
+    });
+  });
+
+  router.post(
+    '/candidates/:id/suspend',
+    requirePermission('candidates.manage'),
+    async (req, res) => {
+      const { reason } = SuspendCandidateBody.parse(req.body);
+      await c.candidatesAdmin.suspend(
+        String(req.params.id),
+        reason,
+        requireAuth(req).userId,
+        clientContext(req),
+      );
+      res.status(204).end();
+    },
+  );
+
+  router.post(
+    '/candidates/:id/reinstate',
+    requirePermission('candidates.manage'),
+    async (req, res) => {
+      const { reason } = SuspendCandidateBody.parse(req.body);
+      await c.candidatesAdmin.reinstate(
+        String(req.params.id),
+        reason,
         requireAuth(req).userId,
         clientContext(req),
       );

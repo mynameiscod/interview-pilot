@@ -46,7 +46,36 @@ const contactField = (channel: OtpChannel) =>
     ? ({ contact: 'primaryEmail', verified: 'emailVerifiedAt' } as const)
     : ({ contact: 'primaryMobile', verified: 'mobileVerifiedAt' } as const);
 
+/**
+ * Signing in again during the deletion grace period cancels the deletion
+ * (candidate app only). Returns true when it did.
+ */
+export function cancelPendingDeletion(
+  user: Pick<UserDocument, 'status' | 'deletion'>,
+  audience: SessionAudience,
+  now = new Date(),
+): boolean {
+  if (
+    audience !== 'candidate' ||
+    user.status !== 'DELETION_PENDING' ||
+    !user.deletion ||
+    user.deletion.scheduledFor.getTime() <= now.getTime()
+  ) {
+    return false;
+  }
+  user.status = 'ACTIVE';
+  user.deletion = undefined;
+  return true;
+}
+
 function assertCanSignIn(user: UserDocument, audience: SessionAudience) {
+  if (user.status === 'DELETION_PENDING' || user.status === 'DELETED') {
+    throw new AppError(
+      403,
+      'ACCOUNT_DELETION_PENDING',
+      'This account is being deleted. Sign in on the candidate app to cancel.',
+    );
+  }
   if (user.status !== 'ACTIVE') {
     throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This account is suspended.');
   }
@@ -113,7 +142,7 @@ export function createAccountService() {
       channel: OtpChannel,
       destination: string,
       audience: SessionAudience,
-    ): Promise<{ user: UserDocument; created: boolean }> {
+    ): Promise<{ user: UserDocument; created: boolean; deletionCancelled: boolean }> {
       return inTransaction(async (session) => {
         let user = await findUserByContact(channel, destination, session);
         let created = false;
@@ -130,9 +159,10 @@ export function createAccountService() {
           subject: destination,
         }).session(session);
         if (!hasIdentity) await attachIdentity(user!, channel, destination, session);
+        const deletionCancelled = cancelPendingDeletion(user!, audience);
         assertCanSignIn(user!, audience);
         await markLogin(user!, session);
-        return { user: user!, created };
+        return { user: user!, created, deletionCancelled };
       });
     },
 
@@ -143,7 +173,7 @@ export function createAccountService() {
     loginWithGoogle(
       claims: GoogleIdentityClaims,
       audience: SessionAudience,
-    ): Promise<{ user: UserDocument; created: boolean }> {
+    ): Promise<{ user: UserDocument; created: boolean; deletionCancelled: boolean }> {
       return inTransaction(async (session) => {
         const identity = await AuthIdentityModel.findOne(
           { provider: 'GOOGLE', subject: claims.sub },
@@ -172,9 +202,10 @@ export function createAccountService() {
           }).session(session);
           if (!hasEmail) await attachIdentity(user!, 'EMAIL', claims.email, session);
         }
+        const deletionCancelled = cancelPendingDeletion(user!, audience);
         assertCanSignIn(user!, audience);
         await markLogin(user!, session);
-        return { user: user!, created };
+        return { user: user!, created, deletionCancelled };
       });
     },
 

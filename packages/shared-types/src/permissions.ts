@@ -19,6 +19,8 @@ export const Permission = z.enum([
   'admin_users.manage',
   'audit.read',
   'candidates.read',
+  /** Suspend and reinstate candidate accounts. */
+  'candidates.manage',
   // AI provider layer (Phase 2)
   'ai.read',
   'ai.manage',
@@ -57,6 +59,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'admin_users.read',
     'audit.read',
     'candidates.read',
+    'candidates.manage',
     'ai.read',
     'ai_usage.read',
     'prompts.read',

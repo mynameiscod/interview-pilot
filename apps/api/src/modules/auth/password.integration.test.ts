@@ -4,7 +4,7 @@ import type { AdminRole } from '@cbi/shared-types';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildTestApp, TEST_ORIGIN } from '../../test-support/harness.js';
-import { useIntegrationServices } from '../../test-support/integration.js';
+import { completeMfa, useIntegrationServices } from '../../test-support/integration.js';
 
 const { redis } = useIntegrationServices();
 
@@ -32,10 +32,24 @@ const login = (email: string, password: string) =>
     .set('Origin', TEST_ORIGIN)
     .send({ email, password });
 
+/** Password, then the authenticator step super admins must complete. */
+async function signIn(email: string, password: string) {
+  const agent = request.agent(t.app);
+  const first = await agent
+    .post('/api/v1/admin/auth/password/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ email, password })
+    .expect(200);
+  expect(first.body.data.mfaRequired).toBe(true);
+  // No session (and no refresh cookie) before the second factor.
+  expect(first.headers['set-cookie']).toBeUndefined();
+  return completeMfa(agent, first.body.data, email.toLowerCase());
+}
+
 describe('admin password sign-in', () => {
   it('signs a super admin in with email and password', async () => {
     const owner = await user('owner@codebegun.com');
-    const res = await login('Owner@CodeBegun.com', PASSWORD).expect(200);
+    const res = await signIn('Owner@CodeBegun.com', PASSWORD);
     expect(res.body.data.user).toMatchObject({
       id: String(owner._id),
       adminRoles: ['SUPER_ADMIN'],
@@ -46,7 +60,7 @@ describe('admin password sign-in', () => {
       .set('Origin', TEST_ORIGIN)
       .set('Authorization', `Bearer ${res.body.data.accessToken}`)
       .expect(200);
-    expect(me.body.data).toMatchObject({ hasPassword: true });
+    expect(me.body.data).toMatchObject({ hasPassword: true, mfaEnabled: true });
     expect(me.body.data.permissions).toContain('system.manage');
   });
 
@@ -78,7 +92,7 @@ describe('admin password sign-in', () => {
 
   it('changes the password only with the current one, and not for candidates', async () => {
     await user('owner@codebegun.com');
-    const session = (await login('owner@codebegun.com', PASSWORD).expect(200)).body.data;
+    const session = (await signIn('owner@codebegun.com', PASSWORD)).body.data;
     const change = (body: object) =>
       request(t.app)
         .post('/api/v1/admin/auth/password')

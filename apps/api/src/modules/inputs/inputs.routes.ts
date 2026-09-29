@@ -44,9 +44,10 @@ export function jobsRouter(c: Container): Router {
   const upload = singleFileUpload(c.env.UPLOAD_MAX_MB * 1024 * 1024);
   router.use(authenticate('candidate', c), noStore);
 
-  router.post('/', async (req, res, next) => {
+  // Every source is limited per user (plus a daily quota in the service); URL sources
+  // make outbound requests and also get their own, tighter limit.
+  router.post('/', c.limiters.jobCreate, async (req, res, next) => {
     const body = CreateJobTargetBody.parse(req.body);
-    // Only URL sources make outbound requests; they get their own, tighter limit.
     const create = async () => {
       res.status(201).json({ data: await c.inputs.createJobTarget(requireAuth(req).userId, body) });
     };
@@ -56,7 +57,7 @@ export function jobsRouter(c: Container): Router {
       await create();
     }
   });
-  router.post('/upload', c.limiters.upload, upload, async (req, res) => {
+  router.post('/upload', c.limiters.jobCreate, c.limiters.upload, upload, async (req, res) => {
     const fields = UploadJobTargetFields.parse(req.body ?? {});
     res
       .status(201)
@@ -73,6 +74,14 @@ export function jobsRouter(c: Container): Router {
     res.json({
       data: await c.inputs.updateJobTarget(requireAuth(req).userId, String(req.params.id), body),
     });
+  });
+  router.delete('/:id', async (req, res) => {
+    await c.inputs.deleteJobTarget(
+      requireAuth(req).userId,
+      String(req.params.id),
+      clientContext(req),
+    );
+    res.status(204).end();
   });
   router.get('/:id/status', async (req, res) => {
     const target = await c.inputs.getJobTarget(requireAuth(req).userId, String(req.params.id));

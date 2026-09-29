@@ -84,5 +84,86 @@ export const AdminMeResponse = MeResponse.extend({
   permissions: z.array(Permission),
   /** Whether this admin can sign in with a password (set on the server or in the console). */
   hasPassword: z.boolean().optional(),
+  /** Whether an authenticator app (TOTP) is set up for this admin. */
+  mfaEnabled: z.boolean().optional(),
 });
 export type AdminMeResponse = z.infer<typeof AdminMeResponse>;
+
+// ---- Candidates console (support) ------------------------------------------
+
+export const CandidateSearchQuery = z.object({
+  /** Email, mobile number or (part of) a name. Empty lists the newest candidates. */
+  q: z.string().trim().max(120).default(''),
+  status: UserStatus.optional(),
+  /** Cursor: candidates created before this user id. */
+  before: z.string().max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(25),
+});
+export type CandidateSearchQuery = z.infer<typeof CandidateSearchQuery>;
+
+export const CandidateListItem = z.object({
+  id: z.string(),
+  displayName: z.string().nullable(),
+  email: z.string().nullable(),
+  mobile: z.string().nullable(),
+  status: UserStatus,
+  lastLoginAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type CandidateListItem = z.infer<typeof CandidateListItem>;
+
+export const CandidatePage = z.object({
+  items: z.array(CandidateListItem),
+  nextCursor: z.string().nullable(),
+});
+export type CandidatePage = z.infer<typeof CandidatePage>;
+
+export const CandidateDetail = z.object({
+  candidate: CandidateListItem.extend({
+    experienceLevel: z.string().nullable(),
+    currentRole: z.string().nullable(),
+    preferredInterviewLanguage: z.string(),
+    productUpdatesOptIn: z.boolean(),
+    identities: z.array(z.object({ provider: z.string(), display: z.string() })),
+    /** Set while an account deletion is pending. */
+    deletionScheduledFor: z.iso.datetime().nullable(),
+    suspension: z
+      .object({ at: z.iso.datetime(), reason: z.string(), by: z.string().nullable() })
+      .nullable(),
+  }),
+  credits: z.object({ available: z.number().int(), reserved: z.number().int() }),
+  interviews: z.array(
+    z.object({
+      id: z.string(),
+      state: z.string(),
+      mode: z.string().nullable(),
+      roleTitle: z.string().nullable(),
+      campaign: z.string().nullable(),
+      createdAt: z.iso.datetime(),
+    }),
+  ),
+  purchases: z.array(
+    z.object({
+      id: z.string(),
+      planName: z.string().nullable(),
+      status: z.string(),
+      amountPaise: z.number().int().nullable(),
+      createdAt: z.iso.datetime(),
+    }),
+  ),
+  consents: z.array(
+    z.object({
+      type: z.string(),
+      accepted: z.boolean(),
+      version: z.number().int().nullable(),
+      at: z.iso.datetime(),
+    }),
+  ),
+});
+export type CandidateDetail = z.infer<typeof CandidateDetail>;
+
+/** Suspending ends every session at once; the reason is audited and shown to other admins. */
+export const SuspendCandidateBody = z.object({
+  reason: z.string().trim().min(3).max(300),
+});
+export type SuspendCandidateBody = z.infer<typeof SuspendCandidateBody>;

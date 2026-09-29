@@ -62,6 +62,76 @@ export const SessionResponse = z.object({
 });
 export type SessionResponse = z.infer<typeof SessionResponse>;
 
+// ---- Admin two-factor authentication (TOTP, RFC 6238) ----------------------
+
+export const TOTP_DIGITS = 6;
+export const RECOVERY_CODE_COUNT = 10;
+
+/** A 6-digit authenticator code. */
+export const TotpCode = z
+  .string()
+  .trim()
+  .regex(new RegExp(`^\\d{${TOTP_DIGITS}}$`), 'Enter the 6-digit code');
+
+/**
+ * Admin sign-in answered after the first factor (password, email code or
+ * Google) when a second factor is needed. `ENROLL`: the admin must set up an
+ * authenticator now (2FA is required for their role and not yet enabled).
+ */
+export const MfaChallenge = z.object({
+  mfaRequired: z.literal(true),
+  /** Opaque, single-use, short-lived; exchanged at `/admin/auth/mfa/verify`. */
+  mfaToken: z.string(),
+  mode: z.enum(['VERIFY', 'ENROLL']),
+  /** Only for ENROLL: the new secret (base32) and its otpauth:// URI. */
+  enrollment: z.object({ secret: z.string(), otpauthUri: z.string() }).nullable(),
+  expiresAt: z.iso.datetime(),
+});
+export type MfaChallenge = z.infer<typeof MfaChallenge>;
+
+/** First-factor admin sign-in: a session, or a second-factor challenge. */
+export const AdminSignInResponse = z.union([SessionResponse, MfaChallenge]);
+export type AdminSignInResponse = z.infer<typeof AdminSignInResponse>;
+
+export const isMfaChallenge = (r: AdminSignInResponse): r is MfaChallenge =>
+  'mfaRequired' in r && r.mfaRequired === true;
+
+/** Second step: an authenticator code, or one of the recovery codes (VERIFY mode only). */
+export const MfaVerifyBody = z
+  .object({
+    mfaToken: z.string().min(20).max(200),
+    code: TotpCode.optional(),
+    recoveryCode: z.string().trim().min(8).max(40).optional(),
+  })
+  .refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), {
+    message: 'Enter an authenticator code or a recovery code',
+  });
+export type MfaVerifyBody = z.infer<typeof MfaVerifyBody>;
+
+/** Session after the second factor; recovery codes are shown once, after enrolment. */
+export const MfaSessionResponse = SessionResponse.extend({
+  recoveryCodes: z.array(z.string()).nullable(),
+});
+export type MfaSessionResponse = z.infer<typeof MfaSessionResponse>;
+
+export const MfaStatus = z.object({
+  enabled: z.boolean(),
+  /** 2FA is mandatory for this admin (by role or platform setting); it cannot be turned off. */
+  required: z.boolean(),
+  enabledAt: z.iso.datetime().nullable(),
+  recoveryCodesRemaining: z.number().int().min(0),
+});
+export type MfaStatus = z.infer<typeof MfaStatus>;
+
+export const MfaEnrollment = z.object({ secret: z.string(), otpauthUri: z.string() });
+export type MfaEnrollment = z.infer<typeof MfaEnrollment>;
+
+export const MfaCodeBody = z.object({ code: TotpCode });
+export type MfaCodeBody = z.infer<typeof MfaCodeBody>;
+
+export const MfaRecoveryCodes = z.object({ recoveryCodes: z.array(z.string()) });
+export type MfaRecoveryCodes = z.infer<typeof MfaRecoveryCodes>;
+
 export const AuthProvidersResponse = z.object({
   google: z.object({ enabled: z.boolean() }),
   email: z.object({ enabled: z.boolean() }),

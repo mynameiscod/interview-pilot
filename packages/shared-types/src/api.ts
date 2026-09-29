@@ -60,6 +60,16 @@ export const ErrorCode = z.enum([
   'INVALID_CREDENTIALS',
   /** Too many wrong passwords: password sign-in is paused for a while. */
   'ACCOUNT_LOCKED',
+  // Admin two-factor authentication
+  /** The authenticator or recovery code is wrong. */
+  'MFA_INVALID',
+  /** The sign-in step expired or was already used: start signing in again. */
+  'MFA_EXPIRED',
+  // Data rights
+  /** The account is scheduled for deletion; signing in again cancels it. */
+  'ACCOUNT_DELETION_PENDING',
+  /** Too many inputs created recently; try again later. */
+  'QUOTA_EXCEEDED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

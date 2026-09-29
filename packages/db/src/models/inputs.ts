@@ -62,6 +62,12 @@ export interface JobTargetRecord {
   companyName: string | null;
   roleId: Types.ObjectId | null;
   roleTitle: string | null;
+  /**
+   * Set when the candidate deletes a job description that interviews still
+   * refer to: the file and text are removed and it disappears from their
+   * list; the title and company stay for those interviews' history.
+   */
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -120,6 +126,7 @@ const jobTargetSchema = new Schema<JobTargetRecord>(
     companyName: { type: String, default: null },
     roleId: { type: Schema.Types.ObjectId, ref: 'Role', default: null },
     roleTitle: { type: String, default: null },
+    deletedAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'jobTargets' },
 );
