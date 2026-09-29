@@ -66,6 +66,8 @@ import {
   ScoreRevisionSummary,
   UpdateCampaignBody,
   CodingWorkspace,
+  CustomRunBody,
+  CustomRunResult,
   CreateProblemVersionBody,
   ProblemActivationBody,
   ProblemSummary,
@@ -1070,6 +1072,14 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
       'Run the visible tests on the code judge. 503 JUDGE_UNAVAILABLE when it cannot run (keep working; submit still works)',
     body: SaveCodeBody,
     response: CodingWorkspace,
+    errors: [400, 401, 404, 409, 413, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/coding/{questionId}/custom-run', {
+    tag: 'Coding',
+    summary:
+      'Run the code once with your own input (SQL: statements after the schema). Nothing is compared and it is not a test. Own rate limit; 503 JUDGE_UNAVAILABLE when the judge cannot run it',
+    body: CustomRunBody,
+    response: CustomRunResult,
     errors: [400, 401, 404, 409, 413, 429, 503],
   });
   candidate('post', '/interviews/{id}/coding/{questionId}/submit', {

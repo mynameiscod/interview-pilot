@@ -10,6 +10,7 @@ import { JudgeUnavailableError, runOnJudge, type JudgeAdapter } from '@cbi/provi
 import {
   CODING_LIMITS,
   codingStrength,
+  judgeTestsFor,
   submissionAnswerText,
   toRunResult,
   type BlueprintContent,
@@ -54,24 +55,24 @@ export async function judgeUnsubmitted(
     const problem = problems.get(String(a.problemId));
     const starter = problem?.content.starterCode[a.language] ?? '';
     if (!problem || !a.code.trim() || a.code === starter) continue;
-    const tests = [
+    const cases = [
       ...problem.content.visibleTests.map((t) => ({ ...t, hidden: false })),
       ...problem.content.hiddenTests.map((t) => ({ ...t, hidden: true })),
     ];
+    const tests = judgeTestsFor(problem.content, cases);
     let result: CodeRunResult | null = null;
     if (judge) {
       try {
         const out = await runOnJudge(
           judge,
-          {
-            language: a.language,
-            source: a.code,
-            tests: tests.map((t) => ({ input: t.input, expectedOutput: t.expectedOutput })),
-            limits: problem.content.limits,
-          },
+          { language: a.language, source: a.code, tests, limits: problem.content.limits },
           { waitMs: CODING_LIMITS.judgeWaitMs },
         );
-        result = toRunResult(out, tests, now);
+        result = toRunResult(
+          out,
+          cases.map((c, i) => ({ ...c, compare: tests[i]!.compare })),
+          now,
+        );
       } catch (err) {
         if (!(err instanceof JudgeUnavailableError)) throw err;
         recordJudgeFailure(err, 'evaluation');

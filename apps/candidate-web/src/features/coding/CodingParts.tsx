@@ -44,7 +44,7 @@ export function DifficultyBadge({ difficulty }: { difficulty: keyof typeof DIFFI
   );
 }
 
-function Block({ label, value }: { label: string; value: string | null }) {
+export function OutputBlock({ label, value }: { label: string; value: string | null }) {
   const { t } = useTranslation();
   return (
     <div className="mb-2">
@@ -82,13 +82,24 @@ export function ProblemPanel({
       <p className="small cb-text-secondary">
         {t('coding.limits', { cpu: problem.limits.cpuMs, memory: problem.limits.memoryMb })}
       </p>
+      {problem.sqlSetup !== null && (
+        <>
+          <OutputBlock label={t('coding.sql.schema')} value={problem.sqlSetup} />
+          <p className="small cb-text-secondary">
+            {problem.orderInsensitive ? t('coding.sql.anyOrder') : t('coding.sql.exactOrder')}
+          </p>
+        </>
+      )}
       <h3 className="h6">{t('coding.examples')}</h3>
       <ol className="list-unstyled mb-0">
         {problem.visibleTests.map((test, i) => (
           <li key={i} className="mb-3">
             <p className="small fw-semibold mb-1">{t('coding.example', { n: i + 1 })}</p>
-            <Block label={t('coding.input')} value={test.input} />
-            <Block label={t('coding.expectedOutput')} value={test.expectedOutput} />
+            <OutputBlock
+              label={problem.sqlSetup !== null ? t('coding.sql.rows') : t('coding.input')}
+              value={test.input}
+            />
+            <OutputBlock label={t('coding.expectedOutput')} value={test.expectedOutput} />
             {test.explanation && (
               <p className="small mb-0">
                 <span className="fw-semibold">{t('coding.explanation')}:</span>{' '}
@@ -153,10 +164,10 @@ function TestRow({ test, n, hiddenN }: { test: TestOutcome; n: number; hiddenN: 
       {!test.hidden && test.verdict !== 'ACCEPTED' && test.verdict !== 'COMPILE_ERROR' && (
         <div className="row g-2 mt-1">
           <div className="col-sm-6">
-            <Block label={t('coding.yourOutput')} value={test.stdout} />
+            <OutputBlock label={t('coding.yourOutput')} value={test.stdout} />
           </div>
           <div className="col-sm-6">
-            <Block label={t('coding.expectedOutput')} value={test.expectedOutput} />
+            <OutputBlock label={t('coding.expectedOutput')} value={test.expectedOutput} />
           </div>
         </div>
       )}
@@ -178,7 +189,7 @@ export function RunResultView({ result }: { result: CodeRunResult }) {
   return (
     <div>
       {result.compileOutput && (
-        <Block label={t('coding.results.compileOutput')} value={result.compileOutput} />
+        <OutputBlock label={t('coding.results.compileOutput')} value={result.compileOutput} />
       )}
       <ol className="list-unstyled mb-0">
         {numbered.map((row, i) => (

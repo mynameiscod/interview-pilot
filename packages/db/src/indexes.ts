@@ -25,7 +25,7 @@ import {
   ShareLinkModel,
   SystemSettingModel,
 } from './models/ops.js';
-import { CodingAttemptModel, ProblemModel } from './models/coding.js';
+import { CodeSimilarityFlagModel, CodingAttemptModel, ProblemModel } from './models/coding.js';
 import { ConsentModel, ConsentTextModel } from './models/consent.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
@@ -99,6 +99,7 @@ const MODELS = [
   IntegrityEventModel,
   ProblemModel,
   CodingAttemptModel,
+  CodeSimilarityFlagModel,
   CampaignModel,
   CampaignApplicationModel,
   CampaignExportModel,

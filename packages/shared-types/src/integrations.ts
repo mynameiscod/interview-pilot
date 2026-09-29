@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseLanguageIds } from './coding.js';
 
 /**
  * Admin-managed integrations: credentials for email, payments, storage, SMS
@@ -62,7 +63,16 @@ export const IntegrationSpecs = {
   },
   judge: {
     providers: ['codebegun', 'judge0', 'disabled'],
-    settings: z.object({ baseUrl: httpUrl.optional() }),
+    settings: z.object({
+      baseUrl: httpUrl.optional(),
+      /** Judge0 only: language id overrides for this install, `language=id,…` (e.g. `typescript=94`). */
+      languageIds: z
+        .string()
+        .trim()
+        .max(400)
+        .refine((v) => parseLanguageIds(v).ok, 'Use language=id pairs, e.g. typescript=94,go=95')
+        .optional(),
+    }),
     secrets: ['hmacSecret', 'judge0AuthToken'],
   },
 } as const;

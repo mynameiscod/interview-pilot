@@ -837,8 +837,24 @@
         "hiddenTests": "Add 1–30 hidden tests; input and expected output up to 20,000 characters each.",
         "cpuMs": "Enter a whole number of milliseconds from 100 to 10000.",
         "memoryMb": "Enter a whole number of megabytes from 16 to 1024.",
-        "reason": "Enter a reason of 3–300 characters."
-      }
+        "reason": "Enter a reason of 3–300 characters.",
+        "companyTags": "Choose up to 4 company styles.",
+        "sqlSetup": "A SQL problem needs a schema script of up to 20,000 characters and the SQL language only."
+      },
+      "companyTags": "Company style (optional)",
+      "companyTagsHint": "Generic labels for the kind of employer that asks problems like this. Never use a real company's name.",
+      "companyTagNames": {
+        "product-company": "Product company",
+        "service-company": "Service company",
+        "fintech": "Fintech",
+        "startup": "Startup",
+        "e-commerce": "E-commerce",
+        "enterprise-saas": "Enterprise SaaS"
+      },
+      "sqlSettings": "SQL problem",
+      "sqlSetup": "Schema script",
+      "sqlSetupHint": "CREATE TABLE statements, run on SQLite before each test. Each test's input holds its rows (INSERT statements); the candidate's query runs after them and its rows are compared with the expected output (columns separated by |, one row per line). SQL problems use the SQL language only.",
+      "orderInsensitive": "Rows may come back in any order (compare after sorting the lines)"
     }
   },
   "payments": {
@@ -2081,11 +2097,13 @@
           "note": "Without a judge, coding rounds record the code without running it.",
           "fields": {
             "baseUrl": "Judge URL",
+            "languageIds": "Language ids",
             "hmacSecret": "Signing secret",
             "judge0AuthToken": "Judge0 auth token"
           },
           "hints": {
             "baseUrl": "The http(s) address of the judge.",
+            "languageIds": "Optional. Only for languages whose id on your Judge0 install differs from Judge0 CE 1.13 (python=71, javascript=63, java=62, cpp=54, typescript=74, go=60, csharp=51, c=50, kotlin=78, rust=73, sql=82). Write language=id pairs separated by commas, e.g. typescript=94,go=95.",
             "hmacSecret": "At least 32 characters. The judge’s verifying proxy must use the same secret.",
             "judge0AuthToken": "Optional."
           }

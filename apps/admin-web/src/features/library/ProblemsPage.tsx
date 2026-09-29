@@ -116,10 +116,27 @@ function ProblemViewer({ problem }: { problem: ProblemSummary }) {
         <DifficultyBadge difficulty={problem.difficulty} />{' '}
         {t('library.problems.limitsSummary', problem.limits)}
         {problem.tags.length > 0 && <> · {problem.tags.join(', ')}</>}
+        {problem.companyTags && problem.companyTags.length > 0 && (
+          <>
+            {' · '}
+            {problem.companyTags
+              .map((tag) => t(`library.problems.companyTagNames.${tag}`))
+              .join(', ')}
+          </>
+        )}
       </p>
       <section aria-label={t('library.problems.statement')}>
         <Statement text={problem.statement} />
       </section>
+      {problem.sql && (
+        <section aria-label={t('library.problems.sqlSetup')} className="mt-2">
+          <h4 className="h6">{t('library.problems.sqlSetup')}</h4>
+          <Code label={t('library.problems.sqlSetup')}>{problem.sql.setup}</Code>
+          {problem.sql.orderInsensitive && (
+            <p className="cb-text-secondary mt-1 mb-0">{t('library.problems.orderInsensitive')}</p>
+          )}
+        </section>
+      )}
 
       <h4 className="h6 mt-3">{t('library.problems.starterCode')}</h4>
       {problem.languages.map((lang) => (

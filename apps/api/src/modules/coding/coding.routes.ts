@@ -1,4 +1,9 @@
-import { CreateProblemVersionBody, ProblemActivationBody, SaveCodeBody } from '@cbi/shared-types';
+import {
+  CreateProblemVersionBody,
+  CustomRunBody,
+  ProblemActivationBody,
+  SaveCodeBody,
+} from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
 import type { Container } from '../../container.js';
 import { clientContext } from '../../lib/request-context.js';
@@ -28,6 +33,12 @@ export function codingInterviewRouter(c: Container): Router {
   router.post('/:id/coding/:questionId/run', c.limiters.coding, async (req, res) => {
     const body = SaveCodeBody.parse(req.body);
     res.json({ data: await c.coding.run(requireAuth(req).userId, ...ids(req), body) });
+  });
+
+  // Runs with the candidate's own input have their own, smaller allowance.
+  router.post('/:id/coding/:questionId/custom-run', c.limiters.codingCustom, async (req, res) => {
+    const body = CustomRunBody.parse(req.body);
+    res.json({ data: await c.coding.customRun(requireAuth(req).userId, ...ids(req), body) });
   });
 
   router.post('/:id/coding/:questionId/submit', c.limiters.coding, async (req, res) => {

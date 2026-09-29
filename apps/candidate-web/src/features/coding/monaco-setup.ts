@@ -1,8 +1,10 @@
 /**
  * Monaco, bundled with the app (never from a CDN) and only in the lazy
  * editor chunk. Only the core editor, a few everyday editing features, the
- * four languages' syntax colouring and the plain editor worker are included:
- * no TypeScript/JSON/CSS/HTML language services.
+ * coding languages' syntax colouring (each tokenizer is its own small chunk,
+ * loaded when first used) and the plain editor worker are included: no
+ * TypeScript/JSON/CSS/HTML language services. Monaco's language ids are the
+ * CodingLanguage values (`c` comes with the C++ definition).
  */
 import { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/editor/editor.api';
@@ -18,9 +20,15 @@ import 'monaco-editor/editor/contrib/linesOperations/browser/linesOperations';
 import 'monaco-editor/editor/contrib/multicursor/browser/multicursor';
 import 'monaco-editor/editor/contrib/wordOperations/browser/wordOperations';
 import 'monaco-editor/languages/definitions/cpp/register';
+import 'monaco-editor/languages/definitions/csharp/register';
+import 'monaco-editor/languages/definitions/go/register';
 import 'monaco-editor/languages/definitions/java/register';
 import 'monaco-editor/languages/definitions/javascript/register';
+import 'monaco-editor/languages/definitions/kotlin/register';
 import 'monaco-editor/languages/definitions/python/register';
+import 'monaco-editor/languages/definitions/rust/register';
+import 'monaco-editor/languages/definitions/sql/register';
+import 'monaco-editor/languages/definitions/typescript/register';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 // The icon font (folding arrows, find widget). The package's exports map has no
 // entry for CSS files, so they are imported by path.

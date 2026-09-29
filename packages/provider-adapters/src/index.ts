@@ -66,6 +66,7 @@ export {
   createJudge0Adapter,
   createMockJudge,
   JUDGE0_LANGUAGE_IDS,
+  judge0LanguageIds,
   judge0Verdict,
   type JudgeSettings,
 } from './judge/adapters.js';

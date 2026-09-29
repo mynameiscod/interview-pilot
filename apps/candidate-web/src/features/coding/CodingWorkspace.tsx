@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { inputErrorMessage } from '../interviews/messages';
 import { CodeEditor } from './CodeEditor';
 import { ProblemPanel, RunResultView } from './CodingParts';
+import { CustomInputPanel } from './CustomInputPanel';
 import { submissionMessage } from './coding-format';
 import { useCodingWorkspace, type SaveStatus } from './useCodingWorkspace';
 
@@ -336,6 +337,16 @@ export function CodingWorkspace({
             </p>
           )}
         </section>
+
+        {!submitted && (
+          <CustomInputPanel
+            sql={problem.sqlSetup !== null}
+            disabled={!canAct}
+            busy={ws.busy === 'custom'}
+            result={ws.customResult}
+            onRun={(stdin) => void ws.customRun(stdin)}
+          />
+        )}
 
         {confirmSubmit && !submitted && (
           <Confirm

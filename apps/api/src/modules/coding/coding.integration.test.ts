@@ -16,6 +16,7 @@ import {
 } from '@cbi/db';
 import {
   CodingWorkspace,
+  CustomRunResult,
   ProblemSummary,
   RT_NAMESPACE,
   RtEvent,
@@ -197,7 +198,7 @@ describe('coding round', () => {
       .send({ language: 'python', code: 'print("draft")' })
       .expect(200);
     await call('put', `/interviews/${id}/coding/${question.questionId}`)
-      .send({ language: 'rust', code: 'x' })
+      .send({ language: 'sql', code: 'x' })
       .expect(400);
     const run = await call('post', `/interviews/${id}/coding/${question.questionId}/run`)
       .send({ language: 'python', code: 'print("draft")' })
@@ -206,6 +207,21 @@ describe('coding round', () => {
     expect(afterRun.lastRun).toMatchObject({ verdict: 'ACCEPTED' });
     expect(afterRun.lastRun!.tests.every((x) => !x.hidden)).toBe(true);
     expect(afterRun.lastRun!.total).toBe(ws.problem.visibleTests.length);
+
+    // A run with the candidate's own input: shown as is, never a test.
+    const custom = await call('post', `/interviews/${id}/coding/${question.questionId}/custom-run`)
+      .send({ language: 'python', code: 'print(input())', stdin: 'hello\n' })
+      .expect(200);
+    expect(CustomRunResult.parse(custom.body.data)).toMatchObject({
+      verdict: 'ACCEPTED',
+      stdout: '[mock judge] read 6 characters of input\n',
+    });
+    const attempt = await CodingAttemptModel.findOne({ sessionId: id }).lean();
+    expect(attempt).toMatchObject({ customRunCount: 1, runCount: 1, code: 'print(input())' });
+    expect(attempt!.lastRun).toMatchObject({ total: ws.problem.visibleTests.length });
+    await call('post', `/interviews/${id}/coding/${question.questionId}/custom-run`)
+      .send({ language: 'python', code: 'x', stdin: 'x'.repeat(16 * 1024 + 1) })
+      .expect(400);
 
     // Submit: visible + hidden tests; hidden outcomes carry no data; the interview moves on.
     const next = nextQuestion(socket);
@@ -246,6 +262,10 @@ describe('coding round', () => {
       .send({ language: 'python', code: 'print(input())' })
       .expect(503);
     expect(run.body.error.code).toBe('JUDGE_UNAVAILABLE');
+    const custom = await call('post', `/interviews/${id}/coding/${question.questionId}/custom-run`)
+      .send({ language: 'python', code: 'print(input())', stdin: '1' })
+      .expect(503);
+    expect(custom.body.error.code).toBe('JUDGE_UNAVAILABLE');
     // The code was saved anyway, and the interview is untouched.
     const ws = CodingWorkspace.parse(
       (await call('get', `/interviews/${id}/coding/${question.questionId}`)).body.data,

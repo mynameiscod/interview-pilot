@@ -1,4 +1,4 @@
-import { AppEnv } from '@cbi/shared-types';
+import { AppEnv, parseLanguageIds } from '@cbi/shared-types';
 import { z } from 'zod';
 
 const booleanString = z
@@ -229,6 +229,14 @@ const judgeShape = {
   JUDGE0_AUTH_TOKEN: optionalString,
   /** Judge0 only: its MAX_SUBMISSION_BATCH_SIZE; larger test sets are sent in several batches. */
   JUDGE0_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(20),
+  /**
+   * Judge0 only: language id overrides for this install, `language=id,…`
+   * (e.g. `typescript=94,go=95`); languages left out keep the Judge0 CE ids.
+   */
+  JUDGE0_LANGUAGE_IDS: optionalString.superRefine((value, ctx) => {
+    const parsed = parseLanguageIds(value);
+    if (!parsed.ok) ctx.addIssue({ code: 'custom', message: parsed.error });
+  }),
 };
 
 // --- Audit log retention ----------------------------------------------------------------------

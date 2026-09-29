@@ -21,6 +21,8 @@ export type RateLimiterName =
   | 'voice'
   | 'media'
   | 'coding'
+  | 'codingCustom'
+  | 'codingAssist'
   | 'analytics'
   | 'jobCreate'
   | 'dataExport';
@@ -61,6 +63,10 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   media: { windowMs: 10 * 60_000, limit: 300, failOpen: false },
   /** Code runs and submissions (each is a judge execution). */
   coding: { windowMs: 10 * 60_000, limit: 60, failOpen: false },
+  /** Runs with the candidate's own input: judge executions that are never tests. */
+  codingCustom: { windowMs: 10 * 60_000, limit: 30, failOpen: false },
+  /** In-editor AI assistant messages (billed model calls; each round also caps its turns). */
+  codingAssist: { windowMs: 10 * 60_000, limit: 40, failOpen: false },
   /** Analytics batches (losing some events is fine when Redis is down). */
   analytics: { windowMs: 60_000, limit: 60, failOpen: true },
   /** Job descriptions created from pasted text or links (each starts extraction work). */
@@ -90,6 +96,8 @@ const PER_USER = new Set<RateLimiterName>([
   'voice',
   'media',
   'coding',
+  'codingCustom',
+  'codingAssist',
   'jobCreate',
   'dataExport',
 ]);
@@ -138,6 +146,8 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     voice: make('voice'),
     media: make('media'),
     coding: make('coding'),
+    codingCustom: make('codingCustom'),
+    codingAssist: make('codingAssist'),
     analytics: make('analytics'),
     jobCreate: make('jobCreate'),
     dataExport: make('dataExport'),

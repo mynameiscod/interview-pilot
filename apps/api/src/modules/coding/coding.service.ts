@@ -5,6 +5,7 @@ import {
   InterviewSessionModel,
   InterviewTurnModel,
   ProblemModel,
+  RoleBlueprintModel,
   type CodingAttemptRecord,
   type InterviewSessionRecord,
   type InterviewTurnRecord,
@@ -14,12 +15,17 @@ import type { QuestionTarget } from '@cbi/interview-engine';
 import { JudgeUnavailableError, runOnJudge, type JudgeAdapter } from '@cbi/provider-adapters';
 import {
   CODING_LIMITS,
+  judgeTestsFor,
   submissionAnswerText,
+  toCustomRunResult,
   toRunResult,
   type AnswerTextPayload,
+  type BlueprintContent,
   type CodeRunResult,
   type CodingWorkspace,
   type CreateProblemVersionBody,
+  type CustomRunBody,
+  type CustomRunResult,
   type ProblemSummary,
   type PublicProblem,
   type SaveCodeBody,
@@ -43,6 +49,8 @@ export const publicProblem = (p: ProblemRecord): PublicProblem => ({
   visibleTests: p.content.visibleTests,
   hiddenTestCount: p.content.hiddenTests.length,
   limits: p.content.limits,
+  sqlSetup: p.content.sql?.setup ?? null,
+  orderInsensitive: p.content.sql?.orderInsensitive ?? false,
 });
 
 export const problemSummary = (p: ProblemRecord): ProblemSummary => ({
@@ -58,6 +66,33 @@ export const problemSummary = (p: ProblemRecord): ProblemSummary => ({
 export function codingQuestionText(p: ProblemRecord): string {
   const first = p.content.statement.split(/\n\s*\n/)[0] ?? '';
   return `Coding problem: ${p.content.title}. ${first}`.slice(0, 1500);
+}
+
+const SQL_WORD = /\bsql\b/i;
+
+/**
+ * SQL problems suit data roles only: a round aimed at a SQL competency asks
+ * SQL problems (when there are any), a role that mentions SQL may get either
+ * kind, and other roles never get SQL problems.
+ */
+export function sqlPool(
+  problems: ProblemRecord[],
+  target: Pick<QuestionTarget, 'competencyKey' | 'competencyName'>,
+  blueprint: Pick<BlueprintContent, 'competencies' | 'focusSkills'> | null,
+): ProblemRecord[] {
+  const isSql = (p: ProblemRecord) => Boolean(p.content.sql);
+  const sqlTarget = SQL_WORD.test(`${target.competencyKey ?? ''} ${target.competencyName ?? ''}`);
+  const sqlRole =
+    blueprint !== null &&
+    [
+      ...blueprint.competencies.map((c) => `${c.key} ${c.name}`),
+      ...blueprint.focusSkills.map((f) => f.name),
+    ].some((text) => SQL_WORD.test(text));
+  if (sqlTarget) {
+    const sql = problems.filter(isSql);
+    if (sql.length) return sql;
+  }
+  return sqlRole || sqlTarget ? problems : problems.filter((p) => !isSql(p));
 }
 
 interface Deps {
@@ -129,6 +164,7 @@ export function createCodingService(deps: Deps) {
             judgeUnavailable: a.submission.judgeUnavailable,
           }
         : null,
+      assistant: null,
     };
   }
 
@@ -160,21 +196,26 @@ export function createCodingService(deps: Deps) {
 
   /** Runs code on the judge; JudgeUnavailableError when it cannot. */
   async function judgeRun(problem: ProblemRecord, body: SaveCodeBody, withHidden: boolean) {
-    const tests = [
+    const cases = [
       ...problem.content.visibleTests.map((t) => ({ ...t, hidden: false })),
       ...(withHidden ? problem.content.hiddenTests.map((t) => ({ ...t, hidden: true })) : []),
     ];
+    const tests = judgeTestsFor(problem.content, cases);
     const judged = await runOnJudge(
       judge,
       {
         language: body.language,
         source: body.code,
-        tests: tests.map((t) => ({ input: t.input, expectedOutput: t.expectedOutput })),
+        tests,
         limits: problem.content.limits,
       },
       { waitMs: CODING_LIMITS.judgeWaitMs },
     );
-    return toRunResult(judged, tests, now());
+    return toRunResult(
+      judged,
+      cases.map((c, i) => ({ ...c, compare: tests[i]!.compare })),
+      now(),
+    );
   }
 
   /**
@@ -230,9 +271,13 @@ export function createCodingService(deps: Deps) {
         .limit(10)
         .lean();
       const seen = new Set(recent.map((r) => String(r.problemId)));
-      const active = await ProblemModel.find({ active: true })
+      const blueprint = s.blueprintId
+        ? await RoleBlueprintModel.findById(s.blueprintId, { content: 1 }).lean()
+        : null;
+      const all = await ProblemModel.find({ active: true })
         .sort({ key: 1 })
         .lean<ProblemRecord[]>();
+      const active = sqlPool(all, target, blueprint?.content ?? null);
       if (active.length === 0) return null;
       const fresh = active.filter((p) => !seen.has(String(p._id)));
       const pool = fresh.length ? fresh : active;
@@ -284,6 +329,52 @@ export function createCodingService(deps: Deps) {
         { returnDocument: 'after' },
       ).lean<CodingAttemptRecord>();
       return workspace(problem, updated!);
+    },
+
+    /**
+     * "Run with my input": runs the code once on the judge with the
+     * candidate's own stdin (SQL problems: extra statements after the
+     * schema). Nothing is compared and it is never counted as a test.
+     * 503 JUDGE_UNAVAILABLE when the judge cannot run it (the code is saved).
+     */
+    async customRun(
+      userId: string,
+      sessionId: string,
+      questionId: string,
+      body: CustomRunBody,
+    ): Promise<CustomRunResult> {
+      const { s, turn, problem } = await context(userId, sessionId, questionId);
+      assertLanguage(problem, body);
+      if (Buffer.byteLength(body.stdin, 'utf8') > CODING_LIMITS.maxCustomInputBytes) {
+        throw new AppError(413, 'PAYLOAD_TOO_LARGE', 'The input is too long.');
+      }
+      const a = await attemptFor(s, turn, problem);
+      assertOpen(s, turn, a);
+      await save(a, body);
+      const [test] = judgeTestsFor(problem.content, [{ input: body.stdin, expectedOutput: '' }]);
+      try {
+        const judged = await runOnJudge(
+          judge,
+          {
+            language: body.language,
+            source: body.code,
+            tests: [{ ...test!, compare: 'NONE' }],
+            limits: problem.content.limits,
+          },
+          { waitMs: CODING_LIMITS.judgeWaitMs },
+        );
+        await CodingAttemptModel.updateOne({ _id: a._id }, { $inc: { customRunCount: 1 } });
+        return toCustomRunResult(judged, now());
+      } catch (err) {
+        if (!(err instanceof JudgeUnavailableError)) throw err;
+        recordJudgeFailure(err, 'code-custom-run');
+        logger.warn({ err, sessionId }, 'custom run: judge unavailable');
+        throw new AppError(
+          503,
+          'JUDGE_UNAVAILABLE',
+          'Running code is temporarily unavailable. You can keep working and still submit.',
+        );
+      }
     },
 
     /**

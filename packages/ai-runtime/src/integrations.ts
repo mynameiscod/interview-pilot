@@ -6,6 +6,7 @@ import {
   createCodeBegunJudge,
   createJudge0Adapter,
   createMsg91OtpProvider,
+  judge0LanguageIds,
   createRazorpayGateway,
   createSesEmailProvider,
   createSmtpEmailProvider,
@@ -164,7 +165,12 @@ export function buildFromRecord(
       return {
         provider:
           rec.provider === 'judge0'
-            ? createJudge0Adapter({ baseUrl, hmacSecret, authToken: secret('judge0AuthToken') })
+            ? createJudge0Adapter({
+                baseUrl,
+                hmacSecret,
+                authToken: secret('judge0AuthToken'),
+                languageIds: judge0LanguageIds(str(settings.languageIds)),
+              })
             : createCodeBegunJudge({ baseUrl, hmacSecret }),
         missing,
       };

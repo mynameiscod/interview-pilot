@@ -5,6 +5,7 @@ import { fail, fakeApi, makeSession, ok } from '@cbi/web-core/testing';
 import {
   JAVA_STARTER,
   makeCodingQuestion,
+  makeProblem,
   makeRunResult,
   makeSubmission,
   makeWorkspace,
@@ -24,7 +25,11 @@ const EDITOR = 'Code editor (Python 3)';
 type Handlers = Parameters<typeof fakeApi>[0];
 
 async function openCodingRoom(
-  opts: { handlers?: Handlers; snapshot?: Parameters<typeof makeSnapshot>[0] } = {},
+  opts: {
+    handlers?: Handlers;
+    snapshot?: Parameters<typeof makeSnapshot>[0];
+    editorName?: string;
+  } = {},
 ) {
   const question = makeCodingQuestion();
   const sockets = fakeSocketFactory({
@@ -48,7 +53,7 @@ async function openCodingRoom(
     ...opts.handlers,
   });
   const result = await renderRoute(ROOM, { api, socketFactory: sockets.factory });
-  const editor = await screen.findByRole('textbox', { name: EDITOR });
+  const editor = await screen.findByRole('textbox', { name: opts.editorName ?? EDITOR });
   return { ...result, sockets, editor };
 }
 
@@ -303,5 +308,89 @@ describe('coding question in the room', () => {
     expect(screen.queryByRole('button', { name: 'Start answering' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Type instead' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Your answer' })).not.toBeInTheDocument();
+  });
+
+  it('runs the code with the candidate’s own input and shows the output, not as a test', async () => {
+    const user = userEvent.setup();
+    const { api } = await openCodingRoom({
+      handlers: {
+        [`POST ${WS}/custom-run`]: () =>
+          ok({
+            verdict: 'ACCEPTED',
+            stdout: '42\n',
+            stderr: null,
+            compileOutput: null,
+            timeMs: 7,
+            at: '2026-09-20T10:11:00.000Z',
+          }),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Try your own input' }));
+    await user.type(screen.getByRole('textbox', { name: 'Your input (standard input)' }), '40 2');
+    await user.click(screen.getByRole('button', { name: 'Run with my input' }));
+    expect(await screen.findByText('Finished')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+    expect(
+      screen.getByText('Runs with your own input are not tests and do not affect your result.'),
+    ).toBeInTheDocument();
+    expect(bodies(api, `POST ${WS}/custom-run`)).toEqual([
+      { language: 'python', code: PYTHON_STARTER, stdin: '40 2' },
+    ]);
+    // The example results are untouched.
+    expect(screen.getByText('Run your code to check it against the examples.')).toBeVisible();
+  });
+
+  it('keeps working when the judge is down for a custom run, and says when it is rate limited', async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    await openCodingRoom({
+      handlers: {
+        [`POST ${WS}/custom-run`]: () =>
+          calls++ === 0 ? fail(503, 'JUDGE_UNAVAILABLE') : fail(429, 'RATE_LIMITED'),
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Try your own input' }));
+    const run = () => user.click(screen.getByRole('button', { name: 'Run with my input' }));
+    await run();
+    expect(
+      await screen.findByText(
+        'Running code is temporarily unavailable — keep working; you can still submit.',
+      ),
+    ).toBeInTheDocument();
+    await run();
+    expect(
+      await screen.findByText('You are running code very often. Wait a moment and try again.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the schema and row-order rule for a SQL problem', async () => {
+    await openCodingRoom({
+      handlers: {
+        [`GET ${WS}`]: () =>
+          ok(
+            makeWorkspace({
+              language: 'sql',
+              code: '-- your query\n',
+              problem: makeProblem({
+                languages: ['sql'],
+                starterCode: { sql: '-- your query\n' },
+                visibleTests: [
+                  {
+                    input: "INSERT INTO t VALUES (1, 'a');",
+                    expectedOutput: '1|a',
+                    explanation: null,
+                  },
+                ],
+                sqlSetup: 'CREATE TABLE t (id INTEGER, name TEXT);',
+                orderInsensitive: true,
+              }),
+            }),
+          ),
+      },
+      editorName: 'Code editor (SQL (SQLite))',
+    });
+    expect(screen.getByText('CREATE TABLE t (id INTEGER, name TEXT);')).toBeInTheDocument();
+    expect(screen.getByText('Rows can be returned in any order.')).toBeInTheDocument();
+    expect(screen.getByText('Rows in the tables')).toBeInTheDocument();
   });
 });

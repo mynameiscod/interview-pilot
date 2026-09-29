@@ -27,6 +27,8 @@ export function makeProblem(overrides: Partial<PublicProblem> = {}): PublicProbl
     ],
     hiddenTestCount: 3,
     limits: { cpuMs: 2000, memoryMb: 256 },
+    sqlSetup: null,
+    orderInsensitive: false,
     ...overrides,
   };
 }
@@ -40,6 +42,7 @@ export function makeWorkspace(overrides: Partial<CodingWorkspace> = {}): CodingW
     autosavedAt: null,
     lastRun: null,
     submission: null,
+    assistant: null,
     ...overrides,
   };
 }

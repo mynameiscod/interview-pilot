@@ -1455,7 +1455,8 @@
       "rateLimited": "You are running code very often. Wait a moment and try again.",
       "runFailed": "We could not run your code. It is still here — please try again.",
       "submitFailed": "We could not submit your solution. It is still here — please try again.",
-      "closed": "This question is closed, so the solution could not be submitted."
+      "closed": "This question is closed, so the solution could not be submitted.",
+      "inputTooLong": "Your input is too long to run. Shorten it and try again."
     },
     "results": {
       "title": "Results",
@@ -1490,6 +1491,25 @@
       "submitted": "Solution submitted ({{passed}}/{{total}} tests passed)",
       "submittedNotRun": "Solution submitted (not run)",
       "notSubmitted": "Solution not submitted"
+    },
+    "custom": {
+      "title": "Try your own input",
+      "label": "Your input (standard input)",
+      "sqlLabel": "Your rows (SQL run after the schema, before your query)",
+      "hint": "Your program reads this as standard input. The output is shown as it is; it is not checked or counted as a test.",
+      "sqlHint": "For example, INSERT statements with rows of your own. The result is shown as it is; it is not checked or counted as a test.",
+      "tooLong": "Your input is longer than {{max}} KB. Shorten it to run.",
+      "run": "Run with my input",
+      "finished": "Finished",
+      "output": "Output",
+      "errors": "Error output",
+      "notATest": "Runs with your own input are not tests and do not affect your result."
+    },
+    "sql": {
+      "schema": "Tables (schema)",
+      "rows": "Rows in the tables",
+      "anyOrder": "Rows can be returned in any order.",
+      "exactOrder": "Rows must be returned in the order the problem asks for."
     }
   },
   "campaign": {
