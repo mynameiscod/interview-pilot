@@ -50,6 +50,8 @@ export interface InterviewTurnRecord {
       language: string | null;
       confidence: number | null;
       model: string;
+      /** Realtime voice: the candidate corrected the transcript before sending it. */
+      edited?: boolean;
     } | null;
   } | null;
   turnEval: {

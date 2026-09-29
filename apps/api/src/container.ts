@@ -41,7 +41,14 @@ import { createLiveInterviewService, createRoomEmitter } from './modules/live/li
 import { createCreditsAdminService } from './modules/credits/credits-admin.service.js';
 import { createPaymentsService } from './modules/payments/payments.service.js';
 import { createReportsService } from './modules/reports/reports.service.js';
-import { createTranscriptStore, createVoiceService } from './modules/voice/voice.service.js';
+import {
+  createQuestionAudioCache,
+  createTranscriptStore,
+  createVoiceService,
+} from './modules/voice/voice.service.js';
+import { createVoiceLatency } from './modules/voice/latency.js';
+import { createQuestionSpeaker } from './modules/voice/question-speaker.js';
+import { createPartialStore, createVoiceStreamRelay } from './modules/voice/stream-relay.js';
 import { createConsentService } from './modules/consent/consent.service.js';
 import { createMediaService } from './modules/media/media.service.js';
 import { codingQuestionText, createCodingService } from './modules/coding/coding.service.js';
@@ -207,7 +214,35 @@ export function buildContainer(opts: ContainerOptions) {
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
   const transcripts = createTranscriptStore(redis);
-  const voice = createVoiceService({ ai, redis, logger, rooms, audit, transcripts, consent });
+  const questionAudio = createQuestionAudioCache({ redis, logger });
+  const voice = createVoiceService({
+    ai,
+    redis,
+    logger,
+    rooms,
+    audit,
+    transcripts,
+    consent,
+    questionAudio,
+    flags,
+  });
+  // Realtime voice (flag `voice.realtime`): streamed answers and questions.
+  const voiceLatency = createVoiceLatency({ redis, logger });
+  const questionSpeaker = createQuestionSpeaker({
+    router: ai.router,
+    rooms,
+    cache: questionAudio,
+    latency: voiceLatency,
+    logger,
+  });
+  const voiceStreams = createVoiceStreamRelay({
+    router: ai.router,
+    authorize: (userId, payload) => voice.authorizeStream(userId, payload),
+    transcripts,
+    partials: createPartialStore(redis),
+    latency: voiceLatency,
+    logger,
+  });
   const media = createMediaService({
     storage,
     audit,
@@ -252,7 +287,18 @@ export function buildContainer(opts: ContainerOptions) {
     transcripts,
     consent,
     maintenance: () => settings.get('maintenance'),
-    onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
+    onQuestion: (s, turn, o) => voice.warmQuestionAudio(s, turn, o),
+    questionStream: async (s, target) =>
+      (await voice.realtimeEnabled(s))
+        ? questionSpeaker.open({
+            sessionId: String(s._id),
+            userId: String(s.userId),
+            questionId: target.questionId,
+            seq: target.seq,
+            language: s.language === 'auto' ? null : s.language,
+            answered: target.answered,
+          })
+        : null,
     pickCodingProblem: async (s, target) => {
       const p = await coding.pickProblem(s, target);
       return p ? { _id: p._id, title: p.content.title, text: codingQuestionText(p) } : null;
@@ -328,6 +374,8 @@ export function buildContainer(opts: ContainerOptions) {
     rooms,
     live,
     voice,
+    voiceStreams,
+    questionSpeaker,
     consent,
     media,
     coding,

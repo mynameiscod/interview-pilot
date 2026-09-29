@@ -49,7 +49,14 @@ export function createMockSttAdapter(): SttAdapter {
         throw new AiProviderError('mock', 'PROVIDER_ERROR', 'mock_failure', 'simulated outage');
       }
       const marker = decoded.slice(0, 64).indexOf(MOCK_SPEECH_PREFIX);
-      const spoken = marker >= 0 ? decoded.slice(marker + MOCK_SPEECH_PREFIX.length).trim() : null;
+      // Padding after the marker (zero bytes) is not part of what was "said".
+      const spoken =
+        marker >= 0
+          ? decoded
+              .slice(marker + MOCK_SPEECH_PREFIX.length)
+              .replace(/\0+$/, '')
+              .trim()
+          : null;
       const seconds = Math.round(request.durationSec ?? 0);
       return {
         text: spoken ?? `[mock] Spoken answer of about ${seconds} seconds.`,
@@ -187,9 +194,10 @@ export function openMockSpeechStream(input: SttStreamInput): SpeechStream {
         return;
       }
       if (text.startsWith(MOCK_SPEECH_PREFIX)) {
-        // A scripted phrase: one second of speech per call.
+        // A scripted phrase, spoken at 2.5 words a second (at least one second).
         const spoken = new TextDecoder().decode(audio).slice(MOCK_SPEECH_PREFIX.length).trim();
         const words = spoken.split(/\s+/).filter(Boolean);
+        const length = Math.max(1, words.length * 0.4);
         emit({ type: 'speech_started', at: clock });
         emit({
           type: 'transcript',
@@ -200,8 +208,8 @@ export function openMockSpeechStream(input: SttStreamInput): SpeechStream {
           start: clock,
           duration: 0.5,
         });
-        final(spoken, clock, clock + 1);
-        clock += 1;
+        final(spoken, clock, clock + length);
+        clock += length;
         return;
       }
       const seconds = audio.byteLength / bytesPerSec;

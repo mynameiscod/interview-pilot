@@ -332,7 +332,8 @@ describe('mock streaming STT', () => {
     const types = events.map((e) => e.type);
     expect(types).toEqual(['speech_started', 'transcript', 'transcript', 'utterance_end']);
     expect(events[2]).toMatchObject({ text: 'I led the payments migration', isFinal: true });
-    expect(await stream.close()).toEqual({ durationSec: 2, servedModel: 'mock-stt' });
+    // Five words take two seconds, then one quiet second.
+    expect(await stream.close()).toEqual({ durationSec: 3, servedModel: 'mock-stt' });
   });
 
   it('transcribes loud real audio to a placeholder once the speaker pauses', async () => {

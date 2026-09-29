@@ -11,6 +11,7 @@ import { systemKeys, useFlags } from './queries';
 /** Flags the console explains in more detail. */
 const FLAG_NOTES: Record<string, string> = {
   'reports.publicProof': 'system.flags.notes.publicProof',
+  'voice.realtime': 'system.flags.notes.voiceRealtime',
 };
 
 function FlagState({ flag }: { flag: FeatureFlag }) {
