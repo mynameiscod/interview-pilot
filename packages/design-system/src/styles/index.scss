@@ -21,10 +21,44 @@ $link-color: cb-token('primary');
 $enable-gradients: false;
 $enable-shadows: false;
 $enable-reduced-motion: true;
+// No dark theme yet; skip Bootstrap's [data-bs-theme=dark] variables.
+$enable-dark-mode: false;
 // Typography: system font stack until an approved CodeBegun font is supplied.
 
-// Bootstrap 5.3 still uses @import internally.
-@import 'bootstrap/scss/bootstrap';
+// Bootstrap 5.3 still uses @import internally. Only the modules the apps use
+// are compiled (the full bundle is ~300 KB of CSS). Before using a component
+// listed as omitted below, add its partial here.
+// Omitted: dropdown, card, accordion, breadcrumb, pagination, toasts, modal,
+// tooltip, popover, carousel, offcanvas, placeholders.
+@import 'bootstrap/scss/functions';
+@import 'bootstrap/scss/variables';
+@import 'bootstrap/scss/variables-dark';
+@import 'bootstrap/scss/maps';
+@import 'bootstrap/scss/mixins';
+@import 'bootstrap/scss/utilities';
+
+@import 'bootstrap/scss/root';
+@import 'bootstrap/scss/reboot';
+@import 'bootstrap/scss/type';
+@import 'bootstrap/scss/images';
+@import 'bootstrap/scss/containers';
+@import 'bootstrap/scss/grid';
+@import 'bootstrap/scss/tables';
+@import 'bootstrap/scss/forms';
+@import 'bootstrap/scss/buttons';
+@import 'bootstrap/scss/transitions';
+@import 'bootstrap/scss/button-group';
+@import 'bootstrap/scss/nav';
+@import 'bootstrap/scss/navbar';
+@import 'bootstrap/scss/badge';
+@import 'bootstrap/scss/alert';
+@import 'bootstrap/scss/progress';
+@import 'bootstrap/scss/list-group';
+@import 'bootstrap/scss/close';
+@import 'bootstrap/scss/spinners';
+
+@import 'bootstrap/scss/helpers';
+@import 'bootstrap/scss/utilities/api';
 
 // ---- Tokens as CSS custom properties -----------------------------------
 :root {
