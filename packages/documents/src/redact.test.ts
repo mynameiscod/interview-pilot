@@ -56,7 +56,9 @@ describe('redactPii', () => {
   });
 
   it('does not treat ordinary numbers as phone numbers', () => {
-    const r = redactPii('Revenue grew 1234567890 rupees? No: ids 5123456789012, year 2024, v1.2.3.');
+    const r = redactPii(
+      'Revenue grew 1234567890 rupees? No: ids 5123456789012, year 2024, v1.2.3.',
+    );
     // A bare 10-digit number starting 1-5 is not an Indian mobile; 13 digits is not a phone.
     expect(r.counts.PHONE).toBe(0);
   });
