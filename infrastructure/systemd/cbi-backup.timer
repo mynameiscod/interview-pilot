@@ -1,7 +1,8 @@
-# Nightly at 20:30 UTC (02:00 IST), with up to 15 min jitter. Weekly copies are
-# made by the Sunday run (backup.sh --kind auto).
+# Nightly full backup at 20:30 UTC (02:00 IST), with up to 15 min jitter. Weekly copies
+# are made by the Sunday run (backup.sh --kind auto). Each full backup starts a new
+# incremental chain (cbi-backup-incremental.timer, hourly).
 [Unit]
-Description=CareerPilot Interview - nightly MongoDB backup
+Description=CareerPilot Interview - nightly full MongoDB backup
 
 [Timer]
 OnCalendar=*-*-* 20:30:00 UTC

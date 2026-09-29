@@ -106,6 +106,29 @@ done
 mkdir -p "$NGINX_STATE_DIR" "$WWW_DIR" "$CBI_HOME/letsencrypt" "$CBI_HOME/certbot-www"
 [ -f "$NGINX_STATE_DIR/staging-allowlist.conf" ] || : >"$NGINX_STATE_DIR/staging-allowlist.conf"
 [ -f "$NGINX_STATE_DIR/htpasswd" ] || : >"$NGINX_STATE_DIR/htpasswd"
+
+# Extra CSP connect-src origins (the browser error tracker's DSN host), picked up by the
+# nginx reload in step 6. CSP_CONNECT_SRC_EXTRA wins; otherwise SENTRY_DSN's origin.
+CSP_CONNECT_SRC_EXTRA="" SENTRY_DSN=""
+read_env_keys "$APP_ENV_FILE" CSP_CONNECT_SRC_EXTRA SENTRY_DSN
+csp_origins="$CSP_CONNECT_SRC_EXTRA"
+if [ -z "$csp_origins" ] && [ -n "$SENTRY_DSN" ]; then
+  csp_origins="$(printf '%s' "$SENTRY_DSN" | sed -E 's#^(https?://)[^@/]*@([^/]+)/.*$#\1\2#')"
+fi
+read -r -a csp_list <<<"$csp_origins"
+for origin in "${csp_list[@]}"; do
+  [[ "$origin" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$ ]] ||
+    die "CSP_CONNECT_SRC_EXTRA / SENTRY_DSN: '$origin' is not an https origin (https://host[:port])"
+done
+{
+  echo "# Managed by infrastructure/scripts/deploy.sh — do not edit ($(_ts))"
+  # shellcheck disable=SC2016 # nginx variable, not a shell one
+  echo 'map $host $cbi_csp_connect_extra {'
+  echo "  default \"${csp_list[*]}\";"
+  echo '}'
+} >"$NGINX_STATE_DIR/csp-connect.conf.tmp"
+chmod 644 "$NGINX_STATE_DIR/csp-connect.conf.tmp"
+mv -f "$NGINX_STATE_DIR/csp-connect.conf.tmp" "$NGINX_STATE_DIR/csp-connect.conf"
 # The certificate directory is readable only by root and NGINX (it holds the private key),
 # so look from a short-lived container rather than as the deploy user.
 docker run --rm --entrypoint test -v "$CBI_HOME/letsencrypt:/le:ro" \
@@ -158,8 +181,11 @@ for img in "$IMAGE_REGISTRY/api:$TAG" "$IMAGE_REGISTRY/worker:$TAG" "$(web_image
 done
 
 # 2. Data stores -----------------------------------------------------------------------------
-log "starting mongo and redis"
-dc up -d --wait --wait-timeout 180 mongo redis
+# Includes the HA members of enabled profiles (COMPOSE_PROFILES in sizing.env).
+read -r -a DATASTORES <<<"$(datastore_services)"
+[ "${#DATASTORES[@]}" -gt 0 ] || DATASTORES=(mongo redis)
+log "starting data stores: ${DATASTORES[*]}"
+dc up -d --wait --wait-timeout 180 "${DATASTORES[@]}"
 log "running mongo-init (replica set + users, idempotent)"
 dc run --rm --no-deps -T mongo-init
 

@@ -1,8 +1,10 @@
 # Cron alternative to the systemd timers (install with `crontab -e` as the deploy user).
 # Output goes to syslog via logger; backup.sh / restore-drill.sh exit non-zero on failure.
 CBI_HOME=/srv/cbi
-# Nightly backup 20:30 UTC (02:00 IST); Sunday runs also write the weekly copy.
-30 20 * * * /bin/bash /srv/cbi/app/infrastructure/scripts/backup.sh --config /srv/cbi/.env.backup 2>&1 | logger -t cbi-backup
+# Nightly full backup 20:30 UTC (02:00 IST); Sunday runs also write the weekly copy.
+30 20 * * * /bin/bash /srv/cbi/app/infrastructure/scripts/backup.sh --config /srv/cbi/.env.backup --mode full 2>&1 | logger -t cbi-backup
+# Hourly incremental (oplog since the previous run) at :15; waits for a running full backup.
+15 * * * * /bin/bash /srv/cbi/app/infrastructure/scripts/backup.sh --config /srv/cbi/.env.backup --mode incremental 2>&1 | logger -t cbi-backup-incremental
 # Monthly restore drill on the 3rd at 05:00 UTC (host holding the age identity only).
 0 5 3 * * /bin/bash /srv/cbi/app/infrastructure/scripts/restore-drill.sh --config /srv/cbi/.env.backup 2>&1 | logger -t cbi-restore-drill
 # Disk alert every 15 minutes.

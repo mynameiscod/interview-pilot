@@ -11,8 +11,9 @@ import {
   type SttAdapter,
   type TtsAdapter,
   type UsageSink,
+  withUsageObserver,
 } from '@cbi/ai-core';
-import type { Logger } from '@cbi/config';
+import { observeAiCall, type Logger } from '@cbi/config';
 import { createMongoUsageSink, loadActivePrompt, loadAiRuntimeConfig, type Redis } from '@cbi/db';
 import {
   createAnthropicLlmAdapter,
@@ -108,7 +109,8 @@ export function buildAiRuntime(opts: AiRuntimeOptions) {
     adapters,
     secrets,
     coordination: createRedisCoordination(redis),
-    usage: opts.usage ?? createMongoUsageSink(),
+    // Every metered call also feeds the Prometheus AI latency/error metrics.
+    usage: withUsageObserver(opts.usage ?? createMongoUsageSink(), observeAiCall),
     logger,
   });
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Logger } from '@cbi/config';
+import { recordJudgeFailure, type Logger } from '@cbi/config';
 import {
   CodingAttemptModel,
   InterviewSessionModel,
@@ -270,6 +270,7 @@ export function createCodingService(deps: Deps) {
         result = await judgeRun(problem, body, false);
       } catch (err) {
         if (!(err instanceof JudgeUnavailableError)) throw err;
+        recordJudgeFailure(err, 'code-run');
         logger.warn({ err, sessionId }, 'code run: judge unavailable');
         throw new AppError(
           503,
@@ -312,6 +313,7 @@ export function createCodingService(deps: Deps) {
         result = await judgeRun(problem, body, true);
       } catch (err) {
         if (!(err instanceof JudgeUnavailableError)) throw err;
+        recordJudgeFailure(err, 'code-submit');
         logger.warn({ err, sessionId }, 'code submit: judge unavailable; submitting without a run');
       }
       const submitted = await CodingAttemptModel.findOneAndUpdate(

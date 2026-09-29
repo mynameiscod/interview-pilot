@@ -1,4 +1,4 @@
-import type { Logger } from '@cbi/config';
+import { recordJudgeFailure, type Logger } from '@cbi/config';
 import {
   CodingAttemptModel,
   ProblemModel,
@@ -74,6 +74,7 @@ export async function judgeUnsubmitted(
         result = toRunResult(out, tests, now);
       } catch (err) {
         if (!(err instanceof JudgeUnavailableError)) throw err;
+        recordJudgeFailure(err, 'evaluation');
         logger.warn(
           { err, sessionId: String(sessionId) },
           'judge unavailable for an unsubmitted solution',

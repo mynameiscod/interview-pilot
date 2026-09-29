@@ -20,6 +20,41 @@ const base = {
 
 const productionAiKey = Buffer.alloc(32, 7).toString('base64');
 
+describe('observability settings', () => {
+  it('leaves error tracking off and metrics on by default', () => {
+    const env = loadEnv(apiEnvSchema, base);
+    expect(env.SENTRY_DSN).toBeUndefined();
+    expect(env.METRICS_ENABLED).toBe(true);
+    expect(env.METRICS_TOKEN).toBeUndefined();
+  });
+
+  it('accepts a Sentry or GlitchTip DSN and rejects other values', () => {
+    const dsn = 'https://abc123@glitchtip.codebegun.com/2';
+    expect(loadEnv(workerEnvSchema, { ...base, SENTRY_DSN: dsn }).SENTRY_DSN).toBe(dsn);
+    expect(() => loadEnv(apiEnvSchema, { ...base, SENTRY_DSN: 'glitchtip.codebegun.com' })).toThrow(
+      /SENTRY_DSN/,
+    );
+  });
+
+  it('accepts Redis sentinel host:port lists', () => {
+    const sentinels = 'redis-sentinel-1:26379,redis-sentinel-2:26379';
+    const env = loadEnv(workerEnvSchema, { ...base, REDIS_SENTINELS: sentinels });
+    expect(env.REDIS_SENTINELS).toBe(sentinels);
+    expect(env.REDIS_SENTINEL_MASTER).toBe('cbi');
+    expect(() =>
+      loadEnv(apiEnvSchema, { ...base, REDIS_SENTINELS: 'redis://sentinel:26379' }),
+    ).toThrow(/REDIS_SENTINELS/);
+  });
+
+  it('requires a metrics token of at least 16 characters', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...base, METRICS_TOKEN: 'short' })).toThrow(
+      /METRICS_TOKEN/,
+    );
+    const token = 'm'.repeat(24);
+    expect(loadEnv(apiEnvSchema, { ...base, METRICS_TOKEN: token }).METRICS_TOKEN).toBe(token);
+  });
+});
+
 const deployed = {
   ...base,
   APP_ENV: 'production',

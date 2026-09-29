@@ -1,6 +1,6 @@
 import '@cbi/design-system/styles.scss';
 import 'bootstrap-icons/font/bootstrap-icons.min.css';
-import { AuthProvider, createSessionManager } from '@cbi/web-core';
+import { AuthProvider, createSessionManager, initBrowserErrorTracking } from '@cbi/web-core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -16,6 +16,16 @@ const queryClient = new QueryClient({
 });
 
 async function bootstrap() {
+  // Off unless VITE_SENTRY_DSN was set at build time; the SDK chunk is loaded only then.
+  void initBrowserErrorTracking(
+    {
+      dsn: config.sentryDsn,
+      environment: config.appEnv,
+      release: config.sentryRelease,
+      app: 'admin',
+    },
+    () => import('@sentry/react'),
+  );
   const i18n = await initI18n();
   const manager = createSessionManager({ baseUrl: config.apiUrl, audience: 'admin' });
   const router = createBrowserRouter(routes);

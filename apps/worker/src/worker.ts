@@ -1,4 +1,10 @@
-import type { Logger } from '@cbi/config';
+import {
+  queueJobsCompletedTotal,
+  queueJobsFailedTotal,
+  workerHeartbeatTimestamp,
+  type ErrorTracker,
+  type Logger,
+} from '@cbi/config';
 import { istDay, rollupDays, type MediaStorage, type ReconcileGateway, type Redis } from '@cbi/db';
 import {
   AnalysisJob,
@@ -62,6 +68,8 @@ export interface WorkerRuntimeOptions {
   /** Connection used by processors for ordinary commands. */
   redis: Redis;
   logger: Logger;
+  /** Final job failures are reported here; omit to disable. */
+  errorTracker?: ErrorTracker;
   /** Resume and job-description extraction; omit to leave the queue unconsumed. */
   documents?: { deps: DocumentProcessorDeps; concurrency: number };
   /** Role analysis and blueprint selection; omit to leave the queue unconsumed. */
@@ -91,6 +99,31 @@ export interface WorkerRuntime {
 }
 
 const isFinalAttempt = (job: Job) => job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+
+/**
+ * Metrics, log line and error report for a failed attempt. BullMQ has already
+ * counted the attempt, so retries left means attemptsMade < attempts: those are
+ * routine and only counted; the attempt that exhausts them is reported.
+ */
+export function reportJobFailure(
+  deps: { logger: Logger; errorTracker?: ErrorTracker },
+  queue: string,
+  job: Pick<Job, 'id' | 'name' | 'attemptsMade' | 'opts'> | undefined,
+  err: Error,
+): void {
+  const jobName = job?.name ?? 'unknown';
+  queueJobsFailedTotal.inc({ queue, job_name: jobName });
+  deps.logger.error({ jobId: job?.id, jobName, err }, 'job failed');
+  if (!job || job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    deps.errorTracker?.captureException(err, {
+      tags: { queue, job_name: jobName },
+      extra: {
+        jobId: job?.id === undefined ? null : String(job.id),
+        attemptsMade: job?.attemptsMade,
+      },
+    });
+  }
+}
 
 /** Registers queues, schedulers and processors. */
 export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRuntime> {
@@ -180,6 +213,7 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
       async (job) => {
         switch (job.name) {
           case HEARTBEAT_JOB: {
+            workerHeartbeatTimestamp.set(Date.now() / 1000);
             await writeHeartbeat(
               opts.redis,
               {
@@ -356,8 +390,9 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
   }
 
   for (const worker of workers) {
-    worker.on('failed', (job, err) =>
-      opts.logger.error({ jobId: job?.id, jobName: job?.name, err }, 'job failed'),
+    worker.on('failed', (job, err) => reportJobFailure(opts, worker.name, job, err));
+    worker.on('completed', (job) =>
+      queueJobsCompletedTotal.inc({ queue: worker.name, job_name: job.name }),
     );
     worker.on('error', (err) => opts.logger.error({ err }, 'worker error'));
   }
