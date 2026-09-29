@@ -22,6 +22,7 @@ import { codingAdminRouter } from '../coding/coding.routes.js';
 import { interviewsAdminRouter } from '../reports/reports.routes.js';
 import { campaignsAdminRouter } from '../campaigns/campaigns.routes.js';
 import { opsAdminRouter } from '../ops/ops.routes.js';
+import { orgsAdminRouter } from '../orgs/orgs.routes.js';
 import { createAuditLogService } from './audit-log.service.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
@@ -169,6 +170,7 @@ export function adminRouter(c: Container): Router {
   router.use(codingAdminRouter(c));
   router.use(campaignsAdminRouter(c));
   router.use(opsAdminRouter(c));
+  router.use(orgsAdminRouter(c));
 
   return router;
 }

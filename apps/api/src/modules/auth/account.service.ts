@@ -2,6 +2,8 @@ import { maskEmail, maskMobile } from '@cbi/auth-core';
 import {
   AuthIdentityModel,
   mongoose,
+  OrgMemberModel,
+  OrgModel,
   UserModel,
   UserProfileModel,
   type UserDocument,
@@ -84,6 +86,39 @@ function assertCanSignIn(user: UserDocument, audience: SessionAudience) {
   }
 }
 
+const noOrgAccess = () => AppError.forbidden('This account is not a member of an organisation.');
+
+/**
+ * Org portal sign-in: the person must hold a live membership of an active
+ * organisation. The first sign-in turns an INVITED membership ACTIVE.
+ */
+async function activateOrgMembership(user: UserDocument, session: ClientSession) {
+  const member = await OrgMemberModel.findOne(
+    { userId: user._id, status: { $in: ['INVITED', 'ACTIVE'] } },
+    null,
+    { session },
+  );
+  if (!member) throw noOrgAccess();
+  const org = await OrgModel.findById(member.orgId, { status: 1 }, { session }).lean();
+  if (!org || org.status !== 'ACTIVE') {
+    throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This organisation is suspended.');
+  }
+  if (member.status === 'INVITED') {
+    member.status = 'ACTIVE';
+    member.activatedAt = new Date();
+    await member.save({ session });
+  }
+}
+
+/** Only candidates create accounts by signing in; admin and org accounts are invited. */
+const createsAccounts = (audience: SessionAudience) => audience === 'candidate';
+
+function refuseUnknown(audience: SessionAudience): never {
+  throw audience === 'admin'
+    ? AppError.forbidden('This account does not have admin access.')
+    : noOrgAccess();
+}
+
 export function createAccountService() {
   /** Finds the user who owns a contact: via a verified identity first, then the primary contact. */
   async function findUserByContact(
@@ -134,6 +169,19 @@ export function createAccountService() {
       return user && user.status === 'ACTIVE' && user.adminRoles.length > 0 ? user : null;
     },
 
+    /** Deliverability check for org OTP: only members of an active organisation receive codes. */
+    async findActiveOrgMemberByContact(channel: OtpChannel, destination: string) {
+      const user = await findUserByContact(channel, destination);
+      if (!user || user.status !== 'ACTIVE') return null;
+      const member = await OrgMemberModel.findOne(
+        { userId: user._id, status: { $in: ['INVITED', 'ACTIVE'] } },
+        { orgId: 1 },
+      ).lean();
+      if (!member) return null;
+      const org = await OrgModel.findById(member.orgId, { status: 1 }).lean();
+      return org?.status === 'ACTIVE' ? user : null;
+    },
+
     /**
      * Signs in with an email/mobile the person just proved they own. Creates the
      * account on first candidate sign-in; never creates admin accounts.
@@ -147,8 +195,7 @@ export function createAccountService() {
         let user = await findUserByContact(channel, destination, session);
         let created = false;
         if (!user) {
-          if (audience === 'admin')
-            throw AppError.forbidden('This account does not have admin access.');
+          if (!createsAccounts(audience)) refuseUnknown(audience);
           user = new UserModel({});
           await user.save({ session });
           await UserProfileModel.create([{ userId: user._id }], { session });
@@ -161,6 +208,7 @@ export function createAccountService() {
         if (!hasIdentity) await attachIdentity(user!, channel, destination, session);
         const deletionCancelled = cancelPendingDeletion(user!, audience);
         assertCanSignIn(user!, audience);
+        if (audience === 'org') await activateOrgMembership(user!, session);
         await markLogin(user!, session);
         return { user: user!, created, deletionCancelled };
       });
@@ -185,8 +233,7 @@ export function createAccountService() {
         if (!user) {
           user = await findUserByContact('EMAIL', claims.email, session);
           if (!user) {
-            if (audience === 'admin')
-              throw AppError.forbidden('This account does not have admin access.');
+            if (!createsAccounts(audience)) refuseUnknown(audience);
             user = new UserModel({});
             await user.save({ session });
             await UserProfileModel.create(
@@ -204,6 +251,7 @@ export function createAccountService() {
         }
         const deletionCancelled = cancelPendingDeletion(user!, audience);
         assertCanSignIn(user!, audience);
+        if (audience === 'org') await activateOrgMembership(user!, session);
         await markLogin(user!, session);
         return { user: user!, created, deletionCancelled };
       });

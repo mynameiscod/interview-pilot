@@ -28,7 +28,7 @@ import {
   ScoreRevisionSummary,
   SessionConsents,
   type AdminRole,
-  type CreateCampaignBody,
+  type CreateCampaignInput,
   type ReportContent,
 } from '@cbi/shared-types';
 import request from 'supertest';
@@ -82,7 +82,7 @@ const publicCall = (method: Method, path: string) =>
 
 const HOUR = 3600_000;
 
-async function body(overrides: Partial<CreateCampaignBody> = {}): Promise<CreateCampaignBody> {
+async function body(overrides: Partial<CreateCampaignInput> = {}): Promise<CreateCampaignInput> {
   const role = await RoleModel.findOne({ slug: 'backend-engineer' }).lean();
   return {
     name: 'Backend hiring — September',
@@ -105,7 +105,7 @@ async function body(overrides: Partial<CreateCampaignBody> = {}): Promise<Create
 /** Creates and (by default) activates a campaign; returns its id and invite token. */
 async function campaign(
   admin: Admin,
-  overrides: Partial<CreateCampaignBody> = {},
+  overrides: Partial<CreateCampaignInput> = {},
   activate = true,
 ) {
   const res = await admin('post', '/campaigns')
@@ -725,7 +725,9 @@ describe('results and exports', () => {
     expect(rows).toHaveLength(2);
     expect(rows[1]).toContain(r);
 
-    const audit = await AuditLogModel.find({ action: 'campaign.results_exported' }).lean();
+    const audit = await AuditLogModel.find({ action: 'campaign.results_exported' })
+      .sort({ at: 1, _id: 1 })
+      .lean();
     expect(audit.map((e) => e.details)).toEqual([
       expect.objectContaining({ format: 'csv', rows: 3 }),
       expect.objectContaining({ format: 'csv', rows: 1 }),

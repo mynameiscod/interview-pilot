@@ -12,11 +12,24 @@ export interface CookieSettings {
  * their own app, so they are never readable by JavaScript and never sent with
  * ordinary API calls. `__Secure-` prefix enforces the Secure attribute.
  */
+const COOKIE_BASE: Record<SessionAudience, string> = {
+  candidate: 'cbi_rt',
+  admin: 'cbi_admin_rt',
+  org: 'cbi_org_rt',
+};
+
+/** The auth endpoints of each app (also the refresh cookie's path). */
+export const AUTH_PATH: Record<SessionAudience, string> = {
+  candidate: '/auth',
+  admin: '/admin/auth',
+  org: '/org/auth',
+};
+
 function cookieSpec(audience: SessionAudience, settings: CookieSettings) {
-  const base = audience === 'admin' ? 'cbi_admin_rt' : 'cbi_rt';
+  const base = COOKIE_BASE[audience];
   return {
     name: settings.secure ? `__Secure-${base}` : base,
-    path: audience === 'admin' ? `${API_V1_PREFIX}/admin/auth` : `${API_V1_PREFIX}/auth`,
+    path: `${API_V1_PREFIX}${AUTH_PATH[audience]}`,
   };
 }
 

@@ -35,6 +35,12 @@ import {
 } from './modules/media/media.routes.js';
 import { campaignsRouter } from './modules/campaigns/campaigns.routes.js';
 import { opsPublicRouter, shareLinksRouter } from './modules/ops/ops.routes.js';
+import {
+  campaignInvitesRouter,
+  identityInterviewRouter,
+  orgApiRouter,
+  orgPortalRouter,
+} from './modules/orgs/orgs.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
@@ -133,6 +139,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/interviews', voiceInterviewRouter(c));
   v1.use('/interviews', mediaInterviewRouter(c));
   v1.use('/interviews', codingInterviewRouter(c));
+  v1.use('/interviews', identityInterviewRouter(c));
   v1.use('/media', mediaPlaybackRouter(c));
   v1.use('/interviews', interviewsRouter(c));
   v1.use('/voice', voiceRouter(c));
@@ -141,12 +148,17 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/reports', reportsRouter(c));
   v1.use('/feedback', feedbackRouter(c));
   v1.use('/campaigns', campaignsRouter(c));
+  v1.use('/campaign-invites', campaignInvitesRouter(c));
   v1.use(opsPublicRouter(c));
   v1.use('/plans', plansRouter(c));
   v1.use('/payments', paymentsRouter(c));
   v1.use(librarySearchRouter());
   v1.use('/admin/auth', authRouter('admin', c));
   v1.use('/admin', adminRouter(c));
+  // Org portal (employers and colleges): its own session audience, never admin routes.
+  v1.use('/org/auth', authRouter('org', c));
+  v1.use('/org', orgPortalRouter(c));
+  v1.use('/org-api', orgApiRouter(c));
   v1.use((req, _res, next) => {
     next(
       new AppError(404, 'NOT_FOUND', `Route ${req.method} ${API_V1_PREFIX}${req.path} not found`),

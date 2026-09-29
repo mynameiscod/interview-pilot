@@ -103,12 +103,14 @@ export function createOtpService(opts: OtpServiceOptions) {
       const destination = normalize(channel, input.rawDestination);
       const limits = await enforceSendLimits(channel, destination);
 
-      // Admin codes go only to existing admins. Others get an identical response
-      // and a challenge that can never verify, so the endpoint does not reveal
-      // which addresses belong to staff.
+      // Admin and org codes go only to existing admins and org members. Others get
+      // an identical response and a challenge that can never verify, so the
+      // endpoint does not reveal which addresses belong to staff or organisations.
       const deliverable =
         audience === 'candidate' ||
-        (await opts.accounts.findActiveAdminByContact(channel, destination)) !== null;
+        (audience === 'admin'
+          ? await opts.accounts.findActiveAdminByContact(channel, destination)
+          : await opts.accounts.findActiveOrgMemberByContact(channel, destination)) !== null;
 
       const now = Date.now();
       const expiresAt = new Date(now + opts.ttlSec * 1000);

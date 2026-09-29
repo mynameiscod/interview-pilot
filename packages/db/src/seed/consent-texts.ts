@@ -36,6 +36,15 @@ export const SEED_CONSENT_TEXTS: { type: ConsentType; title: string; body: strin
     ].join('\n\n'),
   },
   {
+    type: 'IDENTITY_CAPTURE',
+    title: 'Confirming your identity',
+    body: [
+      'This company asks candidates to confirm who they are. Before the interview you take a photo of yourself and a photo of an identity document with your camera. In a video interview, one still frame is also taken from your camera during the interview.',
+      'The photos are shown to the reviewers at the company that runs this campaign, who compare them by eye. No automated face matching is used. They are stored securely and deleted automatically after the retention period (90 days unless stated otherwise), or when you delete your account.',
+      'Cover any number on the document that you do not need to show (for example, all but the last four digits of an Aadhaar number). If you do not agree, do not start the interview.',
+    ].join('\n\n'),
+  },
+  {
     type: 'INTEGRITY',
     title: 'Session observations',
     body: [

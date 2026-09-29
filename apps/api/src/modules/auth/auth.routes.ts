@@ -18,17 +18,29 @@ import type { Container } from '../../container.js';
 import { AppError } from '../../lib/errors.js';
 import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requireCsrfHeader } from '../../middleware/authenticate.js';
-import { UserModel, type UserDocument } from '@cbi/db';
+import { OrgMemberModel, OrgModel, UserModel, type UserDocument } from '@cbi/db';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './cookies.js';
 import { resolveMessageLocale } from './locale.js';
 
-/** Audit actor for a signed-in person acting in one of the two apps. */
+/** Audit actor for a signed-in person acting in one of the apps. */
 export const actorTypeFor = (audience: SessionAudience): AuditActorType =>
-  audience === 'admin' ? 'ADMIN' : 'USER';
+  audience === 'admin' ? 'ADMIN' : audience === 'org' ? 'ORG_MEMBER' : 'USER';
+
+/** Whether the member's organisation requires an authenticator app (org sign-in). */
+async function orgRequiresMfa(userId: string): Promise<boolean> {
+  const member = await OrgMemberModel.findOne(
+    { userId, status: { $in: ['INVITED', 'ACTIVE'] } },
+    { orgId: 1 },
+  ).lean();
+  if (!member) return false;
+  const org = await OrgModel.findById(member.orgId, { mfaRequired: 1 }).lean();
+  return org?.mfaRequired ?? false;
+}
 
 /**
- * Sign-in endpoints. Mounted twice: `/auth` (candidate app) and `/admin/auth`
- * (admin app). The audience keeps the two sessions, cookies and tokens apart.
+ * Sign-in endpoints. Mounted three times: `/auth` (candidate app),
+ * `/admin/auth` (admin console) and `/org/auth` (org portal, served by the
+ * admin web app). The audience keeps the sessions, cookies and tokens apart.
  */
 export function authRouter(audience: SessionAudience, c: Container): Router {
   const router = Router();
@@ -45,16 +57,18 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
   ) {
     const ctx = clientContext(req);
     const userId = String(user._id);
-    // Admin sign-in needs a second factor when one is set up or required for the role.
-    if (audience === 'admin' && !opts.mfaDone) {
+    // Admin sign-in needs a second factor when one is set up or required for the role;
+    // org sign-in when one is set up or the organisation requires it.
+    if (audience !== 'candidate' && !opts.mfaDone) {
       const challenge = await c.mfa.beginSignIn(
         { id: userId, account: user.primaryEmail ?? userId, roles: user.adminRoles as AdminRole[] },
         method,
+        audience === 'org' ? { audience, required: await orgRequiresMfa(userId) } : {},
       );
       if (challenge) {
         await c.audit.record(
           {
-            actorType: 'ADMIN',
+            actorType: actorTypeFor(audience),
             actorId: userId,
             action: 'auth.mfa_challenged',
             details: { method, mode: challenge.mode },
@@ -167,17 +181,26 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
         data: await c.passwords.change(requireAuth(req).userId, body, clientContext(req)),
       });
     });
+  }
 
+  if (audience !== 'candidate') {
     // Second sign-in step (authenticator or recovery code); the challenge token is single-use.
     router.post('/mfa/verify', limiters.otpVerify, async (req, res) => {
       const body = MfaVerifyBody.parse(req.body);
-      const done = await c.mfa.completeSignIn(body, clientContext(req));
+      const done = await c.mfa.completeSignIn(body, clientContext(req), audience);
       const user = await UserModel.findById(done.userId);
       if (!user || user.status !== 'ACTIVE') {
         throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This account is suspended.');
       }
-      if (user.adminRoles.length === 0) {
+      if (audience === 'admin' && user.adminRoles.length === 0) {
         throw AppError.forbidden('This account does not have admin access.');
+      }
+      if (audience === 'org') {
+        await c.userState.invalidate(done.userId);
+        const state = await c.userState.get(done.userId);
+        if (!state?.org || state.org.orgStatus !== 'ACTIVE') {
+          throw AppError.forbidden('This account is not a member of an organisation.');
+        }
       }
       await respondWithSession(req, res, user, done.method, false, {
         mfaDone: true,
@@ -185,13 +208,17 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
       });
     });
 
-    // Two-factor settings on the account page.
+    // Two-factor status (account page); org members follow their organisation's setting.
     router.get('/mfa', signedIn, async (req, res) => {
       const auth = requireAuth(req);
+      const required = audience === 'org' ? await orgRequiresMfa(auth.userId) : undefined;
       res
         .set('Cache-Control', 'no-store')
-        .json({ data: await c.mfa.status(auth.userId, auth.adminRoles) });
+        .json({ data: await c.mfa.status(auth.userId, auth.adminRoles, required) });
     });
+  }
+
+  if (audience === 'admin') {
     router.post('/mfa/enroll', signedIn, limiters.auth, async (req, res) => {
       const auth = requireAuth(req);
       const me = await c.accounts.loadMe(auth.userId);

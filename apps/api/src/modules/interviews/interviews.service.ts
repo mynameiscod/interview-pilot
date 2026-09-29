@@ -26,6 +26,7 @@ import { iso, objectId } from '../../lib/ids.js';
 import type { JobQueues } from '../../lib/jobs.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ConsentService } from '../consent/consent.service.js';
+import type { IdentityService } from '../orgs/identity.service.js';
 
 export const DEFAULT_TEMPLATE_KEY = 'standard-practice';
 /** Analysis runs billed AI calls; repeated retries of one draft are capped. */
@@ -56,9 +57,11 @@ interface Deps {
   audit: AuditService;
   logger: Logger;
   consent: ConsentService;
+  /** Identity capture status for campaigns that ask for it. */
+  identity?: Pick<IdentityService, 'statusFor'>;
 }
 
-export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
+export function createInterviewService({ jobs, audit, logger, consent, identity }: Deps) {
   async function summary(
     session: InterviewSessionRecord,
     loaded?: { template?: InterviewTemplateRecord | null; target?: JobTargetRecord | null },
@@ -123,6 +126,7 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
             reportVisible: campaign.candidateSeesReport,
             modes: campaign.modes,
             languages: campaign.languages,
+            identity: identity ? await identity.statusFor(session) : null,
           }
         : null,
       voice: readiness.voice,

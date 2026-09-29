@@ -2,8 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Logger } from '@cbi/config';
 import type { Readable } from 'node:stream';
 import {
+  AuthIdentityModel,
   CAMPAIGN_EXPORT_STUCK_AFTER_MS,
   CampaignApplicationModel,
+  CampaignInviteModel,
   CampaignExportModel,
   CampaignModel,
   campaignDimensions,
@@ -16,13 +18,17 @@ import {
   InterviewTemplateModel,
   JobTargetModel,
   MAX_PACKAGE_ROWS,
+  OrgModel,
   ResumeModel,
   RoleBlueprintModel,
   RoleModel,
+  UserModel,
   UserProfileModel,
   type CampaignExportRecord,
+  type CampaignInviteRecord,
   type CampaignRecord,
 } from '@cbi/db';
+import type { ClientSession } from 'mongoose';
 import { StorageNotFoundError, type StorageProvider } from '@cbi/provider-adapters';
 import {
   AVAILABLE_INTERVIEW_MODES,
@@ -44,6 +50,7 @@ import {
   type MaintenanceSetting,
   type UpdateCampaignBody,
 } from '@cbi/shared-types';
+import { maskEmail } from '@cbi/auth-core';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
@@ -53,9 +60,22 @@ import { refuseDuringMaintenance } from '../../lib/maintenance.js';
 import type { JobQueues } from '../../lib/jobs.js';
 
 /** Invite tokens: 144 random bits, URL-safe. Only the SHA-256 is stored. */
-const newToken = () => randomBytes(18).toString('base64url');
-const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
-const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+export const newToken = () => randomBytes(18).toString('base64url');
+export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * Who is acting on campaigns: CodeBegun admins see and change every campaign;
+ * an organisation's members only their own (every query is filtered by it).
+ */
+export type CampaignScope = { orgId: string } | null;
+
+const actorTypeOf = (scope: CampaignScope) =>
+  scope ? ('ORG_MEMBER' as const) : ('ADMIN' as const);
+
+/** The organisation's interview quota is used up (an org campaign join). */
+const QUOTA_MESSAGE =
+  'This organisation cannot accept more candidates right now. Please contact them.';
 
 /** Allowed status changes; CLOSED is final. */
 const STATUS_MOVES: Record<CampaignStatus, CampaignStatus[]> = {
@@ -116,6 +136,52 @@ interface Deps {
   now?: () => Date;
 }
 
+/**
+ * The email addresses a candidate has proved they own: the verified primary
+ * email and every email (or Google) identity. Invites are matched on these.
+ */
+export async function verifiedEmails(userId: string): Promise<string[]> {
+  const [user, identities] = await Promise.all([
+    UserModel.findById(userId, { primaryEmail: 1, emailVerifiedAt: 1 }).lean(),
+    AuthIdentityModel.find(
+      { userId, provider: { $in: ['EMAIL', 'GOOGLE'] } },
+      { provider: 1, subject: 1, email: 1 },
+    ).lean(),
+  ]);
+  const emails = new Set<string>();
+  if (user?.primaryEmail && user.emailVerifiedAt) emails.add(user.primaryEmail.toLowerCase());
+  for (const i of identities) {
+    const email = i.provider === 'EMAIL' ? i.subject : i.email;
+    if (email) emails.add(email.toLowerCase());
+  }
+  return [...emails];
+}
+
+/**
+ * Moves sponsored interviews between an organisation's wallet and one of its
+ * campaigns: a positive delta takes them from the wallet (only if the
+ * balance covers it, atomically), a negative one gives them back.
+ */
+export async function moveWalletCredits(
+  orgId: CampaignRecord['orgId'],
+  delta: number,
+  session: ClientSession,
+) {
+  if (!orgId || delta === 0) return;
+  const moved = await OrgModel.updateOne(
+    delta > 0 ? { _id: orgId, 'wallet.balance': { $gte: delta } } : { _id: orgId },
+    { $inc: { 'wallet.balance': -delta, 'wallet.allocated': delta } },
+    { session },
+  );
+  if (moved.modifiedCount !== 1) {
+    throw new AppError(
+      402,
+      'INSUFFICIENT_CREDITS',
+      'The organisation wallet does not have enough sponsored interviews.',
+    );
+  }
+}
+
 export function createCampaignService({
   audit,
   logger,
@@ -125,8 +191,12 @@ export function createCampaignService({
   maintenance,
   now = () => new Date(),
 }: Deps) {
-  async function byId(id: string) {
-    const c = await CampaignModel.findById(objectId(id, 'Campaign')).lean<CampaignRecord>();
+  async function byId(id: string, scope: CampaignScope = null) {
+    const c = await CampaignModel.findOne({
+      _id: objectId(id, 'Campaign'),
+      ...(scope ? { orgId: objectId(scope.orgId, 'Campaign') } : {}),
+    }).lean<CampaignRecord>();
+    // Another organisation's campaign reads exactly like a missing one.
     if (!c) throw AppError.notFound('Campaign not found');
     return c;
   }
@@ -158,8 +228,13 @@ export function createCampaignService({
   return {
     // ---- Admin -------------------------------------------------------------------------------
 
-    async list(query: CampaignListQuery): Promise<CampaignListPage> {
-      const filter = query.status ? { status: query.status } : {};
+    byId,
+
+    async list(query: CampaignListQuery, scope: CampaignScope = null): Promise<CampaignListPage> {
+      const filter = {
+        ...(query.status ? { status: query.status } : {}),
+        ...(scope ? { orgId: objectId(scope.orgId, 'Organisation') } : {}),
+      };
       const [rows, total] = await Promise.all([
         CampaignModel.find(filter)
           .sort({ createdAt: -1, _id: -1 })
@@ -176,15 +251,22 @@ export function createCampaignService({
       };
     },
 
-    async get(id: string) {
-      return campaignSummary(await byId(id));
+    async get(id: string, scope: CampaignScope = null) {
+      return campaignSummary(await byId(id, scope));
     },
 
     async create(
       body: CreateCampaignBody,
       actorId: string,
       ctx: ClientContext,
+      scope: CampaignScope = null,
     ): Promise<CampaignWithInvite> {
+      if (scope) {
+        const org = await OrgModel.findById(objectId(scope.orgId, 'Organisation'), {
+          status: 1,
+        }).lean();
+        if (!org || org.status !== 'ACTIVE') throw AppError.forbidden();
+      }
       const role = await RoleModel.findOne({
         _id: objectId(body.roleId, 'Role'),
         active: true,
@@ -217,7 +299,10 @@ export function createCampaignService({
         throw AppError.notFound('Company not found');
       }
       const token = newToken();
+      const orgId = scope ? objectId(scope.orgId, 'Organisation') : null;
       return transaction(async (tx) => {
+        // An organisation's sponsored budget comes out of its wallet.
+        await moveWalletCredits(orgId, body.sponsoredCredits ?? 0, tx);
         const [created] = await CampaignModel.create(
           [
             {
@@ -249,6 +334,11 @@ export function createCampaignService({
                 : null,
               tokenHash: hashToken(token),
               tokenHint: token.slice(0, 4),
+              orgId,
+              requireInvite: body.requireInvite,
+              employerView: body.employerView,
+              idCapture: body.idCapture,
+              reminders: body.reminders,
               createdBy: actorId,
             },
           ],
@@ -256,12 +346,16 @@ export function createCampaignService({
         );
         await audit.record(
           {
-            actorType: 'ADMIN',
+            actorType: actorTypeOf(scope),
             actorId,
             action: 'campaign.created',
             resourceType: 'campaign',
             resourceId: String(created!._id),
             details: {
+              orgId: scope?.orgId,
+              requireInvite: body.requireInvite,
+              employerView: body.employerView,
+              idCapture: body.idCapture,
               name: body.name,
               roleId: String(role._id),
               blueprintVersion: blueprint.version,
@@ -280,8 +374,14 @@ export function createCampaignService({
       });
     },
 
-    async update(id: string, body: UpdateCampaignBody, actorId: string, ctx: ClientContext) {
-      const c = await byId(id);
+    async update(
+      id: string,
+      body: UpdateCampaignBody,
+      actorId: string,
+      ctx: ClientContext,
+      scope: CampaignScope = null,
+    ) {
+      const c = await byId(id, scope);
       if (c.status === 'CLOSED')
         throw new AppError(409, 'INVALID_STATE', 'This campaign is closed.');
       if (body.maxCandidates !== null && body.maxCandidates < c.joinedCount) {
@@ -296,6 +396,12 @@ export function createCampaignService({
         );
       }
       return transaction(async (tx) => {
+        // Raising an organisation's budget draws on its wallet; lowering it gives units back.
+        await moveWalletCredits(
+          c.orgId,
+          (body.sponsoredCredits ?? 0) - (c.sponsoredCredits?.total ?? 0),
+          tx,
+        );
         const updated = await CampaignModel.findOneAndUpdate(
           // Conditional on the counters the checks above relied on.
           {
@@ -318,6 +424,7 @@ export function createCampaignService({
               sponsoredCredits: body.sponsoredCredits
                 ? { total: body.sponsoredCredits, used }
                 : null,
+              ...(body.reminders ? { reminders: body.reminders } : {}),
             },
           },
           { returnDocument: 'after', session: tx },
@@ -325,7 +432,7 @@ export function createCampaignService({
         if (!updated) throw AppError.conflict('This campaign changed. Refresh and try again.');
         await audit.record(
           {
-            actorType: 'ADMIN',
+            actorType: actorTypeOf(scope),
             actorId,
             action: 'campaign.updated',
             resourceType: 'campaign',
@@ -345,8 +452,14 @@ export function createCampaignService({
       });
     },
 
-    async setStatus(id: string, body: CampaignStatusBody, actorId: string, ctx: ClientContext) {
-      const c = await byId(id);
+    async setStatus(
+      id: string,
+      body: CampaignStatusBody,
+      actorId: string,
+      ctx: ClientContext,
+      scope: CampaignScope = null,
+    ) {
+      const c = await byId(id, scope);
       if (c.status === body.status) return campaignSummary(c);
       if (!STATUS_MOVES[c.status].includes(body.status)) {
         throw new AppError(
@@ -356,20 +469,48 @@ export function createCampaignService({
         );
       }
       return transaction(async (tx) => {
+        // Closing an organisation's campaign returns its unused sponsored interviews to the wallet.
+        const unused =
+          body.status === 'CLOSED' && c.orgId && c.sponsoredCredits
+            ? c.sponsoredCredits.total - c.sponsoredCredits.used
+            : 0;
         const updated = await CampaignModel.findOneAndUpdate(
-          { _id: c._id, status: c.status },
-          { $set: { status: body.status } },
+          {
+            _id: c._id,
+            status: c.status,
+            ...(unused > 0 ? { 'sponsoredCredits.used': c.sponsoredCredits!.used } : {}),
+          },
+          {
+            $set: {
+              status: body.status,
+              ...(unused > 0 ? { 'sponsoredCredits.total': c.sponsoredCredits!.used } : {}),
+            },
+          },
           { returnDocument: 'after', session: tx },
         ).lean<CampaignRecord>();
         if (!updated) throw AppError.conflict('This campaign changed. Refresh and try again.');
+        if (unused > 0) await moveWalletCredits(c.orgId, -unused, tx);
+        if (body.status === 'CLOSED') {
+          // No more invite emails or reminders for a closed campaign.
+          await CampaignInviteModel.updateMany(
+            { campaignId: c._id, nextSendAt: { $ne: null } },
+            { $set: { nextSendAt: null } },
+            { session: tx },
+          );
+        }
         await audit.record(
           {
-            actorType: 'ADMIN',
+            actorType: actorTypeOf(scope),
             actorId,
             action: 'campaign.status_changed',
             resourceType: 'campaign',
             resourceId: id,
-            details: { from: c.status, to: body.status, reason: body.reason },
+            details: {
+              from: c.status,
+              to: body.status,
+              reason: body.reason,
+              ...(unused > 0 ? { returnedToWallet: unused } : {}),
+            },
           },
           ctx,
           tx,
@@ -384,8 +525,9 @@ export function createCampaignService({
       reason: string,
       actorId: string,
       ctx: ClientContext,
+      scope: CampaignScope = null,
     ): Promise<CampaignWithInvite> {
-      const c = await byId(id);
+      const c = await byId(id, scope);
       if (c.status === 'CLOSED')
         throw new AppError(409, 'INVALID_STATE', 'This campaign is closed.');
       const token = newToken();
@@ -398,7 +540,7 @@ export function createCampaignService({
         if (!updated) throw AppError.conflict('This campaign changed. Refresh and try again.');
         await audit.record(
           {
-            actorType: 'ADMIN',
+            actorType: actorTypeOf(scope),
             actorId,
             action: 'campaign.invite_rotated',
             resourceType: 'campaign',
@@ -544,40 +686,29 @@ export function createCampaignService({
     // ---- Candidates ----------------------------------------------------------------------------
 
     async publicView(token: string, userId: string | null): Promise<PublicCampaign> {
-      const c = await byToken(token);
-      const [blueprint, template, application] = await Promise.all([
-        RoleBlueprintModel.findById(c.blueprintId, { 'content.competencies': 1 }).lean(),
-        InterviewTemplateModel.findById(c.templateId).lean(),
-        userId
-          ? CampaignApplicationModel.findOne({ campaignId: c._id, userId }, { sessionId: 1 }).lean()
-          : null,
-      ]);
-      return {
-        name: c.name,
-        companyName: c.companyName,
-        roleTitle: c.roleTitle,
-        assesses: (blueprint?.content.competencies ?? []).map((d) => d.name),
-        totalDurationSec: template ? templateDurationSec(template.content) : 0,
-        modes: c.modes,
-        languages: c.languages,
-        recording: c.proctoring.recording,
-        observations: c.proctoring.tabSwitchTracking,
-        candidateSeesReport: c.candidateSeesReport,
-        sponsored: Boolean(
-          c.sponsoredCredits && c.sponsoredCredits.used < c.sponsoredCredits.total,
-        ),
-        window: {
-          startAt: iso(c.window.startAt),
-          endAt: c.window.endAt ? iso(c.window.endAt) : null,
-        },
-        closedReason: closedReason(c, now()),
-        joinedInterviewId: application ? String(application.sessionId) : null,
-      };
+      return publicViewOf(await byToken(token), userId);
+    },
+
+    /**
+     * An invite link (`/campaign/i/<token>`): the same landing page. The
+     * first visit marks the invite OPENED. Revoked and unknown invites read
+     * like a missing campaign.
+     */
+    async publicViewByInvite(token: string, userId: string | null): Promise<PublicCampaign> {
+      const { campaign, invite } = await byInviteToken(token);
+      if (invite.status === 'SENT' || invite.status === 'PENDING') {
+        await CampaignInviteModel.updateOne(
+          { _id: invite._id, status: { $in: ['SENT', 'PENDING'] } },
+          { $set: { status: 'OPENED', openedAt: now() } },
+        );
+      }
+      return publicViewOf(campaign, userId);
     },
 
     /**
      * Joins a campaign: one interview per candidate (joining again returns
-     * it), counted atomically against the campaign's limit.
+     * it), counted atomically against the campaign's limit and, for an
+     * organisation's campaign, its interview quota.
      */
     async join(
       userId: string,
@@ -585,139 +716,282 @@ export function createCampaignService({
       body: JoinCampaignBody,
       ctx: ClientContext,
     ): Promise<JoinCampaignResult> {
-      const c = await byToken(token);
-      const existing = async () =>
-        CampaignApplicationModel.findOne({ campaignId: c._id, userId }, { sessionId: 1 }).lean();
-      const before = await existing();
-      if (before) return { interviewId: String(before.sessionId), created: false };
-      await refuseDuringMaintenance(maintenance);
-      const reason = closedReason(c, now());
-      if (reason) throw new AppError(409, 'CAMPAIGN_CLOSED', CLOSED_MESSAGES[reason]);
-      if (body.resumeId) {
-        const resume = await ResumeModel.findOne(
-          { _id: objectId(body.resumeId, 'Resume'), userId },
-          { extraction: 1 },
-        ).lean();
-        if (!resume) throw AppError.notFound('Resume not found');
-        if (resume.extraction.status === 'FAILED') {
-          throw new AppError(
-            409,
-            'INVALID_STATE',
-            'We could not read this resume. Upload a different file or continue without one.',
-          );
-        }
-      }
-      const template = await InterviewTemplateModel.findById(c.templateId).lean();
-      if (!template) throw new Error(`campaign ${String(c._id)} template missing`);
-      const profile = await UserProfileModel.findOne(
-        { userId },
-        { preferredInterviewLanguage: 1 },
-      ).lean();
-      const preferred = profile?.preferredInterviewLanguage;
-      const language = preferred && c.languages.includes(preferred) ? preferred : c.languages[0]!;
-      const mode =
-        c.modes.find(
-          (m) => template.content.modes.includes(m) && AVAILABLE_INTERVIEW_MODES.includes(m),
-        ) ?? c.modes[0]!;
+      return joinCampaign(await byToken(token), null, userId, body, ctx);
+    },
 
-      let sessionId: string;
-      try {
-        sessionId = await transaction(async (tx) => {
-          const at = now();
-          const claimed = await CampaignModel.findOneAndUpdate(
-            {
-              _id: c._id,
-              status: 'ACTIVE',
-              'window.startAt': { $lte: at },
-              $and: [
-                { $or: [{ 'window.endAt': null }, { 'window.endAt': { $gt: at } }] },
-                {
-                  $or: [
-                    { maxCandidates: null },
-                    { $expr: { $lt: ['$joinedCount', '$maxCandidates'] } },
-                  ],
-                },
-              ],
-            },
-            { $inc: { joinedCount: 1 } },
-            { returnDocument: 'after', session: tx, projection: { _id: 1 } },
-          ).lean();
-          if (!claimed) {
-            const fresh = await CampaignModel.findById(c._id, null, {
-              session: tx,
-            }).lean<CampaignRecord>();
-            const why = (fresh && closedReason(fresh, at)) ?? 'CLOSED';
-            throw new AppError(409, 'CAMPAIGN_CLOSED', CLOSED_MESSAGES[why]);
-          }
-          const [target] = await JobTargetModel.create(
-            [
-              {
-                userId,
-                source: c.jobDescription ? 'PASTE' : 'ROLE_ONLY',
-                rawText: c.jobDescription,
-                companyId: c.companyId,
-                companyName: c.companyName,
-                roleId: c.roleId,
-                roleTitle: c.roleTitle,
-                // The campaign's description is used as written: nothing to extract.
-                extraction: {
-                  status: 'READY',
-                  parser: 'none',
-                  charCount: c.jobDescription?.length ?? 0,
-                  completedAt: at,
-                },
-              },
-            ],
-            { session: tx },
-          );
-          const [session] = await InterviewSessionModel.create(
-            [
-              {
-                userId,
-                jobTargetId: target!._id,
-                resumeId: body.resumeId ? objectId(body.resumeId, 'Resume') : null,
-                templateId: c.templateId,
-                mode,
-                language,
-                state: 'DRAFT',
-                campaignId: c._id,
-              },
-            ],
-            { session: tx },
-          );
-          await CampaignApplicationModel.create(
-            [{ campaignId: c._id, userId, sessionId: session!._id, joinedAt: at }],
-            { session: tx },
-          );
-          await audit.record(
-            {
-              actorType: 'USER',
-              actorId: userId,
-              action: 'campaign.joined',
-              resourceType: 'campaign',
-              resourceId: String(c._id),
-              details: { interviewId: String(session!._id) },
-            },
-            ctx,
-            tx,
-          );
-          return String(session!._id);
-        });
-      } catch (err) {
-        // The same candidate joined in a parallel request: return that interview.
-        if ((err as { code?: number }).code === 11000) {
-          const after = await existing();
-          if (after) return { interviewId: String(after.sessionId), created: false };
-        }
-        throw err;
-      }
-      // Analysis uses the campaign's pinned blueprint; a failed enqueue can be retried from the interview.
-      await analyze(userId, sessionId, ctx).catch((err: unknown) =>
-        logger.warn({ err, sessionId }, 'campaign interview analysis not started'),
-      );
-      return { interviewId: sessionId, created: true };
+    /** Joins through a personal invite link. */
+    async joinByInvite(
+      userId: string,
+      token: string,
+      body: JoinCampaignBody,
+      ctx: ClientContext,
+    ): Promise<JoinCampaignResult> {
+      const { campaign, invite } = await byInviteToken(token);
+      return joinCampaign(campaign, invite, userId, body, ctx);
     },
   };
+
+  async function publicViewOf(c: CampaignRecord, userId: string | null): Promise<PublicCampaign> {
+    const [blueprint, template, application] = await Promise.all([
+      RoleBlueprintModel.findById(c.blueprintId, { 'content.competencies': 1 }).lean(),
+      InterviewTemplateModel.findById(c.templateId).lean(),
+      userId
+        ? CampaignApplicationModel.findOne({ campaignId: c._id, userId }, { sessionId: 1 }).lean()
+        : null,
+    ]);
+    return {
+      name: c.name,
+      companyName: c.companyName,
+      roleTitle: c.roleTitle,
+      assesses: (blueprint?.content.competencies ?? []).map((d) => d.name),
+      totalDurationSec: template ? templateDurationSec(template.content) : 0,
+      modes: c.modes,
+      languages: c.languages,
+      recording: c.proctoring.recording,
+      observations: c.proctoring.tabSwitchTracking,
+      candidateSeesReport: c.candidateSeesReport,
+      sponsored: Boolean(c.sponsoredCredits && c.sponsoredCredits.used < c.sponsoredCredits.total),
+      window: {
+        startAt: iso(c.window.startAt),
+        endAt: c.window.endAt ? iso(c.window.endAt) : null,
+      },
+      closedReason: closedReason(c, now()),
+      joinedInterviewId: application ? String(application.sessionId) : null,
+      inviteOnly: c.requireInvite ?? false,
+      employerView: c.employerView ?? 'FULL_REPORT',
+      idCapture: c.idCapture ?? false,
+    };
+  }
+
+  /** A personal invite and its campaign; revoked, unknown and draft ones answer 404 alike. */
+  async function byInviteToken(token: string) {
+    if (!TOKEN_PATTERN.test(token)) throw AppError.notFound('Campaign not found');
+    const invite = await CampaignInviteModel.findOne({
+      tokenHash: hashToken(token),
+    }).lean<CampaignInviteRecord>();
+    if (!invite || invite.status === 'REVOKED') throw AppError.notFound('Campaign not found');
+    const campaign = await CampaignModel.findById(invite.campaignId).lean<CampaignRecord>();
+    if (!campaign || campaign.status === 'DRAFT') throw AppError.notFound('Campaign not found');
+    return { campaign, invite };
+  }
+
+  /**
+   * Which invite a join belongs to. With a personal link, that invite, but
+   * only linked when the candidate owns its email (a forwarded link must not
+   * mark someone else's invite joined). Without one, an invite to any of the
+   * candidate's verified emails. Invite-only campaigns refuse everyone else.
+   */
+  async function resolveInvite(
+    c: CampaignRecord,
+    viaLink: CampaignInviteRecord | null,
+    userId: string,
+  ): Promise<CampaignInviteRecord | null> {
+    if (!c.orgId) return null;
+    const emails = await verifiedEmails(userId);
+    const invite =
+      viaLink && emails.includes(viaLink.email)
+        ? viaLink
+        : await CampaignInviteModel.findOne({
+            campaignId: c._id,
+            email: { $in: emails },
+            status: { $ne: 'REVOKED' },
+          }).lean<CampaignInviteRecord>();
+    if (c.requireInvite && !invite) {
+      throw new AppError(
+        403,
+        'INVITE_REQUIRED',
+        viaLink
+          ? `This invitation was sent to ${maskEmail(viaLink.email)}. Sign in with that email address to join.`
+          : 'This interview is by invitation only, and your email address was not invited.',
+      );
+    }
+    // Someone else's invite (already used by another account) is not taken over.
+    if (invite?.userId && String(invite.userId) !== userId) return null;
+    return invite;
+  }
+
+  async function joinCampaign(
+    c: CampaignRecord,
+    viaLink: CampaignInviteRecord | null,
+    userId: string,
+    body: JoinCampaignBody,
+    ctx: ClientContext,
+  ): Promise<JoinCampaignResult> {
+    const existing = async () =>
+      CampaignApplicationModel.findOne({ campaignId: c._id, userId }, { sessionId: 1 }).lean();
+    const before = await existing();
+    if (before) return { interviewId: String(before.sessionId), created: false };
+    await refuseDuringMaintenance(maintenance);
+    const reason = closedReason(c, now());
+    if (reason) throw new AppError(409, 'CAMPAIGN_CLOSED', CLOSED_MESSAGES[reason]);
+    const invite = await resolveInvite(c, viaLink, userId);
+    if (body.resumeId) {
+      const resume = await ResumeModel.findOne(
+        { _id: objectId(body.resumeId, 'Resume'), userId },
+        { extraction: 1 },
+      ).lean();
+      if (!resume) throw AppError.notFound('Resume not found');
+      if (resume.extraction.status === 'FAILED') {
+        throw new AppError(
+          409,
+          'INVALID_STATE',
+          'We could not read this resume. Upload a different file or continue without one.',
+        );
+      }
+    }
+    const template = await InterviewTemplateModel.findById(c.templateId).lean();
+    if (!template) throw new Error(`campaign ${String(c._id)} template missing`);
+    const profile = await UserProfileModel.findOne(
+      { userId },
+      { preferredInterviewLanguage: 1 },
+    ).lean();
+    const preferred = profile?.preferredInterviewLanguage;
+    const language = preferred && c.languages.includes(preferred) ? preferred : c.languages[0]!;
+    const mode =
+      c.modes.find(
+        (m) => template.content.modes.includes(m) && AVAILABLE_INTERVIEW_MODES.includes(m),
+      ) ?? c.modes[0]!;
+
+    let sessionId: string;
+    try {
+      sessionId = await transaction(async (tx) => {
+        const at = now();
+        const claimed = await CampaignModel.findOneAndUpdate(
+          {
+            _id: c._id,
+            status: 'ACTIVE',
+            'window.startAt': { $lte: at },
+            $and: [
+              { $or: [{ 'window.endAt': null }, { 'window.endAt': { $gt: at } }] },
+              {
+                $or: [
+                  { maxCandidates: null },
+                  { $expr: { $lt: ['$joinedCount', '$maxCandidates'] } },
+                ],
+              },
+            ],
+          },
+          { $inc: { joinedCount: 1 } },
+          { returnDocument: 'after', session: tx, projection: { _id: 1 } },
+        ).lean();
+        if (!claimed) {
+          const fresh = await CampaignModel.findById(c._id, null, {
+            session: tx,
+          }).lean<CampaignRecord>();
+          const why = (fresh && closedReason(fresh, at)) ?? 'CLOSED';
+          throw new AppError(409, 'CAMPAIGN_CLOSED', CLOSED_MESSAGES[why]);
+        }
+        if (c.orgId) {
+          // The organisation's interview quota, claimed the same way (never exceeded).
+          const quota = await OrgModel.updateOne(
+            {
+              _id: c.orgId,
+              status: 'ACTIVE',
+              $or: [
+                { 'interviewQuota.total': null },
+                { $expr: { $lt: ['$interviewQuota.used', '$interviewQuota.total'] } },
+              ],
+            },
+            { $inc: { 'interviewQuota.used': 1 } },
+            { session: tx },
+          );
+          if (quota.modifiedCount !== 1) throw new AppError(409, 'CAMPAIGN_CLOSED', QUOTA_MESSAGE);
+        }
+        const [target] = await JobTargetModel.create(
+          [
+            {
+              userId,
+              source: c.jobDescription ? 'PASTE' : 'ROLE_ONLY',
+              rawText: c.jobDescription,
+              companyId: c.companyId,
+              companyName: c.companyName,
+              roleId: c.roleId,
+              roleTitle: c.roleTitle,
+              // The campaign's description is used as written: nothing to extract.
+              extraction: {
+                status: 'READY',
+                parser: 'none',
+                charCount: c.jobDescription?.length ?? 0,
+                completedAt: at,
+              },
+            },
+          ],
+          { session: tx },
+        );
+        const [session] = await InterviewSessionModel.create(
+          [
+            {
+              userId,
+              jobTargetId: target!._id,
+              resumeId: body.resumeId ? objectId(body.resumeId, 'Resume') : null,
+              templateId: c.templateId,
+              mode,
+              language,
+              state: 'DRAFT',
+              campaignId: c._id,
+            },
+          ],
+          { session: tx },
+        );
+        const [application] = await CampaignApplicationModel.create(
+          [
+            {
+              campaignId: c._id,
+              userId,
+              sessionId: session!._id,
+              joinedAt: at,
+              inviteId: invite?._id ?? null,
+            },
+          ],
+          { session: tx },
+        );
+        if (invite) {
+          // Joined: no more reminders.
+          await CampaignInviteModel.updateOne(
+            { _id: invite._id, status: { $nin: ['REVOKED', 'JOINED', 'COMPLETED'] } },
+            {
+              $set: {
+                status: 'JOINED',
+                joinedAt: at,
+                userId,
+                applicationId: application!._id,
+                nextSendAt: null,
+              },
+            },
+            { session: tx },
+          );
+        }
+        await audit.record(
+          {
+            actorType: 'USER',
+            actorId: userId,
+            action: 'campaign.joined',
+            resourceType: 'campaign',
+            resourceId: String(c._id),
+            details: {
+              interviewId: String(session!._id),
+              ...(invite ? { inviteId: String(invite._id) } : {}),
+            },
+          },
+          ctx,
+          tx,
+        );
+        return String(session!._id);
+      });
+    } catch (err) {
+      // The same candidate joined in a parallel request: return that interview.
+      if ((err as { code?: number }).code === 11000) {
+        const after = await existing();
+        if (after) return { interviewId: String(after.sessionId), created: false };
+      }
+      throw err;
+    }
+    // Analysis uses the campaign's pinned blueprint; a failed enqueue can be retried from the interview.
+    await analyze(userId, sessionId, ctx).catch((err: unknown) =>
+      logger.warn({ err, sessionId }, 'campaign interview analysis not started'),
+    );
+    return { interviewId: sessionId, created: true };
+  }
 }
 
 export type CampaignService = ReturnType<typeof createCampaignService>;
