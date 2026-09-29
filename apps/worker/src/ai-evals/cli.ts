@@ -4,6 +4,10 @@
  *   --mode=full|structure   full (default): check every expectation against the
  *                           configured models; structure: only check that each
  *                           step returns valid output (works with the mock).
+ *   --suite=regression|calibration|all
+ *                           regression (default): behaviour fixtures;
+ *                           calibration: human-labelled answers (reports
+ *                           agreement with the labels); all: both
  *   --only=id1,id2          run selected fixtures
  *   --repeat=N              run each fixture N times and check score stability
  *   --out=path.json         write the full report as JSON
@@ -16,7 +20,8 @@ import { writeFile } from 'node:fs/promises';
 import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo } from '@cbi/db';
-import { EVAL_FIXTURES } from './fixtures.js';
+import { calibrationFixtures } from './calibration.js';
+import { EVAL_FIXTURES, type EvalFixture } from './fixtures.js';
 import { formatReport, runEvalSuite, type EvalMode } from './runner.js';
 
 function arg(name: string): string | undefined {
@@ -37,7 +42,15 @@ async function main() {
   const only = arg('only')
     ?.split(',')
     .map((s) => s.trim());
-  const fixtures = only ? EVAL_FIXTURES.filter((f) => only.includes(f.id)) : EVAL_FIXTURES;
+  const suite = arg('suite') ?? 'regression';
+  const suites: Record<string, EvalFixture[]> = {
+    regression: EVAL_FIXTURES,
+    calibration: calibrationFixtures(),
+    all: [...EVAL_FIXTURES, ...calibrationFixtures()],
+  };
+  if (!suites[suite]) throw new Error('--suite must be regression, calibration or all');
+  const selected = suites[suite];
+  const fixtures = only ? selected.filter((f) => only.includes(f.id)) : selected;
   if (fixtures.length === 0) throw new Error(`no fixtures match ${only?.join(',')}`);
 
   const redis = createRedis(env.REDIS_URL, logger);

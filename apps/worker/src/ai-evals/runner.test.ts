@@ -1,10 +1,16 @@
+import type { AiRuntime } from '@cbi/ai-runtime';
+import { createLogger } from '@cbi/config';
 import { describe, expect, it } from 'vitest';
+import { CALIBRATION_EXAMPLES, calibrationFixtures } from './calibration.js';
 import { EVAL_BLUEPRINT, EVAL_FIXTURES } from './fixtures.js';
 import {
+  calibrationSummary,
   checkExpectations,
   checkStructure,
   formatReport,
+  runFixture,
   scoreSpread,
+  type FixtureResult,
   type FixtureRun,
 } from './runner.js';
 
@@ -16,6 +22,7 @@ const run = (overrides: Partial<FixtureRun> = {}): FixtureRun => ({
   overall: 80,
   band: 'READY',
   claims: ['Designed idempotent payment creation with a unique key'],
+  unverifiedQuotes: 0,
   unavailable: [],
   ...overrides,
 });
@@ -134,9 +141,128 @@ describe('structure mode and stability', () => {
         },
       ],
       summary: { fixtures: 1, failed: 1, checks: 1, failedChecks: 1 },
+      calibration: { examples: 4, meanAbsError: 6.5, withinRange: 0.75 },
     });
+    expect(text).toContain('mean absolute error 6.5, 75% within the labelled range');
     expect(text).toContain('FAIL  weak-generic');
     expect(text).toContain('x overall <= 50: got 62');
     expect(text).toContain('0/1 fixtures passed');
+  });
+});
+
+describe('quote grounding', () => {
+  /**
+   * A runtime whose extractor returns one real quote and one hallucinated
+   * quote (the answer never says it), and whose scorer returns 70.
+   */
+  function hallucinating(): AiRuntime {
+    const prompt = (feature: string) => ({
+      id: feature,
+      key: feature,
+      version: 1,
+      locale: 'en',
+      feature,
+      messages: [
+        {
+          role: 'user',
+          content:
+            feature === 'evaluation.extractEvidence'
+              ? '{{roundType}} {{competencies}} {{turns}}'
+              : '{{role}} {{competency}} {{description}} {{expectedEvidence}} {{evidence}}',
+        },
+      ],
+    });
+    return {
+      prompts: { getActive: async (feature: string) => prompt(feature) },
+      router: {
+        run: async (feature: string) => ({
+          model: { modelId: 'test' },
+          data:
+            feature === 'evaluation.extractEvidence'
+              ? {
+                  items: [
+                    {
+                      questionId: 'quote-1',
+                      competencyKey: 'api-design',
+                      claim: 'Uses an idempotency key for retries.',
+                      strength: 2,
+                      confidence: 0.9,
+                      practical: true,
+                      quote: 'requires an Idempotency-Key header',
+                      uncertainty: null,
+                    },
+                    {
+                      questionId: 'quote-1',
+                      competencyKey: 'api-design',
+                      claim: 'Cut duplicate charges by 99.7%.',
+                      strength: 2,
+                      confidence: 0.9,
+                      practical: true,
+                      quote: 'we reduced duplicate charges by 99.7% in the first quarter',
+                      uncertainty: null,
+                    },
+                  ],
+                }
+              : { score: 70, rationale: 'The answers suggest solid design.', evidenceIds: [] },
+        }),
+      },
+    } as unknown as AiRuntime;
+  }
+
+  it('removes hallucinated quotes, counts them and fails the grounding check', async () => {
+    const fixture = EVAL_FIXTURES.find((f) => f.id === 'quote-grounding')!;
+    const result = await runFixture(
+      { ai: hallucinating(), logger: createLogger({ service: 'test', level: 'silent' }) },
+      { ...fixture, turns: fixture.turns.slice(0, 1) },
+    );
+    expect(result.unverifiedQuotes).toBe(1);
+    expect(result.claims).toContain('requires an Idempotency-Key header');
+    expect(result.claims.join(' ')).not.toContain('99.7% in the first quarter');
+    const grounding = checkExpectations(fixture.expectations, result).find((c) =>
+      c.name.startsWith('quotes not found'),
+    )!;
+    expect(grounding).toMatchObject({ passed: false, detail: 'got 1' });
+  });
+});
+
+describe('calibration', () => {
+  it('examples are well formed and become one-question fixtures', () => {
+    const keys = new Set(EVAL_BLUEPRINT.competencies.map((c) => c.key));
+    const ids = CALIBRATION_EXAMPLES.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const e of CALIBRATION_EXAMPLES) {
+      expect(keys.has(e.competencyKey), e.id).toBe(true);
+      const [min, max] = e.label.range;
+      expect(min <= e.label.score && e.label.score <= max, e.id).toBe(true);
+      expect(max - min, e.id).toBeGreaterThanOrEqual(16);
+      expect(e.label.rater.length, e.id).toBeGreaterThan(0);
+    }
+    const fixtures = calibrationFixtures();
+    expect(fixtures).toHaveLength(CALIBRATION_EXAMPLES.length);
+    expect(fixtures[0]!.turns).toHaveLength(1);
+    expect(fixtures[0]!.expectations[0]).toMatchObject({
+      kind: 'dimensionScore',
+      min: 75,
+      max: 95,
+    });
+  });
+
+  it('summarises agreement with the human labels', () => {
+    const result = (score: number | null, label: number): FixtureResult => ({
+      id: `f${label}`,
+      description: '',
+      passed: true,
+      checks: [],
+      runs: [run({ dimensions: [{ key: 'api-design', score, aiScore: score, evidence: 1 }] })],
+      spread: 0,
+      durationMs: 1,
+      label: { competencyKey: 'api-design', score: label, range: [label - 10, label + 10] },
+    });
+    expect(calibrationSummary([result(80, 85), result(40, 55), result(null, 20)])).toEqual({
+      examples: 3,
+      meanAbsError: 13.3, // (5 + 15 + 20) / 3
+      withinRange: 0.33,
+    });
+    expect(calibrationSummary([])).toBeNull();
   });
 });
