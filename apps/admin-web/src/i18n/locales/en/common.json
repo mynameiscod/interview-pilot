@@ -170,7 +170,9 @@
       "USER": "User",
       "ADMIN": "Admin",
       "SYSTEM": "System",
-      "ANONYMOUS": "Anonymous"
+      "ANONYMOUS": "Anonymous",
+      "ORG_MEMBER": "Organisation member",
+      "API_KEY": "API key"
     },
     "outcomes": {
       "SUCCESS": "Success",
