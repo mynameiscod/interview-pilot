@@ -12,7 +12,12 @@ name: Deploy
 #   secrets SSH_HOST, SSH_USER, SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS, and optionally
 #   GHCR_PULL_TOKEN (read:packages; default: the workflow token). Staging also needs
 #   STAGING_BASIC_AUTH (user:password) for the site health checks.
-#   Repository variables (optional): VITE_GOOGLE_CLIENT_ID_STAGING, VITE_GOOGLE_CLIENT_ID.
+#   Repository variables (optional): VITE_GOOGLE_CLIENT_ID_STAGING, VITE_GOOGLE_CLIENT_ID,
+#   VITE_SENTRY_DSN_STAGING, VITE_SENTRY_DSN (browser error tracking; public DSNs).
+#
+# Brand gate: production is blocked until `pnpm brand:check` passes (official logo,
+# favicon and OG image supplied; docs/product/brand-assets-required.md). Staging only
+# reports the gap.
 
 on:
   push:
@@ -111,6 +116,22 @@ jobs:
             echo "registry=ghcr.io/${GITHUB_REPOSITORY,,}"
           } >> "$GITHUB_OUTPUT"
 
+  # ------------------------------------------------------------ brand gate ----
+  # Blocking for production: every official brand asset must be in the repository.
+  brand-gate:
+    name: Brand assets present
+    if: inputs.action != 'rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Brand check (no --report; fails while any asset is missing)
+        run: corepack pnpm brand:check
+
   # ----------------------------------------------------------------- build ----
   # Same Dockerfiles and build args as ci.yml's docker job. Web images are built per
   # environment because VITE_* values are baked into the bundle.
@@ -148,6 +169,8 @@ jobs:
           TAG: ${{ needs.meta.outputs.tag }}
           GOOGLE_STAGING: ${{ vars.VITE_GOOGLE_CLIENT_ID_STAGING }}
           GOOGLE_PRODUCTION: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+          SENTRY_STAGING: ${{ vars.VITE_SENTRY_DSN_STAGING }}
+          SENTRY_PRODUCTION: ${{ vars.VITE_SENTRY_DSN }}
         run: |
           {
             echo 'value<<EOF'
@@ -155,18 +178,23 @@ jobs:
               api | worker)
                 echo "SERVICE=$NAME"
                 echo "APP_VERSION=$TAG"
+                echo "GIT_SHA=$GITHUB_SHA"
                 ;;
               *)
                 if [ "$TARGET_ENV" = staging ]; then
                   api="$STAGING_API_URL"; candidate="$STAGING_CANDIDATE_URL"; google="$GOOGLE_STAGING"
+                  sentry="$SENTRY_STAGING"
                 else
                   api="$PRODUCTION_API_URL"; candidate="$PRODUCTION_CANDIDATE_URL"; google="$GOOGLE_PRODUCTION"
+                  sentry="$SENTRY_PRODUCTION"
                 fi
                 echo "APP=$NAME"
                 echo "VITE_API_URL=$api"
                 echo "VITE_APP_ENV=$TARGET_ENV"
                 echo "VITE_CANDIDATE_URL=$candidate"
                 echo "VITE_GOOGLE_CLIENT_ID=$google"
+                echo "VITE_SENTRY_DSN=$sentry"
+                echo "GIT_SHA=$GITHUB_SHA"
                 ;;
             esac
             echo 'EOF'
@@ -202,6 +230,13 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      # Staging only reports missing brand assets; production is gated by brand-gate.
+      - name: Brand check (report only)
+        run: corepack pnpm brand:check --report
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -256,13 +291,14 @@ jobs:
           check_site "$STAGING_CANDIDATE_URL"
           check_site "$STAGING_ADMIN_URL"
           curl -fsS -m 10 -o /dev/null -w '%{http_code}\n' "$STAGING_API_URL/readyz" && exit 1 || echo "readyz not public (expected)"
+          curl -fsS -m 10 -o /dev/null -w '%{http_code}\n' "$STAGING_API_URL/metrics" && exit 1 || echo "metrics not public (expected)"
 
   # ------------------------------------------------------------ production ----
   # The "production" environment must have required reviewers: this job waits for
-  # manual approval after staging is healthy.
+  # manual approval after staging is healthy, and never starts while brand-gate fails.
   deploy-production:
     name: Deploy production
-    needs: [meta, deploy-staging]
+    needs: [meta, brand-gate, deploy-staging]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -320,6 +356,7 @@ jobs:
             curl -fsS -m 10 "$url/" | grep -q '/assets/' && echo "$url serves the SPA"
           done
           curl -fsS -m 10 -D - -o /dev/null "$PRODUCTION_CANDIDATE_URL/" | grep -i '^strict-transport-security'
+          curl -fsS -m 10 -o /dev/null "$PRODUCTION_API_URL/metrics" && { echo "::error::/metrics is public"; exit 1; } || echo "metrics not public (expected)"
 
   # -------------------------------------------------------------- rollback ----
   # Manual: Actions -> Deploy -> Run workflow -> action=rollback. Production still

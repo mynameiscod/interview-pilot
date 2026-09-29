@@ -1,6 +1,6 @@
 # Brand assets required for production
 
-> **Status: RELEASE BLOCKER.** Production UI sign-off can't happen until every item below is supplied and `pnpm brand:check` passes. The CI pipeline reports missing assets as a warning on every run.
+> **Status: RELEASE BLOCKER.** Production UI sign-off can't happen until every item below is supplied and `pnpm brand:check` passes. The CI pipeline reports missing assets as a warning on every run, and the deploy workflow blocks production deploys until the check passes (§4).
 
 The official CodeBegun logo files and the complete CodeBegun System Style Guide aren't in this repository yet. Engineering proceeds on the approved baseline below. **No logo artwork has been created, redrawn, approximated or generated**, and none may be.
 
@@ -50,7 +50,15 @@ pnpm brand:check          # exits 1 while anything is missing (use before produc
 pnpm brand:check --report # exits 0; used by CI to surface the gap on every run
 ```
 
-The production deployment workflow (Phase 12) will run `pnpm brand:check` without `--report`, so a production deploy is blocked until the assets are supplied.
+Where each form runs:
+
+| Workflow                               | Command                              | Effect                                                                                                                                |
+| -------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml` (every push and pull request) | `pnpm brand:check --report`          | Warning annotation only.                                                                                                              |
+| `deploy.yml` → `deploy-staging`        | `corepack pnpm brand:check --report` | Warning only: staging deploys go ahead so the UI can be reviewed with the placeholders.                                               |
+| `deploy.yml` → `brand-gate`            | `corepack pnpm brand:check`          | **Blocking.** `deploy-production` needs this job, so a production deploy (tag or manual run) cannot start while any asset is missing. |
+
+The gate is in place now. Until the assets are supplied, release tags stop after staging with the `brand-gate` job failed; that is expected. Rollbacks (`action=rollback`) are not gated, because they only redeploy an earlier release.
 
 ## 5. Rules
 
