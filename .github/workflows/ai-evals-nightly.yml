@@ -1,6 +1,6 @@
 name: AI evals (nightly)
 
-# Runs the AI regression and calibration suites against the real models in
+# Runs the AI regression, calibration and resume-tailoring suites against the real models in
 # `full` mode (CI only runs `structure` mode against the mock). Real calls
 # are billed, so it runs nightly and on demand, and only when a provider key
 # secret is configured: AI_EVAL_ANTHROPIC_API_KEY (and optionally
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: 'regression, calibration or all'
+        description: 'regression, calibration, tailoring or all'
         default: all
       repeat:
         description: 'Runs per fixture (score stability check when > 1)'

@@ -18,16 +18,20 @@ The API never parses files or fetches URLs. It checks, stores and enqueues. Untr
 
 ## Resumes and job descriptions
 
-| Step          | Where  | What happens                                                                                                                                                                                                                                                                         |
-| ------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Upload        | API    | One file, at most `UPLOAD_MAX_MB` (default 8). The type is detected from the **bytes** (PDF, DOCX, UTF-8 text). The file name and the browser's content type are ignored. Anything else gets `415`. The file name is only kept for display (path and control characters are removed) |
-| Deduplication | API    | Uploading the same resume again (same SHA-256) returns the existing one. A candidate can keep up to 20 resumes                                                                                                                                                                       |
-| Storage       | API    | Objects go to private storage under server-generated keys (`resumes/<userId>/<id>.pdf`). Bunny Storage in deployed environments, a local folder in development                                                                                                                       |
-| Extraction    | worker | `@cbi/documents`: PDF text via unpdf (max 30 pages), DOCX via mammoth after a zip-bomb check (max 25 MB uncompressed), text as UTF-8. 30 s timeout. The text is cleaned and capped at 200,000 characters                                                                             |
+| Step          | Where  | What happens                                                                                                                                                                                                                                                                                                          |
+| ------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload        | API    | One file, at most `UPLOAD_MAX_MB` (default 8). The type is detected from the **bytes** (PDF, DOCX, UTF-8 text). The file name and the browser's content type are ignored. Anything else gets `415`. The file name is only kept for display (path and control characters are removed)                                  |
+| Deduplication | API    | Uploading the same resume again (same SHA-256) returns the existing one. A candidate can keep up to 20 resumes                                                                                                                                                                                                        |
+| Storage       | API    | Objects go to private storage under server-generated keys (`resumes/<userId>/<id>.pdf`). Bunny Storage in deployed environments, a local folder in development                                                                                                                                                        |
+| Extraction    | worker | `@cbi/documents`: PDF text via unpdf (max 30 pages), DOCX via mammoth after a zip-bomb check (max 25 MB uncompressed), text as UTF-8. 30 s timeout. The text is cleaned and capped at 200,000 characters                                                                                                              |
 | Scanned PDFs  | worker | A PDF with almost no text layer gets the `OCR_NEEDED` warning and is read by a document-capable model through the `ocr.document` route (at most `OCR_MAX_PAGES` pages and `OCR_MAX_MB`; see [scanned documents](../ai/provider-layer.md#scanned-documents-ocr)). If OCR is off or unavailable it fails with `NO_TEXT` |
-| JD URL        | worker | Fetched through the SSRF guard (see [uploads and URL fetching](../security/uploads-and-url-fetching.md)). HTML is reduced to its readable content with Readability                                                                                                                   |
-| Structuring   | worker | `resume.structure` / `jd.structure` prompts produce `ResumeStructured` / `JdStructured` from **masked** text (below). Contact details are excluded by design. If AI is unavailable the input is still `READY` with the raw text and the `STRUCTURE_UNAVAILABLE` warning              |
-| Failure codes | both   | `UNSUPPORTED_TYPE`, `TOO_LARGE`, `CORRUPT`, `ENCRYPTED`, `NO_TEXT`, `TOO_MANY_PAGES`, `URL_BLOCKED`, `FETCH_FAILED`, `NOT_READABLE`, `INTERNAL`. The UI shows a specific next step for each                                                                                          |
+| JD URL        | worker | Fetched through the SSRF guard (see [uploads and URL fetching](../security/uploads-and-url-fetching.md)). HTML is reduced to its readable content with Readability                                                                                                                                                    |
+| Structuring   | worker | `resume.structure` / `jd.structure` prompts produce `ResumeStructured` / `JdStructured` from **masked** text (below). Contact details are excluded by design. If AI is unavailable the input is still `READY` with the raw text and the `STRUCTURE_UNAVAILABLE` warning                                               |
+| Pasted text   | API    | `POST /resumes/text` stores pasted resume or LinkedIn profile text as a `.txt` resume (`source: PASTE`) under the upload limits; it is then extracted like an upload                                                                                                                                                  |
+| Layout        | worker | Suspected tables and columns, image-only scans, pages and words are recorded as `layout` for the ATS formatting checks; two-column PDFs are read column by column (see [resume tools](resume-tools.md#layout-signals))                                                                                                |
+| LinkedIn      | worker | A LinkedIn Save-to-PDF export or pasted profile is parsed deterministically (no AI call) and marked `format: LINKEDIN`                                                                                                                                                                                                |
+| Edits         | API    | The candidate can correct the parse (`PUT /resumes/:id/structured`, `PUT /jobs/:id/structured`); the revision is stored as `edited` and preferred by analysis, the match score and tailoring                                                                                                                          |
+| Failure codes | both   | `UNSUPPORTED_TYPE`, `TOO_LARGE`, `CORRUPT`, `ENCRYPTED`, `NO_TEXT`, `TOO_MANY_PAGES`, `URL_BLOCKED`, `FETCH_FAILED`, `NOT_READABLE`, `INTERNAL`. The UI shows a specific next step for each                                                                                                                           |
 
 ### Personal data sent to models
 
@@ -88,18 +92,21 @@ Both belong to super, operations and content admins. Every change is audited in 
 
 ## Prompts
 
-Four analysis prompts are seeded as version 1 (`packages/db/src/seed/prompts-content.ts`): `resume.structure`, `jd.structure`, `role.analyze` and `blueprint.generate`. All candidate text is passed with `untrusted()`, so it lands in delimited `<data>` blocks with the data-only instruction. Every prompt forbids invented facts, contact details and inferences about protected characteristics. Edit them in **Admin → Prompts**: a new version, then activate. The live interview's prompts (`interview.question`, `interview.assessTurn`) are described in [the live interview](live-interview.md).
+Four analysis prompts are seeded as version 1 (`packages/db/src/seed/prompts-content.ts`): `resume.structure`, `jd.structure`, `role.analyze` and `blueprint.generate`. All candidate text is passed with `untrusted()`, so it lands in delimited `<data>` blocks with the data-only instruction. Every prompt forbids invented facts, contact details and inferences about protected characteristics. Edit them in **Admin → Prompts**: a new version, then activate. The live interview's prompts (`interview.question`, `interview.assessTurn`) are described in [the live interview](live-interview.md). The resume tools add `ocr.document` (scanned PDFs) and `resume.tailor` (tailoring suggestions); see [resume tools](resume-tools.md).
 
 ## Limits and quotas
 
-| Limit                            | Value                               |
-| -------------------------------- | ----------------------------------- |
-| Upload size                      | `UPLOAD_MAX_MB` (8)                 |
-| Uploads (resumes and JD files)   | 20 per 10 minutes per user          |
-| JD URL submissions               | 10 per 10 minutes per user          |
-| Analysis requests                | 15 per 10 minutes per user          |
-| Stored resumes                   | 20 per user                         |
-| Unfinished interviews            | 10 per user                         |
-| Analysis attempts per interview  | 5                                   |
-| Text sent to structuring prompts | 24,000 characters                   |
-| Text sent to analysis prompts    | 12,000 characters each (JD, resume) |
+| Limit                            | Value                                                          |
+| -------------------------------- | -------------------------------------------------------------- |
+| Upload size                      | `UPLOAD_MAX_MB` (8)                                            |
+| Uploads (resumes and JD files)   | 20 per 10 minutes per user                                     |
+| JD URL submissions               | 10 per 10 minutes per user                                     |
+| Analysis requests                | 15 per 10 minutes per user                                     |
+| Stored resumes                   | 20 per user                                                    |
+| Unfinished interviews            | 10 per user                                                    |
+| Analysis attempts per interview  | 5                                                              |
+| Text sent to structuring prompts | 24,000 characters                                              |
+| Text sent to analysis prompts    | 12,000 characters each (JD, resume)                            |
+| Resume match scores              | 60 per 10 minutes per user                                     |
+| Tailoring requests               | 10 per hour, `RESUME_TAILOR_DAILY_LIMIT` (10) per day per user |
+| Scanned PDFs sent to OCR         | `OCR_MAX_PAGES` (10) pages, `OCR_MAX_MB` (8)                   |
