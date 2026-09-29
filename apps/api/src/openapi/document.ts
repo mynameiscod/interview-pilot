@@ -30,6 +30,10 @@ import {
   AdminInterviewQuery,
   AdminInterviewRow,
   CampaignResults,
+  CampaignExport,
+  CampaignListPage,
+  CampaignListQuery,
+  CampaignResultsExportQuery,
   CampaignResultsQuery,
   CampaignStatusBody,
   CampaignSummary,
@@ -1174,8 +1178,9 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
       ...spec,
     });
   camp('get', '/admin/campaigns', {
-    summary: 'Campaigns, newest first (campaigns.read)',
-    response: z.array(CampaignSummary),
+    summary: 'Campaigns, newest first, a page at a time (campaigns.read)',
+    query: CampaignListQuery,
+    response: CampaignListPage,
   });
   camp('post', '/admin/campaigns', {
     summary:
@@ -1207,21 +1212,35 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     errors: [400, 401, 403, 404, 409],
   });
   camp('get', '/admin/campaigns/{id}/results', {
-    summary: 'Results grid: candidates, status, latest scores by dimension (campaigns.read)',
+    summary:
+      'Results grid, one page: candidates, status, latest scores by dimension; filtered, sorted and paged by the server (campaigns.read)',
     query: CampaignResultsQuery,
     response: CampaignResults,
   });
   camp('get', '/admin/campaigns/{id}/results.csv', {
-    summary: 'Results as CSV, same filters (campaigns.manage; audited)',
-    query: CampaignResultsQuery,
+    summary:
+      'Every matching result as CSV, streamed; same filters and order as the grid (campaigns.manage; audited)',
+    query: CampaignResultsExportQuery,
     response: null,
     status: 200,
   });
-  camp('get', '/admin/campaigns/{id}/package.zip', {
+  camp('post', '/admin/campaigns/{id}/exports', {
     summary:
-      'ZIP with results.csv, the campaign settings and each report (JSON, and PDF when ready) (campaigns.manage; audited)',
+      'Start a package export built by the worker: a ZIP with results.csv, the campaign settings and each report (JSON, and PDF when ready). Returns the running export if there is one (campaigns.manage; audited)',
+    response: CampaignExport,
+    status: 202,
+  });
+  camp('get', '/admin/campaigns/{id}/exports/{exportId}', {
+    summary:
+      'Export status and progress; `downloadPath` is set while the file can be downloaded (campaigns.manage)',
+    response: CampaignExport,
+  });
+  camp('get', '/admin/campaigns/{id}/exports/{exportId}/download', {
+    summary:
+      'The package ZIP, streamed from storage; 409 when not ready or expired (campaigns.manage; audited)',
     response: null,
     status: 200,
+    errors: [400, 401, 403, 404, 409],
   });
   const review = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
     route(method, path, {

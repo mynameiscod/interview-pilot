@@ -49,7 +49,8 @@ export type RecordedJob =
   | { kind: 'jobTarget'; id: string }
   | { kind: 'analyze'; id: string; attempt: number }
   | { kind: 'evaluate'; id: string; rerun: boolean }
-  | { kind: 'reportPdf'; id: string; revision: number };
+  | { kind: 'reportPdf'; id: string; revision: number }
+  | { kind: 'campaignPackage'; id: string };
 
 /** Records enqueued work instead of sending it to Redis; `fail` simulates a queue outage. */
 export function createRecordingJobQueues() {
@@ -68,6 +69,7 @@ export function createRecordingJobQueues() {
       return 1;
     },
     renderReportPdf: (id, revision) => record({ kind: 'reportPdf', id, revision }),
+    exportCampaignPackage: (id) => record({ kind: 'campaignPackage', id }),
     close: async () => undefined,
   };
   return { queues, jobs, state };

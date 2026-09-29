@@ -227,6 +227,7 @@ export function buildContainer(opts: ContainerOptions) {
     audit,
     logger,
     storage,
+    jobs,
     analyze: (userId, sessionId, ctx) => interviews.analyze(userId, sessionId, ctx),
     maintenance: () => settings.get('maintenance'),
   });

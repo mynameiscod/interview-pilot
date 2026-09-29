@@ -1,38 +1,43 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Logger } from '@cbi/config';
+import type { Readable } from 'node:stream';
 import {
+  CAMPAIGN_EXPORT_STUCK_AFTER_MS,
   CampaignApplicationModel,
+  CampaignExportModel,
   CampaignModel,
+  campaignDimensions,
+  campaignResultsCsv,
+  campaignResultsPage,
+  campaignSummary,
   CompanyModel,
-  InterviewReportModel,
-  InterviewScoreModel,
+  countCampaignResults,
   InterviewSessionModel,
   InterviewTemplateModel,
   JobTargetModel,
+  MAX_PACKAGE_ROWS,
   ResumeModel,
   RoleBlueprintModel,
   RoleModel,
-  UserModel,
   UserProfileModel,
+  type CampaignExportRecord,
   type CampaignRecord,
-  type InterviewScoreRecord,
-  type InterviewSessionRecord,
 } from '@cbi/db';
-import type { StorageProvider } from '@cbi/provider-adapters';
+import { StorageNotFoundError, type StorageProvider } from '@cbi/provider-adapters';
 import {
   AVAILABLE_INTERVIEW_MODES,
   templateDurationSec,
-  type ApplicationStatus,
   type CampaignClosedReason,
-  type CampaignResultRow,
+  type CampaignExport,
+  type CampaignListPage,
+  type CampaignListQuery,
   type CampaignResults,
+  type CampaignResultsExportQuery,
   type CampaignResultsQuery,
   type CampaignStatus,
   type CampaignStatusBody,
-  type CampaignSummary,
   type CampaignWithInvite,
   type CreateCampaignBody,
-  type InterviewState,
   type JoinCampaignBody,
   type JoinCampaignResult,
   type PublicCampaign,
@@ -45,12 +50,11 @@ import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
 import { refuseDuringMaintenance } from '../../lib/maintenance.js';
-import { buildZip, type ZipEntry } from '../../lib/zip.js';
+import type { JobQueues } from '../../lib/jobs.js';
 
 /** Invite tokens: 144 random bits, URL-safe. Only the SHA-256 is stored. */
 const newToken = () => randomBytes(18).toString('base64url');
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
-const BOM = String.fromCharCode(0xfeff);
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** Allowed status changes; CLOSED is final. */
@@ -60,9 +64,6 @@ const STATUS_MOVES: Record<CampaignStatus, CampaignStatus[]> = {
   PAUSED: ['ACTIVE', 'CLOSED'],
   CLOSED: [],
 };
-
-/** A package export holds every report; beyond this, use the CSV. */
-export const MAX_PACKAGE_ROWS = 500;
 
 const CLOSED_MESSAGES: Record<CampaignClosedReason, string> = {
   NOT_STARTED: 'This interview campaign has not opened yet.',
@@ -81,73 +82,33 @@ export function closedReason(c: CampaignRecord, now: Date): CampaignClosedReason
   return null;
 }
 
-const STARTABLE_STATES: InterviewState[] = [
-  'DRAFT',
-  'ROLE_ANALYSIS',
-  'READY',
-  'DEVICE_CHECK',
-  'CONSENT_REQUIRED',
-  'READY_TO_START',
-];
-
-export function applicationStatus(state: InterviewState): ApplicationStatus {
-  if (STARTABLE_STATES.includes(state)) return 'JOINED';
-  if (state === 'PROCESSING' || state === 'REPORT_READY') return 'COMPLETED';
-  if (state === 'CANCELLED' || state === 'EXPIRED' || state === 'FAILED') return 'DID_NOT_FINISH';
-  return 'IN_PROGRESS';
-}
-
-export function campaignSummary(c: CampaignRecord): CampaignSummary {
+/** An export as the admin console sees it (the download path only while the file exists). */
+export function campaignExportView(e: CampaignExportRecord): CampaignExport {
+  const campaignId = String(e.campaignId);
+  const id = String(e._id);
   return {
-    id: String(c._id),
-    name: c.name,
-    status: c.status,
-    companyId: c.companyId ? String(c.companyId) : null,
-    companyName: c.companyName,
-    role: { id: String(c.roleId), title: c.roleTitle },
-    blueprint: { id: String(c.blueprintId), version: c.blueprintVersion },
-    template: {
-      id: String(c.templateId),
-      key: c.templateKey,
-      version: c.templateVersion,
-      name: c.templateName,
-    },
-    jobDescription: c.jobDescription,
-    modes: c.modes,
-    languages: c.languages,
-    window: { startAt: iso(c.window.startAt), endAt: c.window.endAt ? iso(c.window.endAt) : null },
-    maxCandidates: c.maxCandidates,
-    joined: c.joinedCount,
-    proctoring: c.proctoring,
-    candidateSeesReport: c.candidateSeesReport,
-    sponsoredCredits: c.sponsoredCredits
-      ? { total: c.sponsoredCredits.total, used: c.sponsoredCredits.used }
-      : null,
-    tokenHint: c.tokenHint,
-    createdAt: iso(c.createdAt),
-    updatedAt: iso(c.updatedAt),
+    id,
+    campaignId,
+    status: e.status,
+    progress: { done: e.progress.done, total: e.progress.total },
+    fileName: e.fileName,
+    sizeBytes: e.sizeBytes,
+    error: e.error,
+    requestedBy: String(e.requestedBy),
+    createdAt: iso(e.createdAt),
+    completedAt: e.completedAt ? iso(e.completedAt) : null,
+    expiresAt: e.status === 'READY' ? iso(e.expiresAt) : null,
+    downloadPath:
+      e.status === 'READY' ? `/admin/campaigns/${campaignId}/exports/${id}/download` : null,
   };
 }
-
-/** CSV cell: quoted, and text that a spreadsheet would run as a formula is neutralised. */
-export function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  let s = String(value);
-  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40) || 'candidate';
 
 interface Deps {
   audit: AuditService;
   logger: Logger;
   storage: StorageProvider;
+  /** Package exports are built by the worker. */
+  jobs: Pick<JobQueues, 'exportCampaignPackage'>;
   /** Starts role analysis for a new campaign interview (the interview service). */
   analyze: (userId: string, sessionId: string, ctx: ClientContext) => Promise<unknown>;
   /** Maintenance mode refuses new joins. */
@@ -159,6 +120,7 @@ export function createCampaignService({
   audit,
   logger,
   storage,
+  jobs,
   analyze,
   maintenance,
   now = () => new Date(),
@@ -179,120 +141,39 @@ export function createCampaignService({
 
   const invitePath = (token: string) => `/campaign/${token}`;
 
+  /** One page of the grid: filtering, sorting and paging all run in MongoDB. */
   async function results(id: string, query: CampaignResultsQuery): Promise<CampaignResults> {
-    const c = await byId(id);
-    const blueprint = await RoleBlueprintModel.findById(c.blueprintId, {
-      'content.competencies': 1,
-    }).lean();
-    const dimensions = (blueprint?.content.competencies ?? []).map((d) => ({
-      key: d.key,
-      name: d.name,
-    }));
-    const apps = await CampaignApplicationModel.find({ campaignId: c._id })
-      .sort({ joinedAt: 1 })
-      .lean();
-    const sessionIds = apps.map((a) => a.sessionId);
-    const userIds = apps.map((a) => a.userId);
-    const [sessions, scores, users, profiles] = await Promise.all([
-      InterviewSessionModel.find(
-        { _id: { $in: sessionIds } },
-        { state: 1, endedAt: 1, review: 1 },
-      ).lean<Pick<InterviewSessionRecord, '_id' | 'state' | 'endedAt' | 'review'>[]>(),
-      InterviewScoreModel.find({ sessionId: { $in: sessionIds } })
-        .sort({ revision: -1 })
-        .lean<InterviewScoreRecord[]>(),
-      UserModel.find({ _id: { $in: userIds } }, { primaryEmail: 1 }).lean(),
-      UserProfileModel.find({ userId: { $in: userIds } }, { userId: 1, displayName: 1 }).lean(),
-    ]);
-    const sessionById = new Map(sessions.map((s) => [String(s._id), s]));
-    const latestScore = new Map<string, InterviewScoreRecord>();
-    for (const s of scores)
-      if (!latestScore.has(String(s.sessionId))) latestScore.set(String(s.sessionId), s);
-    const emailOf = new Map(users.map((u) => [String(u._id), u.primaryEmail ?? null]));
-    const nameOf = new Map(profiles.map((p) => [String(p.userId), p.displayName ?? null]));
-
-    let rows: CampaignResultRow[] = apps.map((a) => {
-      const s = sessionById.get(String(a.sessionId));
-      const score = latestScore.get(String(a.sessionId));
-      return {
-        applicationId: String(a._id),
-        interviewId: s ? String(s._id) : null,
-        candidate: {
-          userId: String(a.userId),
-          name: nameOf.get(String(a.userId)) ?? null,
-          email: emailOf.get(String(a.userId)) ?? null,
-        },
-        status: s ? applicationStatus(s.state) : 'DID_NOT_FINISH',
-        joinedAt: iso(a.joinedAt),
-        completedAt: s?.endedAt ? iso(s.endedAt) : null,
-        overall: score?.overall ?? null,
-        band: score?.band ?? null,
-        confidence: score?.confidence.level ?? null,
-        scoreRevision: score?.revision ?? null,
-        dimensions: Object.fromEntries(
-          dimensions.map((d) => [
-            d.key,
-            score?.dimensions.find((x) => x.key === d.key)?.score ?? null,
-          ]),
-        ),
-        flagged: Boolean(s?.review?.flagged),
-      };
-    });
-    if (query.status) rows = rows.filter((r) => r.status === query.status);
-    if (query.minOverall !== undefined)
-      rows = rows.filter((r) => r.overall !== null && r.overall >= query.minOverall!);
-    if (query.dimension) {
-      const [key, min] = query.dimension.split(':') as [string, string];
-      rows = rows.filter((r) => (r.dimensions[key] ?? -1) >= Number(min));
-    }
-    // Best first; unscored candidates last, in the order they joined.
-    rows.sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1));
-    return { campaignId: String(c._id), dimensions, rows };
+    return campaignResultsPage(await byId(id), query);
   }
 
-  function toCsv(r: CampaignResults) {
-    const header = [
-      'Name',
-      'Email',
-      'Status',
-      'Joined',
-      'Completed',
-      'Overall',
-      'Band',
-      'Confidence',
-      'Score revision',
-      'Flagged',
-      ...r.dimensions.map((d) => d.name),
-      'Interview id',
-    ];
-    const lines = r.rows.map((row) =>
-      [
-        row.candidate.name,
-        row.candidate.email,
-        row.status,
-        row.joinedAt,
-        row.completedAt,
-        row.overall,
-        row.band,
-        row.confidence,
-        row.scoreRevision,
-        row.flagged ? 'yes' : 'no',
-        ...r.dimensions.map((d) => row.dimensions[d.key]),
-        row.interviewId,
-      ]
-        .map(csvCell)
-        .join(','),
-    );
-    // BOM so spreadsheet apps read names in Hindi and Telugu correctly.
-    return `${BOM}${[header.map(csvCell).join(','), ...lines].join('\r\n')}\r\n`;
+  async function exportById(campaignId: string, exportId: string) {
+    const e = await CampaignExportModel.findOne({
+      _id: objectId(exportId, 'Export'),
+      campaignId: objectId(campaignId, 'Campaign'),
+    }).lean<CampaignExportRecord>();
+    if (!e) throw AppError.notFound('Export not found');
+    return e;
   }
 
   return {
     // ---- Admin -------------------------------------------------------------------------------
 
-    async list(): Promise<CampaignSummary[]> {
-      const rows = await CampaignModel.find().sort({ createdAt: -1 }).limit(500).lean();
-      return rows.map((c) => campaignSummary(c as CampaignRecord));
+    async list(query: CampaignListQuery): Promise<CampaignListPage> {
+      const filter = query.status ? { status: query.status } : {};
+      const [rows, total] = await Promise.all([
+        CampaignModel.find(filter)
+          .sort({ createdAt: -1, _id: -1 })
+          .skip((query.page - 1) * query.pageSize)
+          .limit(query.pageSize)
+          .lean<CampaignRecord[]>(),
+        CampaignModel.countDocuments(filter),
+      ]);
+      return {
+        items: rows.map(campaignSummary),
+        total,
+        page: query.page,
+        pageSize: query.pageSize,
+      };
     },
 
     async get(id: string) {
@@ -533,8 +414,19 @@ export function createCampaignService({
 
     results,
 
-    async exportCsv(id: string, query: CampaignResultsQuery, actorId: string, ctx: ClientContext) {
-      const r = await results(id, query);
+    /**
+     * Audits the export, then hands back the CSV as a stream of chunks read
+     * from a MongoDB cursor (the route writes them as they come).
+     */
+    async exportCsv(
+      id: string,
+      query: CampaignResultsExportQuery,
+      actorId: string,
+      ctx: ClientContext,
+    ): Promise<{ chunks: AsyncIterable<string>; fileName: string }> {
+      const c = await byId(id);
+      const dimensions = await campaignDimensions(c);
+      const rows = await countCampaignResults(c, dimensions, query);
       await audit.record(
         {
           actorType: 'ADMIN',
@@ -542,48 +434,62 @@ export function createCampaignService({
           action: 'campaign.results_exported',
           resourceType: 'campaign',
           resourceId: id,
-          details: { format: 'csv', rows: r.rows.length, filters: query },
+          details: { format: 'csv', rows, filters: query },
         },
         ctx,
       );
-      return { body: toCsv(r), fileName: `campaign-${id}-results.csv` };
+      return {
+        chunks: campaignResultsCsv(c, dimensions, query),
+        fileName: `campaign-${id}-results.csv`,
+      };
     },
 
-    /** results.csv, the campaign settings and each candidate's latest report (JSON, and PDF when ready). */
-    async exportPackage(id: string, actorId: string, ctx: ClientContext) {
+    /**
+     * Starts a package export (results.csv, the campaign settings and each
+     * candidate's latest report, JSON and PDF), built by the worker. While one
+     * is queued or running for the campaign, that one is returned instead.
+     */
+    async startExport(id: string, actorId: string, ctx: ClientContext): Promise<CampaignExport> {
       const c = await byId(id);
-      const r = await results(id, {});
-      if (r.rows.length > MAX_PACKAGE_ROWS) {
+      const active = await CampaignExportModel.findOne({
+        campaignId: c._id,
+        status: { $in: ['QUEUED', 'RUNNING'] },
+      })
+        .sort({ createdAt: -1 })
+        .lean<CampaignExportRecord>();
+      if (active) return campaignExportView(active);
+      const rows = await CampaignApplicationModel.countDocuments({ campaignId: c._id });
+      if (rows > MAX_PACKAGE_ROWS) {
         throw AppError.validation(
           `Packages hold up to ${MAX_PACKAGE_ROWS} candidates. Export the CSV instead.`,
         );
       }
-      const entries: ZipEntry[] = [
-        { name: 'results.csv', data: Buffer.from(toCsv(r), 'utf8') },
-        { name: 'campaign.json', data: Buffer.from(JSON.stringify(campaignSummary(c), null, 2)) },
-      ];
-      const interviewIds = r.rows.flatMap((row) => (row.interviewId ? [row.interviewId] : []));
-      const reports = await InterviewReportModel.find({ sessionId: { $in: interviewIds } })
-        .sort({ revision: -1 })
-        .lean();
-      const latest = new Map<string, (typeof reports)[number]>();
-      for (const rep of reports)
-        if (!latest.has(String(rep.sessionId))) latest.set(String(rep.sessionId), rep);
-      for (const row of r.rows) {
-        const rep = row.interviewId ? latest.get(row.interviewId) : undefined;
-        if (!rep) continue;
-        const base = `reports/${slug(row.candidate.name ?? row.candidate.email ?? '')}-${row.interviewId}`;
-        entries.push({
-          name: `${base}.json`,
-          data: Buffer.from(JSON.stringify({ revision: rep.revision, ...rep.content }, null, 2)),
-        });
-        if (rep.pdf.status === 'READY' && rep.pdf.storageKey) {
-          try {
-            entries.push({ name: `${base}.pdf`, data: await storage.get(rep.pdf.storageKey) });
-          } catch (err) {
-            logger.warn({ err, sessionId: row.interviewId }, 'report pdf missing from package');
-          }
-        }
+      const created = await CampaignExportModel.create({
+        campaignId: c._id,
+        requestedBy: actorId,
+        status: 'QUEUED',
+        progress: { done: 0, total: rows },
+        fileName: `campaign-${id}-package.zip`,
+        // Given up as stuck if the worker has not finished by then.
+        expiresAt: new Date(now().getTime() + CAMPAIGN_EXPORT_STUCK_AFTER_MS),
+      });
+      const exportId = String(created._id);
+      try {
+        await jobs.exportCampaignPackage(exportId);
+      } catch (err) {
+        logger.error({ err, exportId }, 'campaign package not queued');
+        await CampaignExportModel.updateOne(
+          { _id: created._id },
+          {
+            $set: {
+              status: 'FAILED',
+              error: 'The export could not be started.',
+              completedAt: now(),
+              expiresAt: now(),
+            },
+          },
+        );
+        throw new AppError(503, 'SERVICE_UNAVAILABLE', 'Exports are unavailable. Try again later.');
       }
       await audit.record(
         {
@@ -592,11 +498,47 @@ export function createCampaignService({
           action: 'campaign.results_exported',
           resourceType: 'campaign',
           resourceId: id,
-          details: { format: 'package', rows: r.rows.length, files: entries.length },
+          details: { format: 'package', rows, exportId },
         },
         ctx,
       );
-      return { body: buildZip(entries, now()), fileName: `campaign-${id}-package.zip` };
+      return campaignExportView(created.toObject() as CampaignExportRecord);
+    },
+
+    async exportStatus(id: string, exportId: string): Promise<CampaignExport> {
+      return campaignExportView(await exportById(id, exportId));
+    },
+
+    /** Streams a finished package from storage; each download is audited. */
+    async openExport(
+      id: string,
+      exportId: string,
+      actorId: string,
+      ctx: ClientContext,
+    ): Promise<{ stream: Readable; fileName: string; sizeBytes: number | null }> {
+      const e = await exportById(id, exportId);
+      if (e.status !== 'READY' || !e.storageKey || e.expiresAt <= now()) {
+        throw new AppError(409, 'INVALID_STATE', 'This export is not ready or has expired.');
+      }
+      let stream: Readable;
+      try {
+        stream = await storage.getStream(e.storageKey);
+      } catch (err) {
+        if (err instanceof StorageNotFoundError) throw AppError.notFound('Export file not found');
+        throw err;
+      }
+      await audit.record(
+        {
+          actorType: 'ADMIN',
+          actorId,
+          action: 'campaign.export_downloaded',
+          resourceType: 'campaign',
+          resourceId: id,
+          details: { exportId, sizeBytes: e.sizeBytes },
+        },
+        ctx,
+      );
+      return { stream, fileName: e.fileName, sizeBytes: e.sizeBytes };
     },
 
     // ---- Candidates ----------------------------------------------------------------------------
