@@ -9,11 +9,7 @@ import {
   type ResumeTailoringRecord,
 } from '@cbi/db';
 import { scoreResumeMatch } from '@cbi/scoring-core';
-import type {
-  ResumeMatchReport,
-  ResumeTailoringSummary,
-  ResumeToolsBody,
-} from '@cbi/shared-types';
+import type { ResumeMatchReport, ResumeTailoringSummary, ResumeToolsBody } from '@cbi/shared-types';
 import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { JobQueues } from '../../lib/jobs.js';
@@ -154,7 +150,11 @@ export function createResumeToolsService({ jobs, logger, tailorDailyLimit }: Dep
       } catch (err) {
         logger.error({ err, tailoringId: String(record._id) }, 'failed to enqueue tailoring');
         await ResumeTailoringModel.deleteOne({ _id: record._id });
-        throw new AppError(503, 'SERVICE_UNAVAILABLE', 'We could not start this. Please try again.');
+        throw new AppError(
+          503,
+          'SERVICE_UNAVAILABLE',
+          'We could not start this. Please try again.',
+        );
       }
       return { created: true, tailoring: tailoringSummary(record.toObject()) };
     },

@@ -32,7 +32,9 @@ export function attachToLastUser<T>(
 ): ({ role: 'user' | 'assistant'; content: string } | { role: 'user'; content: T })[] {
   const last = turns.findLastIndex((m) => m.role === 'user');
   if (last === -1) return [...turns, { role: 'user', content: attach('') }];
-  return turns.map((m, i) => (i === last ? { role: 'user' as const, content: attach(m.content) } : m));
+  return turns.map((m, i) =>
+    i === last ? { role: 'user' as const, content: attach(m.content) } : m,
+  );
 }
 
 /** Instruction used when a rendered OCR prompt has no user text. */

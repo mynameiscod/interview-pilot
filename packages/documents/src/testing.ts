@@ -94,7 +94,7 @@ function serialisePdf(objects: string[]): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-const CONTENT_TYPES =`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
 <Default Extension="xml" ContentType="application/xml"/>

@@ -13,10 +13,13 @@ const range = (e: ResumeStructured['experience'][number]) =>
 export function resumeRevisionText(r: ResumeStructured): string {
   const lines: string[] = [];
   if (r.headline) lines.push(`Headline: ${r.headline}`);
-  if (r.totalExperienceYears !== null) lines.push(`Total experience: ${r.totalExperienceYears} years`);
+  if (r.totalExperienceYears !== null)
+    lines.push(`Total experience: ${r.totalExperienceYears} years`);
   if (r.skills.length) lines.push(`Skills: ${r.skills.map((s) => s.name).join(', ')}`);
   for (const e of r.experience) {
-    lines.push(`Experience: ${e.title}${e.organization ? ` at ${e.organization}` : ''} (${range(e)})`);
+    lines.push(
+      `Experience: ${e.title}${e.organization ? ` at ${e.organization}` : ''} (${range(e)})`,
+    );
     for (const h of e.highlights) lines.push(`  - ${h}`);
   }
   for (const p of r.projects) {
@@ -37,7 +40,9 @@ export function jdRevisionText(j: JdStructured): string {
   const lines = [`Title: ${j.title}`];
   if (j.seniority) lines.push(`Seniority: ${j.seniority}`);
   if (j.experienceYears?.min != null || j.experienceYears?.max != null) {
-    lines.push(`Experience: ${j.experienceYears?.min ?? '?'} to ${j.experienceYears?.max ?? '?'} years`);
+    lines.push(
+      `Experience: ${j.experienceYears?.min ?? '?'} to ${j.experienceYears?.max ?? '?'} years`,
+    );
   }
   if (must.length) lines.push(`Must-have skills: ${must.join(', ')}`);
   if (nice.length) lines.push(`Nice-to-have skills: ${nice.join(', ')}`);
@@ -51,10 +56,11 @@ export function jdRevisionText(j: JdStructured): string {
  */
 export function withRevision(revision: string | null, raw: string, maxChars: number): string {
   if (!revision) return raw.slice(0, maxChars);
-  const head = `Corrections confirmed by the candidate (prefer these where they differ from the text below):\n${revision}`.slice(
-    0,
-    maxChars,
-  );
+  const head =
+    `Corrections confirmed by the candidate (prefer these where they differ from the text below):\n${revision}`.slice(
+      0,
+      maxChars,
+    );
   const room = maxChars - head.length - 2;
   return room > 0 && raw ? `${head}\n\n${raw.slice(0, room)}` : head;
 }

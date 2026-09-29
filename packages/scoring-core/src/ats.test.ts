@@ -1,4 +1,4 @@
-import { JdStructured, ResumeMatchReport, type ResumeStructured } from '@cbi/shared-types';
+import { ResumeMatchReport, type JdStructured, type ResumeStructured } from '@cbi/shared-types';
 import { describe, expect, it } from 'vitest';
 import {
   bandFor,
@@ -27,7 +27,11 @@ B.Tech Computer Science, 2020`;
 const structured: ResumeStructured = {
   headline: 'Backend engineer',
   totalExperienceYears: 4,
-  skills: ['JS', 'Postgres', 'k8s', 'Docker'].map((name) => ({ name, level: null, evidence: null })),
+  skills: ['JS', 'Postgres', 'k8s', 'Docker'].map((name) => ({
+    name,
+    level: null,
+    evidence: null,
+  })),
   experience: [
     {
       title: 'Software Engineer',
@@ -125,9 +129,16 @@ describe('scoreResumeMatch', () => {
     expect(report.components.find((c) => c.key === 'SKILLS')!.score).toBeCloseTo((50 * 12) / 13, 1);
     expect(report.reasons.filter((r) => r.code === 'SYNONYM_MATCHED')).toHaveLength(4);
     expect(report.reasons).toContainEqual(
-      expect.objectContaining({ code: 'NICE_TO_HAVE_MISSING', params: { skill: 'Kafka', worth: 3.8 } }),
+      expect.objectContaining({
+        code: 'NICE_TO_HAVE_MISSING',
+        params: { skill: 'Kafka', worth: 3.8 },
+      }),
     );
-    expect(report.experience).toMatchObject({ fit: 'MEETS', candidateYears: 4, requiredMinYears: 3 });
+    expect(report.experience).toMatchObject({
+      fit: 'MEETS',
+      candidateYears: 4,
+      requiredMinYears: 3,
+    });
     expect(report.sections.every((s) => s.present)).toBe(true);
     expect(report.formatting.every((f) => !f.flagged)).toBe(true);
     // 46.2 + 20 + 15 + 15 = 96.2 of 100.
@@ -141,12 +152,22 @@ describe('scoreResumeMatch', () => {
   it('weighs a missing must-have three times a missing nice-to-have', () => {
     const missingMust = scoreResumeMatch(
       resume(),
-      jd({ skills: [{ name: 'Go', importance: 'MUST' }, { name: 'Docker', importance: 'NICE' }] }),
+      jd({
+        skills: [
+          { name: 'Go', importance: 'MUST' },
+          { name: 'Docker', importance: 'NICE' },
+        ],
+      }),
       NOW,
     );
     const missingNice = scoreResumeMatch(
       resume(),
-      jd({ skills: [{ name: 'Docker', importance: 'MUST' }, { name: 'Go', importance: 'NICE' }] }),
+      jd({
+        skills: [
+          { name: 'Docker', importance: 'MUST' },
+          { name: 'Go', importance: 'NICE' },
+        ],
+      }),
       NOW,
     );
     expect(missingMust.components[0]!.score).toBe(12.5);
@@ -164,7 +185,10 @@ describe('scoreResumeMatch', () => {
     expect(senior.experience).toMatchObject({ fit: 'BELOW', requiredMinYears: 5 });
     expect(senior.components.find((c) => c.key === 'EXPERIENCE')!.score).toBe(16);
     expect(senior.reasons).toContainEqual(
-      expect.objectContaining({ code: 'EXPERIENCE_BELOW', params: { years: 4, required: 5, gap: 1 } }),
+      expect.objectContaining({
+        code: 'EXPERIENCE_BELOW',
+        params: { years: 4, required: 5, gap: 1 },
+      }),
     );
 
     const junior = scoreResumeMatch(
@@ -225,7 +249,11 @@ describe('scoreResumeMatch', () => {
   it('falls back to known skills in the JD text, and rescales without any', () => {
     const unstructured = scoreResumeMatch(
       resume(),
-      { text: 'We need Kubernetes, Kafka and PostgreSQL experience.', structured: null, edited: false },
+      {
+        text: 'We need Kubernetes, Kafka and PostgreSQL experience.',
+        structured: null,
+        edited: false,
+      },
       NOW,
     );
     expect(unstructured.skills.mustHave.map((m) => [m.skill, m.matched])).toEqual([

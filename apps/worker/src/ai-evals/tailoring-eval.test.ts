@@ -39,14 +39,18 @@ const HONEST: ResumeTailoringAi = {
       keywords: ['PostgreSQL'],
     },
     {
-      original: 'Led migration from a monolith to services on Kubernetes; reduced p95 latency by 40%.',
+      original:
+        'Led migration from a monolith to services on Kubernetes; reduced p95 latency by 40%.',
       rewritten:
         'Led the migration of a payments monolith to Kubernetes services, reducing p95 latency by 40%.',
       keywords: ['Kubernetes'],
     },
   ],
   missingKeywords: [
-    { keyword: 'Go', guidance: 'Add Go only if you have written production Go; otherwise learn it.' },
+    {
+      keyword: 'Go',
+      guidance: 'Add Go only if you have written production Go; otherwise learn it.',
+    },
     { keyword: 'Kafka', guidance: 'Add Kafka only if you have used it.' },
   ],
 };
@@ -92,14 +96,18 @@ describe('tailoring evaluation fixtures', () => {
       'missing skills are not written into bullets',
     ]);
     // What the candidate would see is clean anyway.
-    expect(checks.find((c) => c.name === 'guarded output names no forbidden employer')!.passed).toBe(
-      true,
-    );
+    expect(
+      checks.find((c) => c.name === 'guarded output names no forbidden employer')!.passed,
+    ).toBe(true);
     expect(out.suggestions.summary).not.toMatch(/Google/);
   });
 
   it('structure mode only checks the pipeline and the guarded output', async () => {
-    const results = await runTailoringSuite({ ai: ai(FABRICATING), logger }, TAILORING_FIXTURES, 'structure');
+    const results = await runTailoringSuite(
+      { ai: ai(FABRICATING), logger },
+      TAILORING_FIXTURES,
+      'structure',
+    );
     expect(results.every((r) => r.passed)).toBe(true);
     expect(results[0]!.checks.map((c) => c.name)).toEqual([
       'model answered',

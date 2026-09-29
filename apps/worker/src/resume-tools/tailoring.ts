@@ -46,12 +46,17 @@ export const TAILOR_INPUT_CHARS = 12_000;
 /** Placeholders the PII masking leaves in text; never part of a suggestion. */
 const PII_TOKENS = /\[(?:EMAIL|PHONE|PROFILE_URL|ADDRESS|NAME)\]/g;
 /** A number with its unit: "40%", "2M", "1,200", "3.5x", "10 lakh". */
-const NUMBER = /(?<![\w[])\d[\d,]*(?:\.\d+)?(?:\s?(?:%|x|k|m|mn|bn|million|billion|lakh|crore|cr)\b|%)?/gi;
+const NUMBER =
+  /(?<![\w[])\d[\d,]*(?:\.\d+)?(?:\s?(?:%|x|k|m|mn|bn|million|billion|lakh|crore|cr)\b|%)?/gi;
 const PLACEHOLDER = /\[[^\][]{1,40}\]/g;
 /** "at Globex", "for Initech Corp", "joined Hooli": an organisation named in a rewrite. */
 const ORGANISATION = /\b(at|for|joined|with)\s+((?:[A-Z][\w&.'-]*)(?:\s+(?:[A-Z][\w&.'-]*|&))*)/g;
 
-const clean = (s: string) => s.replace(PII_TOKENS, '').replace(/\s{2,}/g, ' ').trim();
+const clean = (s: string) =>
+  s
+    .replace(PII_TOKENS, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 const words = (s: string) => s.toLowerCase().match(/[a-z0-9%+#.]+/g) ?? [];
 
 /** The digits a number is made of ("1,200" → "1200"), for comparison with the resume. */
@@ -193,7 +198,11 @@ export function guardTailoring({
     if (missing.some((m) => canonicalSkill(m.keyword) === key)) continue;
     // Only keywords the resume really lacks: the model sometimes misses a synonym.
     if (source.toLowerCase().includes(key)) continue;
-    missingKeywords.push({ keyword: clean(k.keyword), guidance: clean(k.guidance), mustHave: false });
+    missingKeywords.push({
+      keyword: clean(k.keyword),
+      guidance: clean(k.guidance),
+      mustHave: false,
+    });
   }
 
   return {
@@ -210,7 +219,9 @@ export function fallbackSummary(resume: ResumeStructured | null, matchedSkills: 
   if (!resume) return '';
   const lead = resume.headline ?? resume.experience[0]?.title ?? null;
   const years =
-    resume.totalExperienceYears !== null ? `${resume.totalExperienceYears} years of experience` : null;
+    resume.totalExperienceYears !== null
+      ? `${resume.totalExperienceYears} years of experience`
+      : null;
   const skills = matchedSkills.slice(0, 5);
   const first = [lead, years].filter(Boolean).join(' with ');
   const parts = [
@@ -259,7 +270,9 @@ export async function buildTailoring(
     ...report.skills.mustHave.map((m) => ({ ...m, mustHave: true })),
     ...report.skills.niceToHave.map((m) => ({ ...m, mustHave: false })),
   ];
-  const missing = all.filter((m) => !m.matched).map((m) => ({ keyword: m.skill, mustHave: m.mustHave }));
+  const missing = all
+    .filter((m) => !m.matched)
+    .map((m) => ({ keyword: m.skill, mustHave: m.mustHave }));
   const matched = all.filter((m) => m.matched).map((m) => m.skill);
   const factsOnly = fallbackSummary(resumeStructured, matched);
 
@@ -324,7 +337,12 @@ export async function buildTailoring(
     };
   } catch (err) {
     deps.logger.warn({ err }, 'tailoring AI unavailable; using the fallback');
-    return { suggestions: fallback(), promptVersion: prompt.version, raw: null, source: resumeForAi };
+    return {
+      suggestions: fallback(),
+      promptVersion: prompt.version,
+      raw: null,
+      source: resumeForAi,
+    };
   }
 }
 
@@ -344,7 +362,11 @@ export async function processResumeTailor(
   try {
     const [resume, target] = await Promise.all([
       ResumeModel.findOne({ _id: record.resumeId, userId: record.userId }).lean(),
-      JobTargetModel.findOne({ _id: record.jobTargetId, userId: record.userId, deletedAt: null }).lean(),
+      JobTargetModel.findOne({
+        _id: record.jobTargetId,
+        userId: record.userId,
+        deletedAt: null,
+      }).lean(),
     ]);
     if (
       !resume ||

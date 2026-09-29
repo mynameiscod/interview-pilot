@@ -51,9 +51,7 @@ function setup(scripts: Record<string, Script>, models?: RuntimeModel[]) {
     model('gemini', 'gemini', ['LLM', 'OCR']),
   ];
   const config: AiRuntimeConfig = {
-    providers: new Map(
-      [provider('anthropic'), provider('gemini')].map((p) => [p.id, p] as const),
-    ),
+    providers: new Map([provider('anthropic'), provider('gemini')].map((p) => [p.id, p] as const)),
     models: new Map(all.map((m) => [m.id, m])),
     routes: new Map([
       [
@@ -100,12 +98,14 @@ const request = {
   maxOutputTokens: 20_000,
 };
 
-const read = (text: string): Script => async () => ({
-  text,
-  servedModel: null,
-  finishReason: 'stop',
-  usage: { inputTokens: 500_000, cachedInputTokens: 0, outputTokens: 900, requests: 1 },
-});
+const read =
+  (text: string): Script =>
+  async () => ({
+    text,
+    servedModel: null,
+    finishReason: 'stop',
+    usage: { inputTokens: 500_000, cachedInputTokens: 0, outputTokens: 900, requests: 1 },
+  });
 
 describe('OCR routing', () => {
   it('recognizes with the first model, caps output tokens and meters tokens and pages', async () => {

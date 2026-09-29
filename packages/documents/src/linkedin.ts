@@ -25,7 +25,8 @@ const MONTHS: Record<string, number> = {
   dec: 12,
 };
 
-const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const MONTH =
+  '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const POINT = `(?:${MONTH}\\s+)?\\d{4}`;
 /** "January 2022 - Present (2 years 9 months)" (PDF) or "Jan 2022 - Present · 2 yrs 9 mos" (web). */
 const DATE_RANGE = new RegExp(
@@ -38,7 +39,15 @@ const PAGE_MARKER = /^page \d+ of \d+$/i;
 const BULLET = /^[•·▪◦‣*-]\s*/;
 
 /** Section headings of the PDF export (sidebar and main column) and of the web profile. */
-const PDF_SIDEBAR = ['contact', 'top skills', 'languages', 'certifications', 'honors-awards', 'publications', 'patents'];
+const PDF_SIDEBAR = [
+  'contact',
+  'top skills',
+  'languages',
+  'certifications',
+  'honors-awards',
+  'publications',
+  'patents',
+];
 const PDF_MAIN = ['summary', 'experience', 'education'];
 const WEB_HEADINGS = [
   'about',
@@ -77,7 +86,9 @@ export function detectLinkedInProfile(text: string): LinkedInVariant | null {
   if (!hasExperience && dated.length === 0) return null;
   // The PDF export: a "Top Skills" sidebar or a profile link, plus "(N years M months)" durations.
   const profileLink = /linkedin\.com\/in\//i.test(text);
-  const pdfDurations = dated.some((l) => /\((?:less than a year|\d+ (?:years?|months?)).*\)$/i.test(l));
+  const pdfDurations = dated.some((l) =>
+    /\((?:less than a year|\d+ (?:years?|months?)).*\)$/i.test(l),
+  );
   if (hasExperience && (set.has('top skills') || profileLink) && pdfDurations) return 'PDF_EXPORT';
   // Pasted web profile: "About" plus "· 2 yrs 9 mos" style durations.
   const webDurations = dated.some((l) => /·\s*(?:less than a year|\d+ (?:yrs?|mos?))/i.test(l));
@@ -114,10 +125,13 @@ export function experienceYears(
   const nowIndex = now.getUTCFullYear() * 12 + now.getUTCMonth();
   const spans = roles
     .filter((r) => r.start)
-    .map((r) => [
-      monthIndex(r.start!, false),
-      r.current || !r.end ? nowIndex : monthIndex(r.end, true),
-    ] as const)
+    .map(
+      (r) =>
+        [
+          monthIndex(r.start!, false),
+          r.current || !r.end ? nowIndex : monthIndex(r.end, true),
+        ] as const,
+    )
     .filter(([a, b]) => b >= a)
     .sort((a, b) => a[0] - b[0]);
   if (spans.length === 0) return null;
@@ -262,7 +276,8 @@ function parseEducation(lines: readonly string[]): ResumeStructured['education']
   return out.slice(0, 10);
 }
 
-const SKILL_NOISE = /endorse|show all|^\d+ (?:experiences?|endorsements?)|passed linkedin|skill assessment/i;
+const SKILL_NOISE =
+  /endorse|show all|^\d+ (?:experiences?|endorsements?)|passed linkedin|skill assessment/i;
 
 export interface LinkedInProfile {
   variant: LinkedInVariant;

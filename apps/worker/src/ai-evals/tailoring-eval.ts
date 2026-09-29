@@ -18,7 +18,8 @@ import type { TailoringFixture } from './tailoring-fixtures.js';
  * a forbidden employer or an invented number.
  */
 
-const wordRe = (w: string) => new RegExp(`(?<![\\w.])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`);
+const wordRe = (w: string) =>
+  new RegExp(`(?<![\\w.])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w])`);
 
 export async function runTailoringFixture(
   deps: TailoringDeps,

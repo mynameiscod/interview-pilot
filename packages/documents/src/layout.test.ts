@@ -35,10 +35,19 @@ describe('PDF layout signals', () => {
     const rows = Array.from({ length: 8 }, (_, i) => [
       { x: 50, y: 780 - i * 20, text: `Role ${i} at Company ${i}` },
       // Right-aligned: different start positions, same end.
-      { x: 470 - (i % 3) * 18, y: 780 - i * 20, text: i % 2 ? 'Jan 2020 - Present' : '2019 - 2021' },
+      {
+        x: 470 - (i % 3) * 18,
+        y: 780 - i * 20,
+        text: i % 2 ? 'Jan 2020 - Present' : '2019 - 2021',
+      },
     ]);
     const { layout } = await extractDocumentText(
-      buildPositionedPdf([[...rows.flat(), ...SAMPLE_RESUME_LINES.map((text, i) => ({ x: 50, y: 500 - i * 16, text }))]]),
+      buildPositionedPdf([
+        [
+          ...rows.flat(),
+          ...SAMPLE_RESUME_LINES.map((text, i) => ({ x: 50, y: 500 - i * 16, text })),
+        ],
+      ]),
     );
     expect(layout.columnsSuspected).toBe(false);
     expect(layout.tablesSuspected).toBe(false);
@@ -51,7 +60,9 @@ describe('PDF layout signals', () => {
       { x: 400, y: 700 - i * 16, text: `${i + 2} years` },
     ]).flat();
     const { layout } = await extractDocumentText(
-      buildPositionedPdf([[...SAMPLE_RESUME_LINES.map((text, i) => ({ x: 50, y: 800 - i * 16, text })), ...table]]),
+      buildPositionedPdf([
+        [...SAMPLE_RESUME_LINES.map((text, i) => ({ x: 50, y: 800 - i * 16, text })), ...table],
+      ]),
     );
     expect(layout.tablesSuspected).toBe(true);
   });
@@ -114,7 +125,9 @@ describe('Word and text layout signals', () => {
     expect(textLayout('a\tb\tc\nd\te\tf\ng\th\ti').tablesSuspected).toBe(true);
     expect(textLayout('a\tb\nplain line').tablesSuspected).toBe(false);
     const result = await extractDocumentText(
-      Buffer.from(`${SAMPLE_RESUME_LINES.join('\n')}\nSkill\tLevel\tYears\nGo\tGood\t2\nSQL\tGood\t3`),
+      Buffer.from(
+        `${SAMPLE_RESUME_LINES.join('\n')}\nSkill\tLevel\tYears\nGo\tGood\t2\nSQL\tGood\t3`,
+      ),
     );
     expect(result.layout.tablesSuspected).toBe(true);
   });

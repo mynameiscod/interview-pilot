@@ -60,8 +60,7 @@ const invented: ResumeTailoringAi = {
   summary: 'Backend engineer with 4 years of experience, formerly at Google, who cut costs by 35%.',
   bullets: [
     {
-      original:
-        'Designed an idempotent payments ledger handling 2M transactions a day.',
+      original: 'Designed an idempotent payments ledger handling 2M transactions a day.',
       rewritten:
         'Designed an idempotent payments ledger in Node.js handling 2M transactions a day with 99.99% uptime.',
       keywords: ['Node.js'],

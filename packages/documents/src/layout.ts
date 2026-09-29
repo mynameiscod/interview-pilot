@@ -87,7 +87,9 @@ function columnStart(page: PdfPageItems, rows: Row[]): number | null {
   const leftmost = Math.min(...rows.map((r) => r.cells[0]!.x));
   const firstStarts = rows
     .map((r) => r.cells[0]!.x)
-    .filter((x) => x > page.width * 0.2 && x < page.width * 0.7 && leftmost < x - page.width * 0.15);
+    .filter(
+      (x) => x > page.width * 0.2 && x < page.width * 0.7 && leftmost < x - page.width * 0.15,
+    );
   const candidates = [...starts, ...firstStarts];
   let best: { x: number; count: number } | null = null;
   for (const x of candidates) {

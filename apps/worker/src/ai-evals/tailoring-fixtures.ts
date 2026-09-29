@@ -54,7 +54,9 @@ export const TAILORING_RESUME: { rawText: string; structured: ResumeStructured }
       },
     ],
     projects: [],
-    education: [{ qualification: 'B.Tech Computer Science', institution: 'JNTU Hyderabad', year: 2021 }],
+    education: [
+      { qualification: 'B.Tech Computer Science', institution: 'JNTU Hyderabad', year: 2021 },
+    ],
     certifications: [],
   },
 };

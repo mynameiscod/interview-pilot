@@ -147,7 +147,10 @@ async function pdfText(
     return {
       text,
       pages: pdf.numPages,
-      layout: { tablesSuspected: layout.tablesSuspected, columnsSuspected: layout.columnsSuspected },
+      layout: {
+        tablesSuspected: layout.tablesSuspected,
+        columnsSuspected: layout.columnsSuspected,
+      },
     };
   } catch (err) {
     if (err instanceof ExtractionError) throw err;

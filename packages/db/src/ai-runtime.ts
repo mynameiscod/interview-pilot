@@ -523,10 +523,7 @@ export async function ensureAiCatalog(opts: {
     { upsert: true },
   );
   if (ocrRoute.upsertedCount > 0) {
-    await AiModelModel.updateMany(
-      { _id: { $in: ocrIds } },
-      { $addToSet: { capabilities: 'OCR' } },
-    );
+    await AiModelModel.updateMany({ _id: { $in: ocrIds } }, { $addToSet: { capabilities: 'OCR' } });
   }
   result.routesCreated += ocrRoute.upsertedCount;
   return result;

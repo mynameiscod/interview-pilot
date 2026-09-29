@@ -1,9 +1,4 @@
-import {
-  JobTargetModel,
-  ResumeModel,
-  ResumeTailoringModel,
-  type ExtractionRecord,
-} from '@cbi/db';
+import { JobTargetModel, ResumeModel, ResumeTailoringModel, type ExtractionRecord } from '@cbi/db';
 import { ResumeMatchReport, ResumeTailoringSummary } from '@cbi/shared-types';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';

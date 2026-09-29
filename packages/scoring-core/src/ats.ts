@@ -104,13 +104,19 @@ const ALIASES: Alias[] = [
   { names: ['django'] },
   { names: ['flask'] },
   { names: ['fastapi'] },
-  { names: ['rest api', 'rest apis', 'restful', 'restful api', 'restful apis', 'restful services'], listOnly: ['rest'] },
+  {
+    names: ['rest api', 'rest apis', 'restful', 'restful api', 'restful apis', 'restful services'],
+    listOnly: ['rest'],
+  },
   { names: ['graphql'] },
   { names: ['grpc'] },
   { names: ['microservices', 'microservice', 'micro services', 'micro-services'] },
   { names: ['system design'] },
   { names: ['data structures', 'data structures and algorithms'], listOnly: ['dsa'] },
-  { names: ['object-oriented programming', 'object oriented programming'], listOnly: ['oop', 'oops'] },
+  {
+    names: ['object-oriented programming', 'object oriented programming'],
+    listOnly: ['oop', 'oops'],
+  },
   { names: ['html', 'html5'] },
   { names: ['css', 'css3'] },
   { names: ['tailwind', 'tailwind css', 'tailwindcss'] },
@@ -261,9 +267,10 @@ const SENIORITY_YEARS: Readonly<Record<Seniority, { min: number; max: number | n
 export function yearsInText(text: string): { min: number; max: number | null } | null {
   const range = /(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)/i.exec(text);
   if (range) return { min: Number(range[1]), max: Number(range[2]) };
-  const min = /(?:minimum|min\.?|at least)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:experience|exp)/i.exec(
-    text,
-  );
+  const min =
+    /(?:minimum|min\.?|at least)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:experience|exp)/i.exec(
+      text,
+    );
   return min ? { min: Number(min[1]), max: null } : null;
 }
 
@@ -279,7 +286,10 @@ export function candidateYears(resume: ResumeStructured | null, now: Date): numb
   const nowIndex = now.getUTCFullYear() * 12 + now.getUTCMonth();
   const spans = resume.experience
     .filter((e) => e.start)
-    .map((e) => [monthIndex(e.start!, false), e.current || !e.end ? nowIndex : monthIndex(e.end, true)])
+    .map((e) => [
+      monthIndex(e.start!, false),
+      e.current || !e.end ? nowIndex : monthIndex(e.end, true),
+    ])
     .filter(([a, b]) => b! >= a!)
     .sort((a, b) => a[0]! - b[0]!);
   if (spans.length === 0) return null;
@@ -347,7 +357,9 @@ export function scoreResumeMatch(
     ? jd.structured.skills
     : skillsInText(jd.text).map((name) => ({ name, importance: 'MUST' as const }));
   const unique = (list: typeof jdSkills) =>
-    list.filter((s, i) => list.findIndex((o) => canonicalSkill(o.name) === canonicalSkill(s.name)) === i);
+    list.filter(
+      (s, i) => list.findIndex((o) => canonicalSkill(o.name) === canonicalSkill(s.name)) === i,
+    );
   const must = unique(jdSkills.filter((s) => s.importance === 'MUST')).map((s) =>
     matchSkill(s.name, index),
   );

@@ -178,11 +178,7 @@ export const effectiveResume = (r: Pick<ResumeSummary, 'structured' | 'edited'>)
  * from their own page (the platform never fetches linkedin.com).
  */
 export const CreateResumeTextBody = z.object({
-  text: z
-    .string()
-    .trim()
-    .min(DOCUMENT_LIMITS.minTextChars)
-    .max(DOCUMENT_LIMITS.maxPasteChars),
+  text: z.string().trim().min(DOCUMENT_LIMITS.minTextChars).max(DOCUMENT_LIMITS.maxPasteChars),
   /** Shown in the resume list; defaults to "Pasted profile". */
   label: text(120).optional(),
 });

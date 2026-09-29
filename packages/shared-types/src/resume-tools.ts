@@ -43,7 +43,13 @@ export const ResumeSectionKey = z.enum([
 ]);
 export type ResumeSectionKey = z.infer<typeof ResumeSectionKey>;
 
-export const FormattingRiskKey = z.enum(['TABLES', 'COLUMNS', 'IMAGE_ONLY', 'TOO_LONG', 'TOO_SHORT']);
+export const FormattingRiskKey = z.enum([
+  'TABLES',
+  'COLUMNS',
+  'IMAGE_ONLY',
+  'TOO_LONG',
+  'TOO_SHORT',
+]);
 export type FormattingRiskKey = z.infer<typeof FormattingRiskKey>;
 
 /**
