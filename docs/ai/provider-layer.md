@@ -22,6 +22,11 @@ const result = await container.ai.router.run(
   },
 );
 result.data; // schema-validated when `output` was given
+
+// Text replies can also be streamed (no structured output):
+for await (const delta of container.ai.router.stream('interview.question', { messages })) {
+  send(delta);
+}
 ```
 
 - `AiUnavailableError`: every model in the route failed, was skipped or none is configured. The API maps it to `503 AI_UNAVAILABLE` with a generic message. The attempt trail is logged, never returned. **The router never returns a made-up answer.**
@@ -37,13 +42,21 @@ Each feature has a route: an ordered chain of models (`aiRoutes`). For each mode
 
 SDK-level retries are disabled in every adapter, so the router is the only thing retrying.
 
+**Streaming:** `router.stream(feature, request, ctx)` is an async generator of text deltas that returns the same result as `run` (metered the same way). It walks the same chain with the same skips, retries and breaker. Adapters may implement `stream` (the Anthropic adapter does, via the Messages API event stream); the others are served through `generate` as one delta. Fallback to the next model only happens **before the first delta**: once text has reached the caller it cannot be taken back, so a later failure ends the stream with `AiUnavailableError`. Structured output is not streamable. Stopping iteration early aborts the provider call. It is ready for live question generation, which does not use it yet.
+
+**Effort:** each route has an `effort` (`low`, `medium`, `high`, or null for the provider default), editable in the routes console and audited. The router passes it to the adapter (a request's own `effort` overrides it). The Anthropic adapter sends `output_config.effort` to models that support it (Opus 4.5+, Sonnet 4.6+, Fable/Mythos; not Haiku 4.5), and the OpenAI adapter sends `reasoning.effort` to GPT-5 and o-series models; other models ignore it. Seeded routes use `low` for structuring, role analysis and live turns, `medium` for blueprints and recommendations, and `high` for evidence extraction and dimension scoring.
+
+**Sampling parameters:** current Claude models (Opus 4.7+, Sonnet 5+, Fable/Mythos) and OpenAI reasoning models reject `temperature`, so one stale setting would fail every call on the route. The adapters drop it for those models (`samplingParamsSupported` in `@cbi/shared-types`), and the admin model editor refuses to set one for them with a clear message.
+
+**Prompt caching:** the Anthropic adapter marks the system prompt (instructions and rubric, the stable part of every template) with `cache_control: {type: "ephemeral"}`, so repeated calls on a feature read it from cache. Prefixes shorter than the model's minimum cacheable size are simply not cached. OpenAI and Gemini cache long prefixes automatically. Cached reads are billed with `PER_1M_CACHED_INPUT_TOKENS`.
+
 **Concurrency:** a per-model semaphore in Redis (sorted-set leases that expire on their own) caps in-flight calls across all API and worker replicas at the model's `concurrency`.
 
 **Circuit breaker:** 5 counted failures within 60 s open a model's circuit for 30 s. After that, exactly one caller probes it (half-open): success closes the circuit, failure re-opens it. Timeouts, rate limits, 5xx, network and auth errors count. Bad requests and invalid output don't, because the provider did answer. State lives in Redis. It is best-effort by design.
 
 **Redis down:** coordination fails open. Calls continue without the semaphore and breaker, and a warning is logged.
 
-**Anthropic refusal fallback:** for `claude-opus-5*` and `claude-fable-5*`, the adapter also sends `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). If a safety classifier declines the request, Anthropic re-runs it on its recommended model within the same call. The model that actually answered is stored as `servedModel` in the usage row.
+**Anthropic refusal fallback:** for Claude Opus 5 / 5.5, Fable 5 / 5.1, Mythos 5.1 and Sonnet 5.5 (not Sonnet 5), the adapter also sends `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). If a safety classifier declines the request, Anthropic re-runs it on its recommended model within the same call. The model that actually answered is stored as `servedModel` in the usage row.
 
 ## Configuration changes apply immediately
 
@@ -69,7 +82,7 @@ Every provider call writes one row to `aiUsage` (append-only). This includes fai
 
 - **Prices are effective-dated and append-only.** A change adds an entry with an `effectiveFrom` of now or later. Past dates are refused, so recorded usage is never re-priced. A model is priced in one currency.
 - A model with no price in force is still metered, at cost 0, and a warning is logged.
-- Anthropic prompt-cache _writes_ are billed by Anthropic at 1.25× the input price. They are metered here at the plain input price until prompt caching is adopted.
+- Anthropic prompt-cache _writes_ are billed by Anthropic at 1.25× the input price. They are metered here at the plain input price (there is no cache-write unit yet), so metered cost slightly understates the first call on a cold cache.
 
 The worker rolls `aiUsage` into `providerHealth` every minute (`WORKER_PROVIDER_HEALTH_INTERVAL_MS`). Each row covers one model and one 5-minute window: calls, provider failures, error rate, p50/p95 latency, and a status (`HEALTHY` below 10 % errors, `DEGRADED` below 50 %, `DOWN` otherwise, `IDLE` with no calls). Rows expire after 30 days. `admin.test` calls are excluded.
 
@@ -102,9 +115,9 @@ The sampler prefers `null` for nullable strings that carry a regex `pattern` (su
 At boot the API inserts missing providers, models and routes. It never modifies existing ones, so admin changes always win.
 
 - Providers: Anthropic, OpenAI, Google Gemini (plus the mock in development).
-- Models: Claude Opus 5 ($5 / $25 per 1M input/output tokens), Claude Sonnet 5 ($2 / $10) and Claude Haiku 4.5 ($1 / $5), with cached-input prices at 10 %. **Check these against the providers' current price lists before launch.**
-- Routes: every LLM feature uses Claude Opus 5, then Claude Sonnet 5 (then the mock in development).
-- OpenAI and Gemini models are **not** seeded, because model ids and prices change often. Add them under **Models & pricing**: enter the exact provider model id, add its prices, run **Test**, then add it to routes.
+- Models (USD per 1M input / cached input / output tokens): Claude Opus 5.5 ($4 / $0.20 / $20), Claude Sonnet 5.5 ($2 / $0.20 / $10), Claude Haiku 4.5 ($1 / $0.10 / $5), OpenAI GPT-5.6 Terra (`gpt-5.6-terra`, $2.50 / $0.25 / $15) and Google Gemini 3.1 Pro (`gemini-3.1-pro-preview`, $2 / $0.20 / $12 for prompts under 200K tokens). None has a temperature (they reject or ignore it). **Check ids and prices against the providers' current lists before launch**; price changes go in as new effective-dated entries.
+- Routes: every LLM feature uses Claude Opus 5.5, then Claude Sonnet 5.5, then GPT-5.6 Terra, then Gemini 3.1 Pro (then the mock in development), with the seeded effort described above. The OpenAI and Gemini entries are skipped (`no_credentials`) until their keys are set, and then keep a single-provider outage from exhausting the route.
+- Existing databases keep their models and routes (the seed only inserts): the new models appear, but admins add them to routes and set effort themselves. Older model ids (Opus 5, Sonnet 5) stay usable.
 
 `stt.live`, `tts.live` and `ocr.document` have no adapters yet, so their routes stay empty. The document parser has an OCR hook ready for when an `ocr.document` adapter is added.
 
@@ -130,7 +143,7 @@ API: `/api/v1/admin/ai/*` and `/api/v1/admin/prompts`. See the OpenAPI document 
 
 ## Not yet built
 
-- Streaming (`LLMProvider.stream`), plus the STT, TTS, OCR, embedding and translation adapters, arrive with the phases that need them.
+- Streaming adapters for OpenAI and Gemini (they stream through `generate` as one delta for now), plus the OCR, embedding and translation adapters, arrive with the phases that need them.
 - Worker-side AI calls now exist (Phase 3: resume/JD structuring, role analysis, blueprint generation). `buildAiRuntime` lives in `@cbi/ai-runtime`, so the worker needs `AI_SECRETS_MASTER_KEY` (and `AI_MOCK_MODE` in development) just like the API. Both subscribe to config-change broadcasts.
 - Latency and cost charts. The console shows tables for now (charts are planned for Phase 11 analytics).
 - Candidate-facing AI work runs in the background in Phase 3: an unavailable model shows up as a session `failure.code` (`AI_UNAVAILABLE`), which the analysis screen explains in English, Hindi and Telugu. Synchronous `AI_UNAVAILABLE` errors arrive with the live interview in Phase 4.

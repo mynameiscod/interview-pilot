@@ -10,21 +10,29 @@ An interview reaches `PROCESSING` when it finishes, when the candidate ends it e
 
 One BullMQ job per stage, id `evaluation-<session>-<stage>-<run>`, so a duplicate is a no-op. Each finished stage enqueues the next one. Progress is recorded on the session (`processing: {run, stage, status, completed[], attempts, error}`), which the completion screen polls.
 
-| #   | Stage                 | Does                                                                                                                                                                                       | If the AI is unavailable                                             |
-| --- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| 1   | `FINALIZE_TRANSCRIPT` | Checks the transcript is complete (turns are already final once the session is `PROCESSING`)                                                                                               | —                                                                    |
-| 2   | `EXTRACT_EVIDENCE`    | Per round, `evaluation.extractEvidence` turns answers into evidence items: claim, strength −2…+2, confidence, practical, quote. Items naming unknown questions or competencies are dropped | The live turn assessments become evidence (STRONG +2 … NO_ANSWER −2) |
-| 3   | `SCORE_DIMENSIONS`    | Per competency with evidence, `evaluation.scoreDimension` scores 0–100 **from that competency's evidence and rubric only**                                                                 | The score comes from the evidence strengths alone (`fallback`)       |
-| 4   | `AGGREGATE`           | Deterministic, in `@cbi/scoring-core`: evidence guard, weighted overall, confidence, band. Writes `interviewScores` revision 0                                                             | —                                                                    |
-| 5   | `RECOMMENDATIONS`     | `report.recommendations`: summary, strengths, gaps and the 24-hour / 3-day / 7-day plan                                                                                                    | Score-based recommendations                                          |
-| 6   | `BUILD_REPORT`        | Writes `interviewReports` revision 0 and moves the session to `REPORT_READY`                                                                                                               | —                                                                    |
-| 7   | `RENDER_PDF`          | Renders the PDF (pdfkit) to private storage                                                                                                                                                | —                                                                    |
-| 8   | `NOTIFY`              | Emails "Your report is ready" with a link, when worker email is configured and the address is verified                                                                                     | —                                                                    |
+| #   | Stage                 | Does                                                                                                                                                                                                                                                     | If the AI is unavailable                                             |
+| --- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 1   | `FINALIZE_TRANSCRIPT` | Checks the transcript is complete (turns are already final once the session is `PROCESSING`)                                                                                                                                                             | —                                                                    |
+| 2   | `EXTRACT_EVIDENCE`    | Per round, `evaluation.extractEvidence` turns answers into evidence items: claim, strength −2…+2, confidence, practical, quote. Items naming unknown questions or competencies are dropped; quotes not found in the cited answer are removed (see below) | The live turn assessments become evidence (STRONG +2 … NO_ANSWER −2) |
+| 3   | `SCORE_DIMENSIONS`    | Per competency with evidence, `evaluation.scoreDimension` scores 0–100 **from that competency's evidence and rubric only**. Up to three competencies are scored at once (`SCORING_CONCURRENCY`)                                                          | The score comes from the evidence strengths alone (`fallback`)       |
+| 4   | `AGGREGATE`           | Deterministic, in `@cbi/scoring-core`: evidence guard, weighted overall, confidence, band. Writes `interviewScores` revision 0                                                                                                                           | —                                                                    |
+| 5   | `RECOMMENDATIONS`     | `report.recommendations`: summary, strengths, gaps and the 24-hour / 3-day / 7-day plan, written in the interview language (below)                                                                                                                       | Score-based recommendations (English)                                |
+| 6   | `BUILD_REPORT`        | Writes `interviewReports` revision 0 and moves the session to `REPORT_READY`                                                                                                                                                                             | —                                                                    |
+| 7   | `RENDER_PDF`          | Renders the PDF (pdfkit) to private storage                                                                                                                                                                                                              | —                                                                    |
+| 8   | `NOTIFY`              | Emails "Your report is ready" with a link (or "submitted" for campaigns that hide the report), in the interview language, when worker email is configured and the address is verified                                                                    | —                                                                    |
 
 - **A report is always produced.** Every AI step has a deterministic fallback, so a provider outage slows a report down (retries and timeouts) but never stops it.
 - **Failures keep everything.** A stage that still fails after 3 attempts is marked `FAILED`; the transcript, evidence and earlier results stay, and the session stays in `PROCESSING`. An operations admin re-runs it with `POST /admin/interviews/:id/reprocess` (a new run, audited). The sweep re-queues stages that stall for 10 minutes.
 - **Stage outputs are idempotent.** Evidence is replaced per run and round, and score and report revision 0 are written once (unique index).
 - **The report is visible before the PDF.** `REPORT_READY` happens at stage 6; the PDF and email follow.
+
+### Evidence quotes are verified
+
+A quote is shown in a report as the candidate's own words, so it must be in their answer. After extraction, each quote is looked up in the answer to the question it cites (`evaluation/quotes.ts`): case, punctuation and whitespace are normalised (any script), quotes of four or more words may miss up to 15 % of their words in order (transcription slips, filler words), and elided quotes (`a … b`) must match each fragment in order. A quote that cannot be found is removed, that item's confidence is multiplied by 0.6 and its `uncertainty` says why; the claim itself stays. Each removal is logged with `metric: "evaluation.quote_unverified"` (counts, prompt version and model, never the text). Building the report checks quotes against the transcript again, which also covers evidence stored before this check. The `quote-grounding` regression fixture tracks how often a model invents quotes.
+
+### Output language
+
+Recommendations and the result emails use the session's interview language (`en`, `hi`, `te`). For `auto`, the answers decide: Hindi when at least 30 % of their letters are Devanagari, Telugu likewise, otherwise English (Hindi or Telugu typed in Latin letters stays English). The score-based fallback recommendations and the report's fixed headings are English for now; the PDF renders any mix of scripts (see PDF fonts).
 
 ## Scoring (`@cbi/scoring-core`)
 
@@ -40,10 +48,10 @@ The tests check worked examples, order independence, monotonicity (raising one s
 
 ## What the models see
 
-- Evidence extraction sees the round's questions and answers (as untrusted data) and the competency list. It never sees scores, names, contact details, audio or video.
+- Evidence extraction sees the round's questions and answers (as untrusted data) and the competency list. It never sees scores, names, contact details, audio or video. Resume and JD text that shaped the interview was masked before any model saw it ([inputs](inputs-and-role-analysis.md#personal-data-sent-to-models)).
 - Dimension scoring sees only that dimension's rubric and its evidence items, never the transcript. So communication is judged from what was said, not how it sounded (design §33).
 - Every prompt forbids using protected characteristics, appearance, accent or fluency, and tells the model to ignore instructions inside answers. The regression suite checks both.
-- Report text is generated in English for now; the UI chrome is translated. Candidate-supplied text (titles, quotes) can still be Hindi or Telugu, which the PDF renders with embedded fonts (see PDF fonts below).
+- Recommendations are written in the interview language (see Output language); the UI chrome is translated. Hindi and Telugu text (recommendations, titles, quotes) renders in the PDF with embedded fonts (see PDF fonts below).
 
 ## Reports
 
