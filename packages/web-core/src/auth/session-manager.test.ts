@@ -1,6 +1,6 @@
 import type { SessionResponse } from '@cbi/shared-types';
 import { describe, expect, it, vi } from 'vitest';
-import { createSessionManager } from './session-manager';
+import { createSessionManager, type SessionChannel } from './session-manager';
 
 const session = (token: string): SessionResponse => ({
   accessToken: token,
@@ -81,7 +81,7 @@ describe('session manager', () => {
     manager.subscribe(listener);
     await expect(manager.refresh()).resolves.toBeNull();
     expect(manager.current).toBeNull();
-    expect(listener).toHaveBeenCalledWith(null);
+    expect(listener).toHaveBeenCalledWith(null, 'local');
   });
 
   it('keeps the session through a network error instead of signing out', async () => {
@@ -95,6 +95,80 @@ describe('session manager', () => {
     manager.start(session('kept'));
     await expect(manager.refresh()).rejects.toMatchObject({ code: 'NETWORK_ERROR' });
     expect(manager.current?.accessToken).toBe('kept');
+  });
+
+  it('signs every tab out when one tab signs out', async () => {
+    // Two tabs joined by an in-memory stand-in for BroadcastChannel.
+    const tabs: SessionChannel[] = [];
+    const channel = (): SessionChannel => {
+      const self: SessionChannel = {
+        onmessage: null,
+        close: () => undefined,
+        postMessage: (data: unknown) => {
+          for (const other of tabs) {
+            if (other !== self) other.onmessage?.({ data } as MessageEvent);
+          }
+        },
+      };
+      tabs.push(self);
+      return self;
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const a = createSessionManager({
+      baseUrl: '',
+      audience: 'candidate',
+      fetchImpl,
+      locks: null,
+      channel: channel(),
+    });
+    const b = createSessionManager({
+      baseUrl: '',
+      audience: 'candidate',
+      fetchImpl,
+      locks: null,
+      channel: channel(),
+    });
+    // Both tabs are already signed in, so neither start() makes the other refresh.
+    b.start(session('b'));
+    a.start(session('a'));
+    const listener = vi.fn();
+    b.subscribe(listener);
+    await a.signOut();
+    expect(a.current).toBeNull();
+    expect(b.current).toBeNull();
+    expect(listener).toHaveBeenCalledWith(null, 'remote-sign-out');
+  });
+
+  it('lets a signed-out tab pick up a sign-in from another tab', async () => {
+    let deliver: ((data: unknown) => void) | null = null;
+    const sender: SessionChannel = {
+      onmessage: null,
+      close: () => undefined,
+      postMessage: (data: unknown) => deliver?.(data),
+    };
+    const receiver: SessionChannel = {
+      onmessage: null,
+      close: () => undefined,
+      postMessage: () => undefined,
+    };
+    deliver = (data) => receiver.onmessage?.({ data } as MessageEvent);
+    const fetchImpl = vi.fn().mockResolvedValue(ok(session('shared')));
+    const a = createSessionManager({
+      baseUrl: '',
+      audience: 'admin',
+      locks: null,
+      channel: sender,
+    });
+    const b = createSessionManager({
+      baseUrl: '',
+      audience: 'admin',
+      fetchImpl,
+      locks: null,
+      channel: receiver,
+    });
+    a.start(session('new'));
+    await vi.waitFor(() => expect(b.current?.accessToken).toBe('shared'));
+    expect(fetchImpl.mock.calls[0]![0]).toBe('/api/v1/admin/auth/refresh');
   });
 
   it('signs out locally even if the server call fails', async () => {

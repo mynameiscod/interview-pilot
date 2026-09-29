@@ -13,9 +13,15 @@ export {
   type AuthProviderProps,
   type AuthStatus,
 } from './auth/AuthProvider';
-export { createSessionManager, type SessionManager } from './auth/session-manager';
+export {
+  createSessionManager,
+  type SessionChangeReason,
+  type SessionChannel,
+  type SessionManager,
+} from './auth/session-manager';
 export { GoogleSignInButton, type GoogleSignInButtonProps } from './google/GoogleSignInButton';
 export { errorMessage } from './auth/errors';
 export { safeNextPath } from './auth/next-path';
 export { OtpCodeForm } from './auth/OtpCodeForm';
 export { OtpRequestForm, type OtpRequested } from './auth/OtpRequestForm';
+export { deviceName } from './device-name';
