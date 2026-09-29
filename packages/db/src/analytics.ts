@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, KNOWN_FLAGS, SettingKey, type DailyMetric } from '@cbi/shared-types';
 import { AiUsageModel } from './models/ai.js';
-import { PurchaseModel } from './models/commerce.js';
+import { PaymentModel, PurchaseModel } from './models/commerce.js';
 import { InterviewReportModel } from './models/evaluation.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import {
@@ -95,9 +95,50 @@ export async function computeDay(day: string): Promise<Row[]> {
       { $match: { statusHistory: { $elemMatch: { status: 'PAID', at: inDay } } } },
       { $group: { _id: null, count: { $sum: 1 }, amount: { $sum: '$amountMinor' } } },
     ]),
-    PurchaseModel.aggregate<{ amount: number }>([
-      { $match: { statusHistory: { $elemMatch: { status: 'REFUNDED', at: inDay } } } },
-      { $group: { _id: null, amount: { $sum: '$amountMinor' } } },
+    // Refunds processed that day, partial ones included. Payments refunded
+    // before refunds were itemised count their full amount on the day.
+    PaymentModel.aggregate<{ amount: number }>([
+      {
+        $match: {
+          $or: [
+            { refunds: { $elemMatch: { status: 'processed', processedAt: inDay } } },
+            {
+              'refunds.0': { $exists: false },
+              statusHistory: { $elemMatch: { status: 'REFUNDED', at: inDay } },
+            },
+          ],
+        },
+      },
+      {
+        $project: {
+          amount: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$refunds', []] } }, 0] },
+              {
+                $sum: {
+                  $map: {
+                    input: {
+                      $filter: {
+                        input: '$refunds',
+                        cond: {
+                          $and: [
+                            { $eq: ['$$this.status', 'processed'] },
+                            { $gte: ['$$this.processedAt', start] },
+                            { $lt: ['$$this.processedAt', end] },
+                          ],
+                        },
+                      },
+                    },
+                    in: '$$this.amountMinor',
+                  },
+                },
+              },
+              '$amountMinor',
+            ],
+          },
+        },
+      },
+      { $group: { _id: null, amount: { $sum: '$amount' } } },
     ]),
     // Users whose first paid purchase ever falls on this day.
     PurchaseModel.aggregate<{ count: number }>([

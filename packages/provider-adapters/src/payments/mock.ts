@@ -103,7 +103,13 @@ export function createMockGateway() {
       // Test-mode refunds complete at once (Razorpay may answer pending or processed).
       const refund: GatewayRefund = { id: id('rfnd'), paymentId, amountMinor, status: 'processed' };
       const paid = payments.get(paymentId);
-      if (paid) paid.status = 'refunded';
+      if (paid) {
+        const refunded = (paid.amountRefundedMinor ?? 0) + amountMinor;
+        if (refunded > paid.amountMinor) throw new Error('mock refund exceeds the amount paid');
+        paid.amountRefundedMinor = refunded;
+        // Like Razorpay: only a full refund changes the payment status.
+        if (refunded === paid.amountMinor) paid.status = 'refunded';
+      }
       refunds.set(refund.id, refund);
       return { ...refund };
     },
