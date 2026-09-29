@@ -155,6 +155,68 @@ export interface SttWord {
 export interface SttAdapter {
   readonly providerKey: AiProviderKey;
   transcribe(input: SttCallInput): Promise<SttCallResult>;
+  /** Optional streaming recognition (realtime voice); see `SpeechStreamProvider`. */
+  openStream?: SpeechStreamProvider['openStream'];
+}
+
+/** A live transcription session's audio format and turn-detection settings. */
+export interface SttStreamRequest {
+  encoding: 'linear16';
+  sampleRate: number;
+  /** `en`, `hi`, `te`, or null to let the model detect it. Adapters map it to their own codes. */
+  language: string | null;
+  /** Provider-side word-gap end of utterance (Deepgram `utterance_end_ms`). */
+  utteranceEndMs: number;
+}
+
+export interface SttStreamInput {
+  model: ModelTarget;
+  request: SttStreamRequest;
+  credentials: ProviderCredentials;
+  /** Aborts the connection attempt and closes an open stream. */
+  signal: AbortSignal;
+  /** Everything the provider reports, in order. Never called after `closed`. */
+  onEvent: (event: SpeechStreamEvent) => void;
+}
+
+export type SpeechStreamEvent =
+  | {
+      type: 'transcript';
+      text: string;
+      /** The words of this segment are settled (Deepgram `is_final`). */
+      isFinal: boolean;
+      /** The provider's own endpoint: the speaker paused (Deepgram `speech_final`). */
+      speechFinal: boolean;
+      confidence: number | null;
+      /** Seconds from the start of the stream. */
+      start: number;
+      duration: number;
+    }
+  | { type: 'speech_started'; at: number }
+  | { type: 'utterance_end'; lastWordEnd: number | null }
+  | { type: 'error'; error: Error }
+  | { type: 'closed' };
+
+/** An open streaming recognition session. */
+export interface SpeechStream {
+  /** One audio frame in the requested encoding. */
+  send(audio: Uint8Array): void;
+  /** Ask the provider to flush what it has heard (final results follow). */
+  finalize(): void;
+  /** Bytes accepted but not yet on the wire (backpressure). */
+  bufferedAmount(): number;
+  /** Ends the stream; resolves once the provider has closed it. */
+  close(): Promise<{ durationSec: number | null; servedModel: string | null }>;
+}
+
+/**
+ * Streaming speech-to-text (Deepgram live, the mock). `openStream` resolves
+ * once the provider accepted the connection, or rejects with an
+ * `AiProviderError` (the router then tries the next model).
+ */
+export interface SpeechStreamProvider {
+  readonly providerKey: AiProviderKey;
+  openStream(input: SttStreamInput): Promise<SpeechStream>;
 }
 
 export interface TtsRequest {
@@ -180,6 +242,17 @@ export interface TtsCallResult {
 export interface TtsAdapter {
   readonly providerKey: AiProviderKey;
   synthesize(input: TtsCallInput): Promise<TtsCallResult>;
+  /**
+   * Optional streaming synthesis: audio chunks as the provider produces
+   * them (one container, `mimeType`). Adapters without it are served through
+   * `synthesize` (one chunk).
+   */
+  synthesizeStream?(input: TtsCallInput): Promise<TtsStream>;
+}
+
+export interface TtsStream {
+  mimeType: string;
+  chunks: AsyncIterable<Uint8Array>;
 }
 
 export interface AdapterRegistry {

@@ -10,6 +10,11 @@ import { MONGODB_URI, REDIS_URL, REPO_ROOT } from './env';
 interface Collection {
   insertOne(doc: Record<string, unknown>): Promise<unknown>;
   findOne(filter: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  updateOne(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+    options?: { upsert?: boolean },
+  ): Promise<unknown>;
 }
 interface Db {
   collection(name: string): Collection;
@@ -101,5 +106,28 @@ export async function createAdmin(email: string, roles: AdminRole[]) {
       createdAt: new Date(),
       updatedAt: new Date(),
     }),
+  );
+}
+
+/**
+ * Switches a feature flag for everyone. The API caches flags for up to 15 s
+ * per process (a direct write does not announce the change), so set flags
+ * at the start of a test, before the steps that depend on them.
+ */
+export async function setFeatureFlag(key: string, enabled: boolean) {
+  await withDb((db) =>
+    db.collection('featureFlags').updateOne(
+      { key },
+      {
+        $set: { enabled, rolloutPercent: 100, updatedAt: new Date() },
+        $setOnInsert: {
+          description: key,
+          clientVisible: true,
+          updatedBy: null,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true },
+    ),
   );
 }

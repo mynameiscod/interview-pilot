@@ -58,7 +58,9 @@ import { objectId } from '../../lib/ids.js';
 import { LOCK_BUSY, withLock } from '../../lib/lock.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ConsentService } from '../consent/consent.service.js';
+import type { QuestionStreamSink } from '../voice/question-speaker.js';
 import type { TranscriptStore } from '../voice/voice.service.js';
+import { createQuestionTextExtractor } from './question-text.js';
 
 /** Where realtime events go; attached once the Socket.IO server exists. */
 export interface RoomEmitter {
@@ -134,6 +136,9 @@ const JOINABLE = new Set([
 /** Text sent back to prompts: enough context without the whole transcript (design §6.3). */
 const MAX_ASKED_IN_PROMPT = 15;
 const TURN_LOCK_TTL_MS = 90_000;
+/** Streamed questions: the reply format is restated because no schema is attached to a stream. */
+const STREAM_FORMAT =
+  'Reply with a JSON object of the form {"question": "<the question>"} and nothing else.';
 
 /** Used when the question model is unavailable, so the interview can continue. */
 export function fallbackQuestion(target: QuestionTarget): string {
@@ -165,8 +170,27 @@ interface Deps {
   transcripts: TranscriptStore;
   /** Consents and device-check readiness (the start gate). */
   consent: ConsentService;
-  /** Called after a question is asked (voice interviews prepare its audio). */
-  onQuestion?: (s: InterviewSessionRecord, turn: InterviewTurnRecord) => void;
+  /**
+   * Called after a question is asked (voice interviews prepare its audio;
+   * `streamed`: it is being spoken already).
+   */
+  onQuestion?: (
+    s: InterviewSessionRecord,
+    turn: InterviewTurnRecord,
+    opts: { streamed: boolean },
+  ) => void;
+  /**
+   * Realtime voice: where the next question streams to while it is
+   * generated (text and speech), or null to generate it in one piece.
+   */
+  questionStream?: (
+    s: InterviewSessionRecord,
+    target: {
+      questionId: string;
+      seq: number;
+      answered: { questionId: string; answeredAt: Date } | null;
+    },
+  ) => Promise<QuestionStreamSink | null>;
   /** Coding rounds: a problem from the bank for the round's first question (null: ask normally). */
   pickCodingProblem?: (
     s: InterviewSessionRecord,
@@ -189,6 +213,7 @@ export function createLiveInterviewService({
   transcripts,
   consent,
   onQuestion,
+  questionStream,
   pickCodingProblem,
   maintenance,
   now = () => new Date(),
@@ -251,15 +276,63 @@ export function createLiveInterviewService({
   const bullets = (items: readonly string[]) =>
     items.length ? items.map((x) => `- ${x}`).join('\n') : '-';
 
+  /**
+   * Streams the question through `sink` as it is written (realtime voice).
+   * Returns null when nothing usable came back: the caller then asks in one
+   * piece (or falls back), and the saved question replaces the preview.
+   */
+  async function streamQuestion(
+    s: Session,
+    values: Record<string, PromptValue>,
+    sink: QuestionStreamSink,
+  ): Promise<{ text: string; model: string; promptVersion: number; exact: boolean } | null> {
+    const prompt = await ai.prompts.getActive('interview.question');
+    if (!prompt) return null;
+    const extractor = createQuestionTextExtractor();
+    try {
+      const reply = ai.router.stream(
+        'interview.question',
+        { messages: [...renderPrompt(prompt, values), { role: 'system', content: STREAM_FORMAT }] },
+        {
+          userId: String(s.userId),
+          sessionId: String(s._id),
+          prompt: { key: prompt.key, version: prompt.version },
+        },
+      );
+      let step = await reply.next();
+      while (!step.done) {
+        sink.delta(extractor.push(step.value));
+        step = await reply.next();
+      }
+      const text = extractor.finish();
+      if (!text) {
+        logger.warn({ sessionId: String(s._id) }, 'streamed question unusable; asking again');
+        return null;
+      }
+      return {
+        text,
+        model: step.value.model.modelId,
+        promptVersion: prompt.version,
+        exact: text === extractor.shown.trim(),
+      };
+    } catch (err) {
+      logger.warn({ err, sessionId: String(s._id) }, 'question stream failed; asking again');
+      return null;
+    }
+  }
+
   async function generateQuestion(
     s: Session,
     target: QuestionTarget,
     blueprint: BlueprintContent,
+    sink: QuestionStreamSink | null = null,
   ): Promise<{
     text: string;
     model: string | null;
     promptVersion: number | null;
     coding?: { problemId: Types.ObjectId; title: string };
+    /** The saved text is exactly what was streamed (so it is being spoken). */
+    streamed: boolean;
   }> {
     // A coding round opens with a problem from the bank; its follow-ups are ordinary questions.
     if (target.roundType === 'CODING' && !target.followUpOf && pickCodingProblem) {
@@ -273,6 +346,7 @@ export function createLiveInterviewService({
           model: null,
           promptVersion: null,
           coding: { problemId: problem._id, title: problem.title },
+          streamed: false,
         };
       }
     }
@@ -290,33 +364,45 @@ export function createLiveInterviewService({
       ...(s.analysis?.resumeHighlights ?? []).map((h) => `Resume: ${h}`),
       ...(s.analysis?.gaps ?? []).map((g) => `Gap to explore: ${g}`),
     ];
-    const result = await runAi(
-      'interview.question',
-      InterviewQuestionAi,
-      {
-        language: LANGUAGE_NAMES[questionLanguage(s)],
-        role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
-        roundType: target.roundType,
-        objective: target.objective,
-        competency: target.competencyName ?? 'General',
-        difficulty: target.difficulty,
-        expectedEvidence: bullets(target.expectedEvidence),
-        background: untrusted(background.join('\n') || '-'),
-        askedQuestions: untrusted(
-          previous
-            .map((t) => `- ${t.question.text}`)
-            .reverse()
-            .join('\n') || '-',
-        ),
-        thread: untrusted(
-          parent ? `Question: ${parent.question.text}\nAnswer: ${parent.answer?.text ?? ''}` : '',
-        ),
-      },
-      s,
-    );
+    const values: Record<string, PromptValue> = {
+      language: LANGUAGE_NAMES[questionLanguage(s)],
+      role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
+      roundType: target.roundType,
+      objective: target.objective,
+      competency: target.competencyName ?? 'General',
+      difficulty: target.difficulty,
+      expectedEvidence: bullets(target.expectedEvidence),
+      background: untrusted(background.join('\n') || '-'),
+      askedQuestions: untrusted(
+        previous
+          .map((t) => `- ${t.question.text}`)
+          .reverse()
+          .join('\n') || '-',
+      ),
+      thread: untrusted(
+        parent ? `Question: ${parent.question.text}\nAnswer: ${parent.answer?.text ?? ''}` : '',
+      ),
+    };
+    if (sink) {
+      const streamed = await streamQuestion(s, values, sink);
+      if (streamed) {
+        return {
+          text: streamed.text,
+          model: streamed.model,
+          promptVersion: streamed.promptVersion,
+          streamed: streamed.exact,
+        };
+      }
+    }
+    const result = await runAi('interview.question', InterviewQuestionAi, values, s);
     return result
-      ? { text: result.data.question, model: result.model, promptVersion: result.promptVersion }
-      : { text: fallbackQuestion(target), model: null, promptVersion: null };
+      ? {
+          text: result.data.question,
+          model: result.model,
+          promptVersion: result.promptVersion,
+          streamed: false,
+        }
+      : { text: fallbackQuestion(target), model: null, promptVersion: null, streamed: false };
   }
 
   async function assessAnswer(
@@ -585,9 +671,23 @@ export function createLiveInterviewService({
       }
 
       rooms.emit(sessionId, RtEvent.THINKING, { sessionId });
-      const question = await generateQuestion(s, step.target, blueprint);
       const questionId = randomUUID();
       const seq = s.lastSeq + 1;
+      // Realtime voice: the question is shown and spoken while it is written (not coding problems).
+      const sink =
+        questionStream && !(step.target.roundType === 'CODING' && !step.target.followUpOf)
+          ? await questionStream(s, {
+              questionId,
+              seq,
+              answered: last?.answer
+                ? { questionId: last.questionId, answeredAt: new Date(last.answer.answeredAt) }
+                : null,
+            }).catch((err: unknown) => {
+              logger.warn({ err, sessionId }, 'question stream unavailable');
+              return null;
+            })
+          : null;
+      const question = await generateQuestion(s, step.target, blueprint, sink);
       const planner = recordQuestion(s.planner, step.target, questionId);
       const saved = await inTransaction(undefined, async (tx) => {
         // The question goes on screen: the candidate's clock runs again from here.
@@ -634,9 +734,13 @@ export function createLiveInterviewService({
         return turn!.toObject();
       });
       // The session changed while the question was generated (disconnect, end): re-read and decide again.
-      if (!saved) continue;
+      if (!saved) {
+        sink?.abort();
+        continue;
+      }
       rooms.emit(sessionId, RtEvent.QUESTION, liveQuestion(saved));
-      onQuestion?.(s, saved);
+      sink?.complete(question.streamed);
+      onQuestion?.(s, saved, { streamed: Boolean(sink) && question.streamed });
       return;
     }
     logger.error({ sessionId }, 'interview did not settle after 20 steps');
@@ -967,6 +1071,7 @@ export function createLiveInterviewService({
           confidence: number | null;
           model: string;
           delivery: DeliveryMetrics | null;
+          edited?: boolean;
         } | null = null;
         if (payload.voiceTranscriptId) {
           // A spoken answer: the server's transcript is the answer, whatever the client sent.
@@ -982,13 +1087,15 @@ export function createLiveInterviewService({
               'That recording has expired. Please answer again.',
             );
           }
-          text = t.text.trim();
+          // Realtime voice lets the candidate correct the transcript: their text is then the answer.
+          text = payload.voiceEdited ? payload.text.trim() : t.text.trim();
           voice = {
             durationSec: t.durationSec,
             language: t.language,
             confidence: t.confidence,
             model: t.model,
             delivery: t.delivery ?? null,
+            ...(payload.voiceEdited ? { edited: true } : {}),
           };
         }
         const at = now();

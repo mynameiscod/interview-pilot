@@ -1841,7 +1841,8 @@
       "saved": "{{key}} was updated.",
       "empty": "No flags.",
       "notes": {
-        "publicProof": "Turns on Candidate Proof: candidates can share a read-only link to their report."
+        "publicProof": "Turns on Candidate Proof: candidates can share a read-only link to their report.",
+        "voiceRealtime": "Realtime conversational voice: answers are transcribed while the candidate speaks, the next question is spoken as it is written, and candidates can interrupt it. Push-to-talk stays the fallback (and for Telugu interviews). Roll out gradually and watch cbi_voice_turn_latency_seconds."
       }
     },
     "settings": {

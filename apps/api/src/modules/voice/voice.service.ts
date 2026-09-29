@@ -13,8 +13,13 @@ import {
   deliveryMetrics,
   deviceCheckPassed,
   isSpokenMode,
+  REALTIME_VOICE_FLAG,
+  realtimeSttSupported,
   RtEvent,
   VOICE_LIMITS,
+  type InterviewLanguage,
+  type KnownFlag,
+  type VoiceStreamStartPayload,
   type DegradedEvent,
   type DeliveryMetrics,
   type DeviceCheckBody,
@@ -30,7 +35,7 @@ import { objectId } from '../../lib/ids.js';
 import { releaseLock } from '../../lib/lock.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ConsentService } from '../consent/consent.service.js';
-import type { RoomEmitter } from '../live/live.service.js';
+import { LiveError, questionLanguage, type RoomEmitter } from '../live/live.service.js';
 import { billableDurationSec } from './audio-duration.js';
 
 type Session = InterviewSessionRecord;
@@ -150,6 +155,14 @@ export function createQuestionAudioCache(opts: {
 
   return {
     read,
+    /** Stores audio produced elsewhere (a question spoken while it was streamed). */
+    async put(questionId: string, audio: QuestionAudio) {
+      await redis
+        .multi()
+        .set(key(questionId), audio.audio, 'EX', AUDIO_TTL_SEC)
+        .set(`${key(questionId)}:type`, audio.mimeType, 'EX', AUDIO_TTL_SEC)
+        .exec();
+    },
     async get(
       questionId: string,
       synthesize: () => Promise<QuestionAudio>,
@@ -204,6 +217,8 @@ interface Deps {
   consent: ConsentService;
   /** Defaults to one on `redis` (tests shorten its timings). */
   questionAudio?: QuestionAudioCache;
+  /** Feature flags (realtime voice); without it realtime voice is off. */
+  flags?: { isEnabled(key: KnownFlag, userId: string | null): Promise<boolean> };
   now?: () => Date;
 }
 
@@ -247,6 +262,15 @@ export function createVoiceService(deps: Deps) {
       inFlight.set(turn.questionId, pending);
     }
     return pending;
+  }
+
+  /**
+   * Realtime voice is on for this interview: a spoken mode and the
+   * `voice.realtime` flag for the candidate (stable rollout per user).
+   */
+  async function realtimeEnabled(s: Pick<Session, 'mode' | 'userId'>): Promise<boolean> {
+    if (!isSpokenMode(s.mode) || !deps.flags) return false;
+    return deps.flags.isEnabled(REALTIME_VOICE_FLAG, String(s.userId)).catch(() => false);
   }
 
   return {
@@ -389,9 +413,55 @@ export function createVoiceService(deps: Deps) {
       }
     },
 
+    realtimeEnabled,
+
+    /**
+     * May the candidate stream an answer to this question now? Mirrors the
+     * push-to-talk checks (state, mode, current question) plus the consent,
+     * the flag and a language live transcription supports. `UNSUPPORTED`
+     * sends the room to push-to-talk.
+     */
+    async authorizeStream(
+      userId: string,
+      payload: VoiceStreamStartPayload,
+    ): Promise<{ language: InterviewLanguage }> {
+      const s = await InterviewSessionModel.findOne({
+        _id: objectId(payload.sessionId, 'Interview'),
+        userId,
+      })
+        .lean<Session>()
+        .catch(() => null);
+      if (!s) throw new LiveError('NOT_FOUND', 'Interview not found');
+      if (!(await realtimeEnabled(s))) {
+        throw new LiveError('UNSUPPORTED', 'Live transcription is not available.');
+      }
+      if (s.state !== 'ACTIVE' && s.state !== 'RECONNECTING')
+        throw new LiveError('INVALID_STATE', 'The interview is not active.');
+      if (!consent.accepted(s, 'VOICE_PROCESSING'))
+        throw new LiveError('INVALID_STATE', 'Voice processing was not agreed to.');
+      const language = questionLanguage(s);
+      if (!realtimeSttSupported(language)) {
+        throw new LiveError('UNSUPPORTED', 'Live transcription does not support this language.');
+      }
+      const turn = await InterviewTurnModel.findOne(
+        { sessionId: s._id, questionId: payload.questionId },
+        { seq: 1, answer: 1, 'question.coding': 1 },
+      ).lean();
+      if (!turn || turn.seq !== s.lastSeq || turn.answer)
+        throw new LiveError('STALE_QUESTION', 'This is not the current question.');
+      if (turn.question.coding)
+        throw new LiveError('INVALID_STATE', 'Submit your solution in the code editor.');
+      return { language };
+    },
+
     /** Called when a question is asked in a voice interview: prepare its audio before the room asks. */
-    warmQuestionAudio(s: Session, turn: Pick<InterviewTurnRecord, 'questionId' | 'question'>) {
-      if (!isSpokenMode(s.mode)) return;
+    warmQuestionAudio(
+      s: Session,
+      turn: Pick<InterviewTurnRecord, 'questionId' | 'question'>,
+      opts: { streamed?: boolean } = {},
+    ) {
+      // A streamed question is being spoken already (and cached when complete).
+      if (!isSpokenMode(s.mode) || opts.streamed) return;
       void synthesize(s, turn).catch((err: unknown) => {
         // The room's request reports the failure (and the degraded event); here it is only logged.
         logger.warn({ err, sessionId: String(s._id) }, 'question audio could not be prepared');

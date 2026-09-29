@@ -511,19 +511,22 @@ describe('feature flags and settings', () => {
     const superAdmin = await adminAs(['SUPER_ADMIN']);
     const flags = async (call = publicCall) =>
       ClientFlags.parse((await call('get', '/flags').expect(200)).body.data);
-    expect(await flags()).toEqual({ 'reports.publicProof': false });
+    expect(await flags()).toEqual({ 'reports.publicProof': false, 'voice.realtime': false });
 
     await superAdmin('put', '/flags/reports.publicProof')
       .send({ enabled: true, rolloutPercent: 100, reason: 'launch' })
       .expect(200);
-    expect(await flags()).toEqual({ 'reports.publicProof': true });
+    expect(await flags()).toEqual({ 'reports.publicProof': true, 'voice.realtime': false });
 
     // A 0% rollout is on for nobody; partial rollouts never apply to anonymous visitors.
     await superAdmin('put', '/flags/reports.publicProof')
       .send({ enabled: true, rolloutPercent: 0, reason: 'pause rollout' })
       .expect(200);
     const asha = await candidate();
-    expect(await flags(asha.call as typeof publicCall)).toEqual({ 'reports.publicProof': false });
+    expect(await flags(asha.call as typeof publicCall)).toEqual({
+      'reports.publicProof': false,
+      'voice.realtime': false,
+    });
     await superAdmin('put', '/flags/unknown.flag')
       .send({ enabled: true, rolloutPercent: 100, reason: 'unknown' })
       .expect(404);

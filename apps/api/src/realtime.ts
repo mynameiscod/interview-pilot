@@ -1,9 +1,10 @@
 import type { Server as HttpServer } from 'node:http';
 import { AccessTokenError } from '@cbi/auth-core';
-import { socketConnections } from '@cbi/config';
+import { socketConnections, voiceStreamEventsTotal } from '@cbi/config';
 import type { Redis } from '@cbi/db';
 import {
   AnswerTextPayload,
+  BargeInPayload,
   HeartbeatPayload,
   IntegrityEventPayload,
   JoinPayload,
@@ -40,6 +41,7 @@ export async function createRealtime(opts: {
     // WebSocket first, long-polling as the fallback (NGINX ip_hash keeps polling sticky).
     transports: ['websocket', 'polling'],
     cors: { origin: c.env.CORS_ALLOWED_ORIGINS, credentials: true },
+    // Covers a realtime voice frame (100 ms of PCM is 3.2 KB; the relay refuses frames over 16 KB).
     maxHttpBufferSize: 64 * 1024,
     serveClient: false,
   });
@@ -139,6 +141,22 @@ export async function createRealtime(opts: {
       } catch (err) {
         fail(ack, err);
       }
+    });
+
+    // Realtime voice: the microphone stream for the current question (flag `voice.realtime`).
+    const voiceStream = c.voiceStreams.attach(socket, {
+      userId: data.userId,
+      sessionId: () => data.sessionId,
+    });
+    socket.once('disconnect', () => void voiceStream.disconnected());
+
+    socket.on(RtEvent.VOICE_BARGE_IN, (raw: unknown, ack?: Ack) => {
+      const parsed = BargeInPayload.safeParse(raw);
+      if (parsed.success && parsed.data.sessionId === data.sessionId) {
+        voiceStreamEventsTotal.inc({ event: 'barge_in' });
+        c.questionSpeaker.bargeIn(parsed.data.questionId);
+      }
+      ack?.({ ok: true });
     });
 
     // Integrity observations: at most 5 a second per connection; extra ones are dropped.

@@ -37,6 +37,9 @@ import {
   type LlmCallResult,
   type LlmRequest,
   type RuntimeModel,
+  type SpeechStream,
+  type SpeechStreamEvent,
+  type SttStreamRequest,
   type RuntimeProvider,
   type SttAdapter,
   type SttCallResult,
@@ -44,6 +47,7 @@ import {
   type TtsAdapter,
   type TtsCallResult,
   type TtsRequest,
+  type TtsStream,
   type UsageSink,
   type UsageUnits,
 } from './types.js';
@@ -89,6 +93,23 @@ export interface AiRunResult<T> {
   costMicros: number;
 }
 
+/** An open streaming transcription plus how it is served. `close` meters it. */
+export interface AiTranscriptionStream {
+  send(audio: Uint8Array): void;
+  finalize(): void;
+  bufferedAmount(): number;
+  /** Ends the stream and records its usage (audio seconds) once. */
+  close(): Promise<{ audioSec: number; costMicros: number }>;
+  model: { id: string; providerKey: string; modelId: string };
+  attempts: AttemptSummary[];
+}
+
+/** One chunk of streamed speech. */
+export interface AiSpeechChunk {
+  audio: Uint8Array;
+  mimeType: string;
+}
+
 /** A speech call's result plus how it was served. */
 export interface AiSpeechResult<R> {
   result: R;
@@ -108,7 +129,8 @@ export type SkipReason =
   | 'credential_unreadable'
   | 'adapter_unavailable'
   | 'circuit_open'
-  | 'saturated';
+  | 'saturated'
+  | 'streaming_unsupported';
 
 const REPAIR_INSTRUCTION =
   'Your previous reply did not match the required JSON schema. Reply again with only the corrected JSON object, no prose and no code fences. Problems: ';
@@ -908,6 +930,324 @@ export function createAiRouter(deps: AiRouterDeps) {
         };
       });
 
+  /**
+   * Opens one model's streaming recognition, with the usual retries and
+   * breaker for the connection. Once open, the stream is metered when it is
+   * closed (audio seconds: the provider's figure, else the bytes sent). An
+   * open stream holds no concurrency slot: its length is the candidate's.
+   */
+  async function openSttStream(
+    c: Candidate,
+    request: SttStreamRequest,
+    onEvent: (event: SpeechStreamEvent) => void,
+    ctx: AiCallContext,
+    attempts: AttemptSummary[],
+  ): Promise<AiTranscriptionStream | null> {
+    const adapter = c.adapter as SttAdapter;
+    if (!adapter.openStream) {
+      attempts.push({
+        modelRef: c.model.id,
+        model: c.model.modelId,
+        outcome: 'SKIPPED',
+        detail: 'streaming_unsupported',
+      });
+      return null;
+    }
+    const maxAttempts = 1 + c.model.params.retries;
+    let failures = 0;
+    for (let callNumber = 1; ; callNumber++) {
+      // The stream lives until it is closed; only the connection attempt has a timeout.
+      const lifetime = new AbortController();
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, lifetime.signal]) : lifetime.signal;
+      const connectTimeout = AbortSignal.timeout(c.model.params.timeoutMs);
+      const onTimeout = () => lifetime.abort(connectTimeout.reason);
+      connectTimeout.addEventListener('abort', onTimeout, { once: true });
+      const started = performance.now();
+      let failed: Error | null = null;
+      let closed = false;
+      let bytes = 0;
+      try {
+        const stream: SpeechStream = await adapter.openStream({
+          model: { providerKey: c.provider.key, modelId: c.model.modelId, params: c.model.params },
+          request,
+          credentials: { apiKey: c.apiKey, baseUrl: c.provider.baseUrl ?? undefined },
+          signal,
+          onEvent: (event) => {
+            if (event.type === 'error') failed ??= event.error;
+            if (!closed) onEvent(event);
+          },
+        });
+        connectTimeout.removeEventListener('abort', onTimeout);
+        await recordBreaker(c.model.id, 'success');
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: 'SUCCESS',
+          detail: null,
+        });
+        let metered: Promise<{ audioSec: number; costMicros: number }> | null = null;
+        return {
+          send(audio) {
+            if (closed) return;
+            bytes += audio.byteLength;
+            stream.send(audio);
+          },
+          finalize: () => stream.finalize(),
+          bufferedAmount: () => stream.bufferedAmount(),
+          close() {
+            metered ??= (async () => {
+              closed = true;
+              const summary = await stream
+                .close()
+                .catch(() => ({ durationSec: null, servedModel: null }));
+              lifetime.abort();
+              const audioSec =
+                summary.durationSec ?? Math.round((bytes / (request.sampleRate * 2)) * 100) / 100;
+              const error = failed ? asProviderError(failed, c, connectTimeout) : null;
+              // Streamed audio is billed by the provider whether or not the stream ended well.
+              const costMicros = await record('stt.live', c, ctx, error?.outcome ?? 'SUCCESS', {
+                attempt: callNumber,
+                latencyMs: Math.round(performance.now() - started),
+                units: { ...ZERO_USAGE, requests: 1, audioSec },
+                servedModel: summary.servedModel,
+                errorCode: error?.code ?? null,
+              });
+              if (error && countsAgainstBreaker(error.outcome)) {
+                await recordBreaker(c.model.id, 'failure');
+              }
+              return { audioSec, costMicros };
+            })();
+            return metered;
+          },
+          model: { id: c.model.id, providerKey: c.provider.key, modelId: c.model.modelId },
+          attempts,
+        };
+      } catch (err) {
+        connectTimeout.removeEventListener('abort', onTimeout);
+        lifetime.abort();
+        const latencyMs = Math.round(performance.now() - started);
+        if (ctx.signal?.aborted) {
+          await record('stt.live', c, ctx, 'ABORTED', {
+            attempt: callNumber,
+            latencyMs,
+            units: ZERO_USAGE,
+            servedModel: null,
+            errorCode: 'aborted',
+          });
+          throw new AiAbortedError('stt.live');
+        }
+        const error = asProviderError(err, c, connectTimeout);
+        await record('stt.live', c, ctx, error.outcome, {
+          attempt: callNumber,
+          latencyMs,
+          units: ZERO_USAGE,
+          servedModel: null,
+          errorCode: error.code,
+        });
+        if (countsAgainstBreaker(error.outcome)) await recordBreaker(c.model.id, 'failure');
+        log.warn(
+          { feature: 'stt.live', model: c.model.modelId, outcome: error.outcome, code: error.code },
+          'ai speech stream failed to open',
+        );
+        failures += 1;
+        if (error.retryable && failures < maxAttempts) {
+          await sleep(backoff(failures), ctx.signal).catch(() => undefined);
+          if (ctx.signal?.aborted) throw new AiAbortedError('stt.live');
+          continue;
+        }
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: error.outcome,
+          detail: error.code,
+        });
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Streams one model's synthesis of `request.text` through `emit`. Like
+   * `streamModel`: a failure before the first chunk retries or falls back;
+   * after it, the stream ends with `AiUnavailableError`. Metered by
+   * characters once the audio is complete.
+   */
+  async function streamSpeech(
+    c: Candidate,
+    request: TtsRequest,
+    ctx: AiCallContext,
+    attempts: AttemptSummary[],
+    emit: (chunk: AiSpeechChunk) => void,
+  ): Promise<AiSpeechResult<{ mimeType: string }> | null> {
+    const maxAttempts = 1 + c.model.params.retries;
+    const adapter = c.adapter as TtsAdapter;
+    let failures = 0;
+    for (let callNumber = 1; ; callNumber++) {
+      const timeout = AbortSignal.timeout(c.model.params.timeoutMs);
+      const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
+      const input = {
+        model: { providerKey: c.provider.key, modelId: c.model.modelId, params: c.model.params },
+        request,
+        credentials: { apiKey: c.apiKey, baseUrl: c.provider.baseUrl ?? undefined },
+        signal,
+      };
+      const started = performance.now();
+      let emitted = false;
+      try {
+        let stream: TtsStream;
+        let servedModel: string | null = null;
+        if (adapter.synthesizeStream) {
+          stream = await adapter.synthesizeStream(input);
+        } else {
+          // No streaming support: the whole utterance as one chunk.
+          const whole = await adapter.synthesize(input);
+          servedModel = whole.servedModel;
+          stream = {
+            mimeType: whole.mimeType,
+            chunks: (async function* () {
+              yield whole.audio;
+            })(),
+          };
+        }
+        for await (const audio of stream.chunks) {
+          if (audio.byteLength === 0) continue;
+          emitted = true;
+          emit({ audio, mimeType: stream.mimeType });
+        }
+        if (!emitted) {
+          throw new AiProviderError(
+            c.provider.key,
+            'PROVIDER_ERROR',
+            'empty_audio',
+            'empty audio response',
+          );
+        }
+        const usage = { ...ZERO_USAGE, requests: 1, characters: request.text.length };
+        const costMicros = await record('tts.live', c, ctx, 'SUCCESS', {
+          attempt: callNumber,
+          latencyMs: Math.round(performance.now() - started),
+          units: usage,
+          servedModel,
+          errorCode: null,
+        });
+        await recordBreaker(c.model.id, 'success');
+        attempts.push({
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: 'SUCCESS',
+          detail: null,
+        });
+        return {
+          result: { mimeType: stream.mimeType },
+          feature: 'tts.live',
+          model: { id: c.model.id, providerKey: c.provider.key, modelId: c.model.modelId },
+          attempts,
+          usage,
+          costMicros,
+        };
+      } catch (err) {
+        const latencyMs = Math.round(performance.now() - started);
+        if (ctx.signal?.aborted) {
+          // Stopped by the caller (a barge-in): what was sent is still billed by the provider.
+          await record('tts.live', c, ctx, 'ABORTED', {
+            attempt: callNumber,
+            latencyMs,
+            units: emitted
+              ? { ...ZERO_USAGE, requests: 1, characters: request.text.length }
+              : ZERO_USAGE,
+            servedModel: null,
+            errorCode: 'aborted',
+          });
+          throw new AiAbortedError('tts.live');
+        }
+        const error = asProviderError(err, c, timeout);
+        await record('tts.live', c, ctx, error.outcome, {
+          attempt: callNumber,
+          latencyMs,
+          units: ZERO_USAGE,
+          servedModel: null,
+          errorCode: error.code,
+        });
+        if (countsAgainstBreaker(error.outcome)) await recordBreaker(c.model.id, 'failure');
+        log.warn(
+          { feature: 'tts.live', model: c.model.modelId, outcome: error.outcome, emitted },
+          'ai speech stream failed',
+        );
+        const summary = {
+          modelRef: c.model.id,
+          model: c.model.modelId,
+          outcome: error.outcome,
+          detail: error.code,
+        };
+        if (emitted) {
+          attempts.push(summary);
+          throw new AiUnavailableError('tts.live', attempts, 'The audio stream was interrupted');
+        }
+        failures += 1;
+        if (error.retryable && failures < maxAttempts) {
+          await sleep(backoff(failures), ctx.signal).catch(() => undefined);
+          if (ctx.signal?.aborted) throw new AiAbortedError('tts.live');
+          continue;
+        }
+        attempts.push(summary);
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Turns a callback-style producer into an async generator: yields what
+   * `run` emits, returns its result, rethrows its error. Stopping the
+   * iteration early aborts `run` through its signal.
+   */
+  async function* pump<E, R>(
+    ctx: AiCallContext,
+    run: (emit: (item: E) => void, callCtx: AiCallContext) => Promise<R>,
+  ): AsyncGenerator<E, R, void> {
+    const controller = new AbortController();
+    const signal = ctx.signal
+      ? AbortSignal.any([ctx.signal, controller.signal])
+      : controller.signal;
+    const queue: E[] = [];
+    const state: {
+      settled: { ok: true; value: R } | { ok: false; error: unknown } | null;
+      wake: (() => void) | null;
+    } = { settled: null, wake: null };
+    const notify = () => {
+      state.wake?.();
+      state.wake = null;
+    };
+    void run(
+      (item) => {
+        queue.push(item);
+        notify();
+      },
+      { ...ctx, signal },
+    ).then(
+      (value) => {
+        state.settled = { ok: true, value };
+        notify();
+      },
+      (error: unknown) => {
+        state.settled = { ok: false, error };
+        notify();
+      },
+    );
+    try {
+      for (;;) {
+        while (queue.length > 0) yield queue.shift()!;
+        const settled = state.settled;
+        if (settled) {
+          if (!settled.ok) throw settled.error;
+          return settled.value;
+        }
+        await new Promise<void>((resolve) => (state.wake = resolve));
+      }
+    } finally {
+      if (!state.settled) controller.abort(new Error('stream consumer stopped'));
+    }
+  }
+
   return {
     /**
      * Serve `feature` through its configured chain. Throws
@@ -1030,6 +1370,44 @@ export function createAiRouter(deps: AiRouterDeps) {
       return opts.modelRef
         ? onModel(opts.modelRef, 'tts.live', ctx, exec)
         : throughChain('tts.live', ctx, exec, (r) => r.model.modelId);
+    },
+
+    /**
+     * Opens a streaming transcription on the first `stt.live` model that can
+     * stream (models without `openStream` are skipped). Fallback happens only
+     * while connecting; a stream that fails later reports an `error` event
+     * and the caller decides (realtime voice falls back to push-to-talk).
+     */
+    async openTranscriptionStream(
+      request: SttStreamRequest,
+      onEvent: (event: SpeechStreamEvent) => void,
+      ctx: AiCallContext = {},
+    ): Promise<AiTranscriptionStream> {
+      return throughChain(
+        'stt.live',
+        ctx,
+        (c, attempts) => openSttStream(c, request, onEvent, ctx, attempts),
+        (r) => r.model.modelId,
+      );
+    },
+
+    /**
+     * Text-to-speech through the `tts.live` chain, yielding audio chunks as
+     * they are produced (one container per call). Fallback only before the
+     * first chunk; stopping the iteration aborts the call.
+     */
+    synthesizeStream(
+      request: TtsRequest,
+      ctx: AiCallContext = {},
+    ): AsyncGenerator<AiSpeechChunk, AiSpeechResult<{ mimeType: string }>, void> {
+      return pump<AiSpeechChunk, AiSpeechResult<{ mimeType: string }>>(ctx, (emit, callCtx) =>
+        throughChain(
+          'tts.live',
+          callCtx,
+          (c, attempts) => streamSpeech(c, request, callCtx, attempts, emit),
+          (r) => r.model.modelId,
+        ),
+      );
     },
 
     /**

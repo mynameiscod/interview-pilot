@@ -54,6 +54,8 @@ export interface InterviewTurnRecord {
       model: string;
       /** Pace, fillers, pauses and hedging (coaching only, never scored); absent on older answers. */
       delivery?: DeliveryMetrics | null;
+      /** Realtime voice: the candidate corrected the transcript before sending it. */
+      edited?: boolean;
     } | null;
   } | null;
   turnEval: {

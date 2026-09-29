@@ -14,6 +14,9 @@ export const FlagKey = z.string().regex(/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)
 export const KNOWN_FLAGS = {
   /** Candidates can share a public proof of a report (Candidate Proof). */
   'reports.publicProof': 'Candidates can share a read-only proof of their report by link',
+  /** Realtime conversational voice: streamed answers and questions, barge-in (push-to-talk otherwise). */
+  'voice.realtime':
+    'Voice interviews stream the answer as the candidate speaks and speak the next question as it is written',
 } as const;
 export type KnownFlag = keyof typeof KNOWN_FLAGS;
 

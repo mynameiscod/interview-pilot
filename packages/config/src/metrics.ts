@@ -109,6 +109,36 @@ export const judgeFailuresTotal = new Counter({
   registers,
 });
 
+/**
+ * Realtime voice turn latency by stage (see VoiceLatencyStage in shared-types):
+ * end of speech → first question token / first audio byte, and the same
+ * from the answer's submission. Target: p50 below 2.5 s for speech → audio.
+ */
+export const voiceTurnLatency = new Histogram({
+  name: 'cbi_voice_turn_latency_seconds',
+  help: 'Realtime voice turn latency by stage',
+  labelNames: ['stage'] as const,
+  buckets: [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 6, 10],
+  registers,
+});
+
+export const voiceStreamsOpen = new Gauge({
+  name: 'cbi_voice_stt_streams',
+  help: 'Streaming speech-to-text sessions open on this API process',
+  registers,
+});
+
+export const voiceStreamEventsTotal = new Counter({
+  name: 'cbi_voice_stream_events_total',
+  help: 'Realtime voice events: opened, turn_end, resumed, fallback, rate_limited, barge_in',
+  labelNames: ['event'] as const,
+  registers,
+});
+
+export function observeVoiceLatency(stage: string, ms: number): void {
+  if (Number.isFinite(ms) && ms >= 0) voiceTurnLatency.observe({ stage }, ms / 1000);
+}
+
 /** The fields of an AI usage record the metrics need (ai-core's AiUsageRecord satisfies it). */
 export interface AiCallObservation {
   providerKey: string;

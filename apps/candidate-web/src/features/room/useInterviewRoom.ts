@@ -15,10 +15,11 @@ import {
   type LiveTurn,
   type ModeChangedEvent,
   type ModeSwitchReason,
+  type QuestionDeltaEvent,
   type RoundTransitionEvent,
   type RtAck,
 } from '@cbi/shared-types';
-import { useCallback, useEffect, useReducer, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
 import { useInterviewsApi } from '../interviews/interviews-api';
@@ -58,6 +59,33 @@ export type AnswerMode = InterviewMode;
 
 /** The spoken mode an interview was set up with (where "Answer by voice" switches back to). */
 export type SpokenMode = Exclude<InterviewMode, 'TEXT'>;
+
+/** Published on the voice channel when the room has (re)joined or lost the connection. */
+export const VOICE_JOINED = 'room:joined';
+export const VOICE_LEFT = 'room:left';
+
+/** Server events realtime voice listens to (relayed from the socket). */
+const VOICE_EVENTS = [
+  RtEvent.VOICE_TRANSCRIPT,
+  RtEvent.VOICE_SPEECH,
+  RtEvent.VOICE_TURN_END,
+  RtEvent.VOICE_RESUMED,
+  RtEvent.VOICE_STREAM_ERROR,
+  RtEvent.VOICE_STREAM_CLOSED,
+  RtEvent.QUESTION_AUDIO,
+  RtEvent.QUESTION_STREAM_END,
+] as const;
+
+/**
+ * The interview socket as realtime voice uses it: requests with an
+ * acknowledgement, and the voice events. `ready` is true while connected and
+ * joined (a stream can only be opened then).
+ */
+export interface VoiceChannel {
+  ready(): boolean;
+  request(event: string, payload: unknown, timeoutMs?: number): Promise<RtAck>;
+  on<T>(event: string, listener: (payload: T) => void): () => void;
+}
 
 /** Integrity observations waiting for the connection (oldest dropped beyond this). */
 const MAX_BUFFERED_OBSERVATIONS = 100;
@@ -102,6 +130,11 @@ export interface RoomState {
   clockRunning: boolean;
   question: LiveQuestion | null;
   thinking: boolean;
+  /**
+   * Realtime voice: the next question while it is being written (a preview;
+   * replaced by `question` once it is saved).
+   */
+  draft: { questionId: string; seq: number; text: string } | null;
   /** Every question seen so far, oldest first; answered ones carry the answer. */
   turns: LiveTurn[];
   /** Coding questions seen in this tab, by question id. */
@@ -119,6 +152,7 @@ type Action =
   | { type: 'snapshot'; snapshot: InterviewSnapshot; at: number }
   | { type: 'thinking'; at: number }
   | { type: 'question'; question: LiveQuestion; at: number }
+  | { type: 'questionDelta'; delta: QuestionDeltaEvent }
   | { type: 'transition'; event: RoundTransitionEvent }
   | {
       type: 'answered';
@@ -157,6 +191,7 @@ export const initialRoomState: RoomState = {
   clockRunning: false,
   question: null,
   thinking: false,
+  draft: null,
   turns: [],
   coding: {},
   sending: false,
@@ -256,6 +291,7 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         question,
         coding: withCoding(state.coding, s.currentQuestion),
         thinking: pushedIsNewer ? false : s.thinking,
+        draft: state.draft && state.draft.seq > s.lastSeq ? state.draft : null,
         turns: [...merged.values()].sort(bySeq),
       };
     }
@@ -273,9 +309,20 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         question: action.question,
         coding: withCoding(state.coding, action.question),
         thinking: false,
+        draft: null,
         roundIdx: Math.max(state.roundIdx, action.question.roundIdx),
         turns: withTurn(state.turns, questionTurn(action.question)),
       };
+    case 'questionDelta': {
+      const { questionId, seq, text } = action.delta;
+      // Only the question after the ones already shown; a late delta for a saved one is ignored.
+      if (state.turns.some((t) => t.seq >= seq)) return state;
+      const same = state.draft?.questionId === questionId;
+      return {
+        ...state,
+        draft: { questionId, seq, text: same ? `${state.draft!.text}${text}` : text },
+      };
+    }
     case 'transition': {
       const { fromRoundIdx, toRoundIdx } = action.event;
       return {
@@ -353,6 +400,8 @@ interface PendingAnswer {
   text: string;
   /** A spoken answer: the server uses its stored transcript. */
   voiceTranscriptId?: string;
+  /** A streamed transcript the candidate corrected: the text is the answer. */
+  voiceEdited?: boolean;
   /** Idempotency key: kept until the server acknowledges, so resends are harmless. */
   clientMsgId: string;
   resolve: (result: SendResult) => void;
@@ -415,6 +464,12 @@ export function useInterviewRoom(sessionId: string) {
   /** Integrity observations not yet sent (sent once joined; fire-and-forget). */
   const observationsRef = useRef<IntegrityEventPayload[]>([]);
   const flushObservationsRef = useRef<() => void>(() => undefined);
+  /** Realtime voice: the live socket (while joined) and listeners for its voice events. */
+  const channelRef = useRef<{ socket: RoomSocket | null; joined: boolean }>({
+    socket: null,
+    joined: false,
+  });
+  const hubRef = useRef(new Map<string, Set<(payload: never) => void>>());
 
   useEffect(() => {
     if (!state.joined || !state.voiceEnabled) return;
@@ -442,6 +497,12 @@ export function useInterviewRoom(sessionId: string) {
       url: config.VITE_API_URL,
       token: manager.current?.accessToken ?? null,
     });
+    const channel = channelRef.current;
+    channel.socket = socket;
+    channel.joined = false;
+    const publish = (event: string, payload?: unknown) => {
+      for (const listener of hubRef.current.get(event) ?? []) listener(payload as never);
+    };
 
     const later = (fn: () => void, ms: number) => {
       const id = setTimeout(() => {
@@ -569,7 +630,9 @@ export function useInterviewRoom(sessionId: string) {
         return;
       }
       joined = true;
+      channel.joined = true;
       if (ack.snapshot) applySnapshot(ack.snapshot);
+      publish(VOICE_JOINED);
       if (ack.snapshot && FINISHED_STATES.includes(ack.snapshot.state)) return;
       startHeartbeat();
       void flush();
@@ -589,6 +652,7 @@ export function useInterviewRoom(sessionId: string) {
           text: pending.text,
           clientMsgId: pending.clientMsgId,
           ...(pending.voiceTranscriptId ? { voiceTranscriptId: pending.voiceTranscriptId } : {}),
+          ...(pending.voiceEdited ? { voiceEdited: true } : {}),
         });
       } catch {
         // Timed out: keep the answer (same id) and resend while connected or after reconnecting.
@@ -643,6 +707,8 @@ export function useInterviewRoom(sessionId: string) {
 
     const onDisconnect = (reason: string) => {
       joined = false;
+      channel.joined = false;
+      publish(VOICE_LEFT);
       stopHeartbeat();
       if (pendingRef.current) pendingRef.current.inFlight = false;
       if (disposed) return;
@@ -697,6 +763,15 @@ export function useInterviewRoom(sessionId: string) {
     const onModeChanged = (event: ModeChangedEvent) => dispatch({ type: 'mode', mode: event.mode });
     const onDegraded = (event: DegradedEvent) =>
       dispatch({ type: 'degraded', kind: event.kind, on: true });
+    const onQuestionDelta = (delta: QuestionDeltaEvent) => {
+      dispatch({ type: 'questionDelta', delta });
+      publish(RtEvent.QUESTION_DELTA, delta);
+    };
+    // Realtime voice events go to whoever listens (the answer and the question audio).
+    const relayed: [string, (...args: never[]) => void][] = VOICE_EVENTS.map((event) => [
+      event,
+      (payload: unknown) => publish(event, payload),
+    ]);
 
     const listeners: [string, (...args: never[]) => void][] = [
       ['connect', onConnect],
@@ -709,6 +784,8 @@ export function useInterviewRoom(sessionId: string) {
       [RtEvent.DRAINING, onDraining],
       [RtEvent.MODE_CHANGED, onModeChanged],
       [RtEvent.DEGRADED, onDegraded],
+      [RtEvent.QUESTION_DELTA, onQuestionDelta],
+      ...relayed,
     ];
     // Registered once, before the first connect: Socket.IO keeps them across
     // reconnects, so every join already has its listeners in place (the server
@@ -722,6 +799,8 @@ export function useInterviewRoom(sessionId: string) {
 
     return () => {
       disposed = true;
+      channel.socket = null;
+      channel.joined = false;
       stopHeartbeat();
       clearInterval(countdown);
       for (const id of timers) clearTimeout(id);
@@ -748,7 +827,7 @@ export function useInterviewRoom(sessionId: string) {
     (
       questionId: string,
       text: string,
-      opts: { voiceTranscriptId?: string } = {},
+      opts: { voiceTranscriptId?: string; voiceEdited?: boolean; clientMsgId?: string } = {},
     ): Promise<SendResult> => {
       const spoken = Boolean(opts.voiceTranscriptId);
       const trimmed = spoken ? text.trim().slice(0, ANSWER_LIMITS.maxChars) : text.trim();
@@ -760,7 +839,8 @@ export function useInterviewRoom(sessionId: string) {
           questionId,
           text: trimmed,
           voiceTranscriptId: opts.voiceTranscriptId,
-          clientMsgId: newClientMsgId(),
+          voiceEdited: opts.voiceEdited,
+          clientMsgId: opts.clientMsgId ?? newClientMsgId(),
           resolve,
           attempt: 0,
           inFlight: false,
@@ -845,6 +925,26 @@ export function useInterviewRoom(sessionId: string) {
     [],
   );
 
+  /** Realtime voice's view of the connection (stable for the room's lifetime). */
+  const voiceChannel = useMemo<VoiceChannel>(
+    () => ({
+      ready: () => Boolean(channelRef.current.socket?.connected && channelRef.current.joined),
+      request(event, payload, timeoutMs = ACK_TIMEOUT_MS) {
+        const socket = channelRef.current.socket;
+        if (!socket?.connected) return Promise.reject(new Error('offline'));
+        return socket.timeout(timeoutMs).emitWithAck(event, payload) as Promise<RtAck>;
+      },
+      on(event, listener) {
+        const hub = hubRef.current;
+        const set = hub.get(event) ?? new Set();
+        set.add(listener as (payload: never) => void);
+        hub.set(event, set);
+        return () => void set.delete(listener as (payload: never) => void);
+      },
+    }),
+    [],
+  );
+
   const retryNow = useCallback(() => retryNowRef.current(), []);
   const dismissProblem = useCallback(() => dispatch({ type: 'problem', problem: null }), []);
 
@@ -863,6 +963,7 @@ export function useInterviewRoom(sessionId: string) {
     dismissDegraded,
     reportIntegrity,
     codingSubmitted,
+    voiceChannel,
   };
 }
 
