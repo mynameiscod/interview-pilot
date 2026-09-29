@@ -112,6 +112,23 @@ export const CampaignWithInvite = z.object({
 });
 export type CampaignWithInvite = z.infer<typeof CampaignWithInvite>;
 
+/** `GET /admin/campaigns`: newest first, a page at a time. */
+export const CampaignListQuery = z.object({
+  status: CampaignStatus.optional(),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export type CampaignListQuery = z.infer<typeof CampaignListQuery>;
+
+export const CampaignListPage = z.object({
+  items: z.array(CampaignSummary),
+  /** Campaigns matching the filter, across all pages. */
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+});
+export type CampaignListPage = z.infer<typeof CampaignListPage>;
+
 export const RotateInviteBody = z.object({ reason: z.string().trim().min(3).max(300) });
 export type RotateInviteBody = z.infer<typeof RotateInviteBody>;
 
@@ -185,11 +202,29 @@ export const CampaignResults = z.object({
   campaignId: z.string(),
   /** Dimension keys and names (columns of the grid). */
   dimensions: z.array(z.object({ key: z.string(), name: z.string() })),
+  /** One page of candidates, filtered and sorted by the server. */
   rows: z.array(CampaignResultRow),
+  /** Candidates matching the filters, across all pages. */
+  total: z.number().int(),
+  page: z.number().int(),
+  pageSize: z.number().int(),
 });
 export type CampaignResults = z.infer<typeof CampaignResults>;
 
-export const CampaignResultsQuery = z.object({
+/**
+ * Result order. `overall_*` keep unscored candidates last; ties (and the
+ * `joined_*` orders) fall back to the order candidates joined.
+ */
+export const CampaignResultsSort = z.enum([
+  'overall_desc',
+  'overall_asc',
+  'joined_asc',
+  'joined_desc',
+]);
+export type CampaignResultsSort = z.infer<typeof CampaignResultsSort>;
+
+/** Filters and order shared by the grid and the CSV export. */
+export const CampaignResultsExportQuery = z.object({
   status: ApplicationStatus.optional(),
   minOverall: z.coerce.number().int().min(0).max(100).optional(),
   /** `key:min` — e.g. `api-design:70`. */
@@ -197,8 +232,41 @@ export const CampaignResultsQuery = z.object({
     .string()
     .regex(/^[a-z0-9-]+:\d{1,3}$/)
     .optional(),
+  sort: CampaignResultsSort.default('overall_desc'),
+});
+export type CampaignResultsExportQuery = z.infer<typeof CampaignResultsExportQuery>;
+
+export const CampaignResultsQuery = CampaignResultsExportQuery.extend({
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type CampaignResultsQuery = z.infer<typeof CampaignResultsQuery>;
+
+// ---- Package exports (built by the worker) ------------------------------------------------------
+
+/** QUEUED → RUNNING → READY (downloadable until `expiresAt`, then EXPIRED) or FAILED. */
+export const CampaignExportStatus = z.enum(['QUEUED', 'RUNNING', 'READY', 'FAILED', 'EXPIRED']);
+export type CampaignExportStatus = z.infer<typeof CampaignExportStatus>;
+
+export const CampaignExport = z.object({
+  id: z.string(),
+  campaignId: z.string(),
+  status: CampaignExportStatus,
+  /** Candidates written so far, of the total when the export started. */
+  progress: z.object({ done: z.number().int(), total: z.number().int() }),
+  fileName: z.string(),
+  sizeBytes: z.number().int().nullable(),
+  /** Why the export failed (FAILED only). */
+  error: z.string().nullable(),
+  requestedBy: z.string(),
+  createdAt: z.iso.datetime(),
+  completedAt: z.iso.datetime().nullable(),
+  /** When the file is deleted (READY only). */
+  expiresAt: z.iso.datetime().nullable(),
+  /** API path (under `/api/v1`) that streams the ZIP while READY; null otherwise. */
+  downloadPath: z.string().nullable(),
+});
+export type CampaignExport = z.infer<typeof CampaignExport>;
 
 // ---- Manual review ----------------------------------------------------------------------------------
 

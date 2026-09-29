@@ -7,7 +7,12 @@ import {
   ProviderHealthModel,
 } from './models/ai.js';
 import { AuditLogModel } from './models/audit-log.js';
-import { CampaignApplicationModel, CampaignModel, ReviewRevisionModel } from './models/campaign.js';
+import {
+  CampaignApplicationModel,
+  CampaignExportModel,
+  CampaignModel,
+  ReviewRevisionModel,
+} from './models/campaign.js';
 import {
   AnalyticsDailyModel,
   AnalyticsEventModel,
@@ -90,6 +95,7 @@ const MODELS = [
   CodingAttemptModel,
   CampaignModel,
   CampaignApplicationModel,
+  CampaignExportModel,
   ReviewRevisionModel,
   AnalyticsEventModel,
   AnalyticsDailyModel,

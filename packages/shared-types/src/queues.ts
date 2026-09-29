@@ -14,6 +14,8 @@ export const QueueName = {
   ANALYSIS: 'analysis',
   /** The evaluation pipeline: evidence, scoring, report, PDF, notification (Phase 5). */
   EVALUATION: 'evaluation',
+  /** Large admin exports (campaign packages), streamed to object storage. */
+  EXPORTS: 'exports',
 } as const;
 export type QueueName = (typeof QueueName)[keyof typeof QueueName];
 
@@ -73,3 +75,17 @@ export interface InterviewAnalyzeJobData {
  */
 export const jobId = (name: DocumentJob | AnalysisJob, id: string, attempt = 0) =>
   `${name.replace('.', '-')}-${id}-${attempt}`;
+
+/** Jobs on the EXPORTS queue. */
+export const ExportJob = {
+  CAMPAIGN_PACKAGE: 'campaign.package',
+} as const;
+export type ExportJob = (typeof ExportJob)[keyof typeof ExportJob];
+
+export interface CampaignPackageJobData {
+  /** The campaignExports record; the worker reloads everything else. */
+  exportId: string;
+}
+
+/** One job per export record: enqueueing it twice is a no-op. */
+export const campaignPackageJobId = (exportId: string) => `campaign-package-${exportId}`;
