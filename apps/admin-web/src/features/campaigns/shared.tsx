@@ -97,3 +97,57 @@ export function InviteLinkPanel({
     </section>
   );
 }
+
+/** Previous / next page controls with the range shown; hidden when everything fits on one page. */
+export function Pager({
+  page,
+  pageSize,
+  total,
+  onPage,
+  disabled = false,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPage: (page: number) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (pages <= 1) return null;
+  const from = Math.min(total, (page - 1) * pageSize + 1);
+  const to = Math.min(total, page * pageSize);
+  return (
+    <nav
+      className="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3"
+      aria-label={t('campaignExport.pager.label')}
+    >
+      <span className="small cb-text-secondary">
+        {t('campaignExport.pager.showing', { from, to, total })}
+      </span>
+      <div className="d-flex align-items-center gap-2">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          disabled={disabled || page <= 1}
+          onClick={() => onPage(page - 1)}
+        >
+          <i className="bi bi-chevron-left me-1" aria-hidden="true" />
+          {t('campaignExport.pager.previous')}
+        </button>
+        <span className="small" aria-live="polite">
+          {t('campaignExport.pager.status', { page, pages })}
+        </span>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          disabled={disabled || page >= pages}
+          onClick={() => onPage(page + 1)}
+        >
+          {t('campaignExport.pager.next')}
+          <i className="bi bi-chevron-right ms-1" aria-hidden="true" />
+        </button>
+      </div>
+    </nav>
+  );
+}

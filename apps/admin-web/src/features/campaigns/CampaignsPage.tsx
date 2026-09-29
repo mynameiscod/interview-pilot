@@ -1,19 +1,30 @@
 import type { CampaignWithInvite } from '@cbi/shared-types';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow } from '../ai/shared';
 import { formatDateTime } from '../library/format';
 import { CampaignCreateForm } from './CampaignCreateForm';
 import { campaignError } from './format';
-import { useCampaigns } from './queries';
-import { CampaignStatusBadge, InviteLinkPanel } from './shared';
+import { CAMPAIGNS_PAGE_SIZE, useCampaigns } from './queries';
+import { CampaignStatusBadge, InviteLinkPanel, Pager } from './shared';
+
+/** The page number lives in the URL so returning from a campaign keeps it. */
+function usePage(): [number, (page: number) => void] {
+  const [params, setParams] = useSearchParams();
+  const raw = Number(params.get('page'));
+  const page = Number.isInteger(raw) && raw > 1 ? raw : 1;
+  const set = (next: number) =>
+    setParams(next > 1 ? { page: String(next) } : {}, { replace: true });
+  return [page, set];
+}
 
 export function CampaignsPage() {
   const { t, i18n } = useTranslation();
   const canManage = useCan('campaigns.manage');
-  const campaigns = useCampaigns();
+  const [page, setPage] = usePage();
+  const campaigns = useCampaigns(page);
   const [creating, setCreating] = useState(false);
   // The invite path exists only in the create response, so it lives in memory until dismissed.
   const [created, setCreated] = useState<CampaignWithInvite | null>(null);
@@ -53,6 +64,8 @@ export function CampaignsPage() {
           onCreated={(result) => {
             setCreating(false);
             setCreated(result);
+            // The new campaign is the newest: show the first page.
+            setPage(1);
           }}
           onCancel={() => setCreating(false)}
         />
@@ -83,14 +96,14 @@ export function CampaignsPage() {
                 </tr>
               </thead>
               <tbody>
-                {campaigns.data.length === 0 && (
+                {campaigns.data.items.length === 0 && (
                   <tr>
                     <td colSpan={6} className="cb-text-secondary">
                       {t('campaigns.list.empty')}
                     </td>
                   </tr>
                 )}
-                {campaigns.data.map((c) => (
+                {campaigns.data.items.map((c) => (
                   <tr key={c.id}>
                     <th scope="row" className="fw-normal">
                       <Link to={`/campaigns/${c.id}`}>{c.name}</Link>
@@ -119,6 +132,15 @@ export function CampaignsPage() {
           </div>
         )}
       </section>
+      {campaigns.data && (
+        <Pager
+          page={page}
+          pageSize={CAMPAIGNS_PAGE_SIZE}
+          total={campaigns.data.total}
+          onPage={setPage}
+          disabled={campaigns.isPlaceholderData}
+        />
+      )}
     </>
   );
 }

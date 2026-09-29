@@ -2,6 +2,8 @@
 import type {
   AdminInterviewDetail,
   AdminInterviewRow,
+  CampaignExport,
+  CampaignListPage,
   CampaignResultRow,
   CampaignResults,
   CampaignSummary,
@@ -52,13 +54,43 @@ export const resultRow = (overrides: Partial<CampaignResultRow> = {}): CampaignR
   ...overrides,
 });
 
-export const results = (rows: CampaignResultRow[] = [resultRow()]): CampaignResults => ({
+export const results = (
+  rows: CampaignResultRow[] = [resultRow()],
+  page: Partial<Pick<CampaignResults, 'total' | 'page' | 'pageSize'>> = {},
+): CampaignResults => ({
   campaignId: CAMPAIGN_ID,
   dimensions: [
     { key: 'api-design', name: 'API design' },
     { key: 'debugging', name: 'Debugging' },
   ],
   rows,
+  total: rows.length,
+  page: 1,
+  pageSize: 50,
+  ...page,
+});
+
+export const campaignPage = (
+  items: CampaignSummary[] = [campaign()],
+  page: Partial<Pick<CampaignListPage, 'total' | 'page' | 'pageSize'>> = {},
+): CampaignListPage => ({ items, total: items.length, page: 1, pageSize: 25, ...page });
+
+export const EXPORT_ID = '64b0000000000000000000e1';
+
+export const campaignExport = (overrides: Partial<CampaignExport> = {}): CampaignExport => ({
+  id: EXPORT_ID,
+  campaignId: CAMPAIGN_ID,
+  status: 'QUEUED',
+  progress: { done: 0, total: 120 },
+  fileName: `campaign-${CAMPAIGN_ID}-package.zip`,
+  sizeBytes: null,
+  error: null,
+  requestedBy: 'admin-1',
+  createdAt: now,
+  completedAt: null,
+  expiresAt: null,
+  downloadPath: null,
+  ...overrides,
 });
 
 export const interviewRow = (overrides: Partial<AdminInterviewRow> = {}): AdminInterviewRow => ({

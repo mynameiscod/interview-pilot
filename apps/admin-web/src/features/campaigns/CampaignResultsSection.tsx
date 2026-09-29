@@ -1,68 +1,190 @@
-import { ApplicationStatus, type CampaignSummary } from '@cbi/shared-types';
+import {
+  ApplicationStatus,
+  CampaignResultsSort,
+  type CampaignExport,
+  type CampaignSummary,
+} from '@cbi/shared-types';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
 import { useAdminAuth, useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow } from '../ai/shared';
 import { formatDateTime } from '../library/format';
+import { formatBytes } from '../privacy/format';
 import { campaignError, downloadExport } from './format';
-import { resultsQuery, useCampaignResults, type ResultsFilters } from './queries';
-import { ApplicationStatusBadge } from './shared';
+import {
+  RESULTS_PAGE_SIZE,
+  resultsQuery,
+  useCampaignExport,
+  useCampaignResults,
+  type ResultsFilters,
+} from './queries';
+import { ApplicationStatusBadge, Pager } from './shared';
 
 const isStatus = (value: string | null): value is ApplicationStatus =>
   ApplicationStatus.safeParse(value).success;
 
+const isSort = (value: string | null): value is CampaignResultsSort =>
+  CampaignResultsSort.safeParse(value).success;
+
 const score = (value: string | null) =>
   value !== null && /^\d{1,3}$/.test(value) && Number(value) <= 100 ? value : '';
 
-/** Filters live in the URL so returning from an interview keeps them. */
-function useResultsFilters(): [ResultsFilters, (next: ResultsFilters) => void] {
+/** Filters, order and page live in the URL so returning from an interview keeps them. */
+function useResultsFilters(): [
+  ResultsFilters,
+  number,
+  (next: ResultsFilters, page?: number) => void,
+] {
   const [params, setParams] = useSearchParams();
   const rawStatus = params.get('status');
+  const rawSort = params.get('sort');
   const rawDimension = params.get('dimension') ?? '';
+  const rawPage = Number(params.get('page'));
   const filters: ResultsFilters = {
     status: isStatus(rawStatus) ? rawStatus : '',
     minOverall: score(params.get('minOverall')),
     dimension: /^[a-z0-9-]+:\d{1,3}$/.test(rawDimension) ? rawDimension : '',
+    sort: isSort(rawSort) && rawSort !== 'overall_desc' ? rawSort : '',
   };
-  const set = (next: ResultsFilters) => {
-    const search = new URLSearchParams();
-    if (next.status) search.set('status', next.status);
-    if (next.minOverall) search.set('minOverall', next.minOverall);
-    if (next.dimension) search.set('dimension', next.dimension);
-    setParams(search, { replace: true });
+  const page = Number.isInteger(rawPage) && rawPage > 1 ? rawPage : 1;
+  // New filters start again from the first page.
+  const set = (next: ResultsFilters, nextPage = 1) => {
+    setParams(new URLSearchParams(resultsQuery(next, nextPage)), { replace: true });
   };
-  return [filters, set];
+  return [filters, page, set];
+}
+
+/**
+ * A package is built by the worker: start it, poll its progress, then
+ * download it while it is kept.
+ */
+function PackageExport({ campaign }: { campaign: CampaignSummary }) {
+  const { t, i18n } = useTranslation();
+  const { manager } = useAdminAuth();
+  const [exportId, setExportId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const status = useCampaignExport(campaign.id, exportId);
+  const current: CampaignExport | undefined = status.data;
+  const building = current?.status === 'QUEUED' || current?.status === 'RUNNING';
+
+  const start = async () => {
+    setStarting(true);
+    setError(null);
+    try {
+      const started = await manager.api.post<CampaignExport>(
+        `/admin/campaigns/${campaign.id}/exports`,
+      );
+      setExportId(started.id);
+    } catch (err) {
+      setError(campaignError(t, err));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const download = async (path: string, fileName: string) => {
+    setDownloading(true);
+    setError(null);
+    try {
+      await downloadExport(manager, path, fileName);
+    } catch (err) {
+      setError(campaignError(t, err));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      {(!current || !building) && current?.status !== 'READY' && (
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary"
+          disabled={starting}
+          onClick={() => void start()}
+        >
+          <i className="bi bi-file-earmark-zip me-1" aria-hidden="true" />
+          {starting
+            ? t('campaignExport.package.starting')
+            : current
+              ? t('campaignExport.package.again')
+              : t('campaignExport.package.start')}
+        </button>
+      )}
+      <div role="status" aria-live="polite" className="small mt-2">
+        {current?.status === 'QUEUED' && t('campaignExport.package.queued')}
+        {current?.status === 'RUNNING' && (
+          <>
+            {t('campaignExport.package.running', {
+              done: current.progress.done,
+              total: current.progress.total,
+            })}
+            <div
+              className="progress mt-1"
+              role="progressbar"
+              aria-label={t('campaignExport.package.progressLabel')}
+              aria-valuemin={0}
+              aria-valuemax={current.progress.total}
+              aria-valuenow={current.progress.done}
+            >
+              <div
+                className="progress-bar"
+                style={{
+                  width: `${current.progress.total ? (100 * current.progress.done) / current.progress.total : 0}%`,
+                }}
+              />
+            </div>
+          </>
+        )}
+        {current?.status === 'READY' &&
+          t('campaignExport.package.ready', {
+            size: formatBytes(current.sizeBytes ?? 0, i18n.language),
+            expires: formatDateTime(current.expiresAt, i18n.language),
+          })}
+        {current?.status === 'FAILED' &&
+          t('campaignExport.package.failed', { error: current.error ?? '' })}
+        {current?.status === 'EXPIRED' && t('campaignExport.package.expired')}
+      </div>
+      {current?.status === 'READY' && current.downloadPath && (
+        <button
+          type="button"
+          className="btn btn-sm btn-primary mt-2"
+          disabled={downloading}
+          onClick={() => void download(current.downloadPath!, current.fileName)}
+        >
+          <i className="bi bi-download me-1" aria-hidden="true" />
+          {downloading ? t('campaigns.exports.downloading') : t('campaignExport.package.download')}
+        </button>
+      )}
+      {status.isError && <ErrorAlert error={campaignError(t, status.error)} />}
+      <ErrorAlert error={error} />
+    </div>
+  );
 }
 
 function Exports({ campaign, filters }: { campaign: CampaignSummary; filters: ResultsFilters }) {
   const { t } = useTranslation();
   const id = useId();
   const { manager } = useAdminAuth();
-  const [busy, setBusy] = useState<'csv' | 'zip' | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const download = async (kind: 'csv' | 'zip') => {
-    setBusy(kind);
+  const downloadCsv = async () => {
+    setBusy(true);
     setError(null);
     try {
-      if (kind === 'csv') {
-        await downloadExport(
-          manager,
-          `/admin/campaigns/${campaign.id}/results.csv${resultsQuery(filters)}`,
-          `campaign-${campaign.id}-results.csv`,
-        );
-      } else {
-        await downloadExport(
-          manager,
-          `/admin/campaigns/${campaign.id}/package.zip`,
-          `campaign-${campaign.id}.zip`,
-        );
-      }
+      await downloadExport(
+        manager,
+        `/admin/campaigns/${campaign.id}/results.csv${resultsQuery(filters)}`,
+        `campaign-${campaign.id}-results.csv`,
+      );
     } catch (err) {
       setError(campaignError(t, err));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -72,22 +194,12 @@ function Exports({ campaign, filters }: { campaign: CampaignSummary; filters: Re
         <button
           type="button"
           className="btn btn-sm btn-outline-primary"
-          disabled={busy !== null}
+          disabled={busy}
           aria-describedby={`${id}-hint`}
-          onClick={() => void download('csv')}
+          onClick={() => void downloadCsv()}
         >
           <i className="bi bi-filetype-csv me-1" aria-hidden="true" />
-          {busy === 'csv' ? t('campaigns.exports.downloading') : t('campaigns.exports.csv')}
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-primary"
-          disabled={busy !== null}
-          aria-describedby={`${id}-hint`}
-          onClick={() => void download('zip')}
-        >
-          <i className="bi bi-file-earmark-zip me-1" aria-hidden="true" />
-          {busy === 'zip' ? t('campaigns.exports.downloading') : t('campaigns.exports.package')}
+          {busy ? t('campaigns.exports.downloading') : t('campaigns.exports.csv')}
         </button>
       </div>
       <p id={`${id}-hint`} className="small cb-text-secondary mt-2 mb-0">
@@ -96,6 +208,7 @@ function Exports({ campaign, filters }: { campaign: CampaignSummary; filters: Re
       <div className="mt-2">
         <ErrorAlert error={error} />
       </div>
+      <PackageExport campaign={campaign} />
     </div>
   );
 }
@@ -105,13 +218,14 @@ export function CampaignResultsSection({ campaign }: { campaign: CampaignSummary
   const id = useId();
   const canExport = useCan('campaigns.manage');
   const canReview = useCan('interviews.read');
-  const [filters, setFilters] = useResultsFilters();
-  const results = useCampaignResults(campaign.id, filters);
+  const [filters, page, setFilters] = useResultsFilters();
+  const results = useCampaignResults(campaign.id, filters, page);
   const [dimKey, dimMin] = filters.dimension ? filters.dimension.split(':') : ['', ''];
   const [statusInput, setStatusInput] = useState(filters.status);
   const [minInput, setMinInput] = useState(filters.minOverall);
   const [dimensionInput, setDimensionInput] = useState(dimKey ?? '');
   const [dimensionMinInput, setDimensionMinInput] = useState(dimMin ?? '');
+  const [sortInput, setSortInput] = useState(filters.sort || 'overall_desc');
   const dimensions = results.data?.dimensions ?? [];
   const date = (value: string | null) => (value ? formatDateTime(value, i18n.language) : '—');
 
@@ -135,6 +249,7 @@ export function CampaignResultsSection({ campaign }: { campaign: CampaignSummary
             status: statusInput,
             minOverall: score(minInput.trim() || null),
             dimension: dimensionInput && min ? `${dimensionInput}:${min}` : '',
+            sort: sortInput === 'overall_desc' ? '' : sortInput,
           });
         }}
       >
@@ -203,7 +318,24 @@ export function CampaignResultsSection({ campaign }: { campaign: CampaignSummary
             onChange={(e) => setDimensionMinInput(e.target.value)}
           />
         </div>
-        <div className="col-lg-2">
+        <div className="col-sm-6 col-lg-2">
+          <label htmlFor={`${id}-sort`} className="form-label small">
+            {t('campaignExport.sort.label')}
+          </label>
+          <select
+            id={`${id}-sort`}
+            className="form-select form-select-sm"
+            value={sortInput}
+            onChange={(e) => setSortInput(e.target.value)}
+          >
+            {CampaignResultsSort.options.map((o) => (
+              <option key={o} value={o}>
+                {t(`campaignExport.sort.${o}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col-12">
           <button type="submit" className="btn btn-sm btn-primary">
             {t('payments.purchases.apply')}
           </button>
@@ -215,7 +347,7 @@ export function CampaignResultsSection({ campaign }: { campaign: CampaignSummary
         <div className="table-responsive">
           <table className="table table-sm align-middle mb-0">
             <caption className="caption-top">
-              {t('campaigns.results.caption', { count: results.data.rows.length })}
+              {t('campaigns.results.caption', { count: results.data.total })}
             </caption>
             <thead>
               <tr>
@@ -298,6 +430,15 @@ export function CampaignResultsSection({ campaign }: { campaign: CampaignSummary
             </tbody>
           </table>
         </div>
+      )}
+      {results.data && (
+        <Pager
+          page={page}
+          pageSize={RESULTS_PAGE_SIZE}
+          total={results.data.total}
+          onPage={(next) => setFilters(filters, next)}
+          disabled={results.isPlaceholderData}
+        />
       )}
     </section>
   );

@@ -1322,7 +1322,6 @@
     },
     "exports": {
       "csv": "Download CSV",
-      "package": "Download package (ZIP)",
       "downloading": "Downloading…",
       "hint": "The CSV uses the filters above. The package holds every candidate with their reports. Each download is recorded in the audit log."
     },
@@ -1966,5 +1965,33 @@
     "save": "Save password",
     "saving": "Saving…",
     "saved": "Password saved."
+  },
+  "campaignExport": {
+    "pager": {
+      "label": "Result pages",
+      "previous": "Previous",
+      "next": "Next",
+      "status": "Page {{page}} of {{pages}}",
+      "showing": "Showing {{from}}–{{to}} of {{total}}"
+    },
+    "sort": {
+      "label": "Order",
+      "overall_desc": "Highest score first",
+      "overall_asc": "Lowest score first",
+      "joined_asc": "Earliest joined first",
+      "joined_desc": "Latest joined first"
+    },
+    "package": {
+      "start": "Prepare package (ZIP)",
+      "starting": "Starting…",
+      "progressLabel": "Package progress",
+      "queued": "The package is waiting to be built…",
+      "running": "Building the package: {{done}} of {{total}} candidates…",
+      "ready": "The package is ready ({{size}}). You can download it until {{expires}}.",
+      "download": "Download package",
+      "failed": "The package could not be built. {{error}}",
+      "expired": "This package has expired. Prepare a new one.",
+      "again": "Prepare a new package"
+    }
   }
 }
