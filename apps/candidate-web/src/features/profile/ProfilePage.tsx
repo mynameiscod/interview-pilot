@@ -8,16 +8,21 @@ import {
 } from '@cbi/web-core';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
 import { useAuthProviders, useCandidateApi } from '../auth/auth-api';
 import { ConsentHistory } from '../consent/ConsentHistory';
+import { DevicesCard } from './DevicesCard';
 import { ProfileForm } from './ProfileForm';
 
 const PROVIDER_ICON = { EMAIL: 'bi-envelope', MOBILE: 'bi-phone', GOOGLE: 'bi-google' } as const;
 
-function LinkIdentity({ onDone }: { onDone: () => void }) {
+/**
+ * Adds a sign-in method. `onLinked` runs only after a method was actually
+ * added; `onCancel` just closes the form (no success message).
+ */
+function LinkIdentity({ onLinked, onCancel }: { onLinked: () => void; onCancel: () => void }) {
   const { t, i18n } = useTranslation();
   const api = useCandidateApi();
   const { setUser } = useCandidateAuth();
@@ -34,7 +39,7 @@ function LinkIdentity({ onDone }: { onDone: () => void }) {
           submitLabel={t('profile.confirmLink')}
           verify={async (challengeId, code) => {
             setUser(await api.verifyLinkOtp(challengeId, code));
-            onDone();
+            onLinked();
           }}
           resend={() => api.requestLinkOtp(requested.channel, requested.destination)}
           onChangeDestination={() => setRequested(null)}
@@ -58,7 +63,7 @@ function LinkIdentity({ onDone }: { onDone: () => void }) {
                   setError(null);
                   try {
                     setUser(await api.linkGoogle(idToken));
-                    onDone();
+                    onLinked();
                   } catch (err) {
                     setError(errorMessage(t, err));
                   }
@@ -73,7 +78,7 @@ function LinkIdentity({ onDone }: { onDone: () => void }) {
           )}
         </>
       )}
-      <button type="button" className="btn btn-link px-0 mt-2" onClick={onDone}>
+      <button type="button" className="btn btn-link px-0 mt-2" onClick={onCancel}>
         {t('profile.cancel')}
       </button>
     </div>
@@ -164,10 +169,11 @@ export function ProfilePage() {
             </ul>
             {linking ? (
               <LinkIdentity
-                onDone={() => {
+                onLinked={() => {
                   setLinking(false);
                   setLinkedNotice(true);
                 }}
+                onCancel={() => setLinking(false)}
               />
             ) : (
               <button
@@ -223,7 +229,14 @@ export function ProfilePage() {
             )}
           </section>
 
+          <DevicesCard />
+
           <ConsentHistory />
+
+          <p className="small mb-0">
+            <i className="bi bi-shield-lock me-1" aria-hidden="true" />
+            <Link to="/app/privacy">{t('profile.privacyLink')}</Link>
+          </p>
         </div>
       </div>
     </div>

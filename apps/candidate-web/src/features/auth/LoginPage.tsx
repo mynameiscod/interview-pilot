@@ -9,8 +9,9 @@ import {
   type OtpRequested,
 } from '@cbi/web-core';
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { LEGAL_PATHS } from '../legal/legal-paths';
 import { useTrackOnce } from '../../lib/use-analytics';
 import { useCandidateAuth } from '../../app/session';
 import { config } from '../../config';
@@ -118,6 +119,15 @@ export function LoginPage() {
             )}
           </div>
           <p className="small cb-text-secondary mt-3">{t('auth.noPassword')}</p>
+          <p className="small cb-text-secondary">
+            <Trans
+              i18nKey="auth.agreement"
+              components={{
+                terms: <Link to={LEGAL_PATHS.terms} />,
+                privacy: <Link to={LEGAL_PATHS.privacy} />,
+              }}
+            />
+          </p>
         </div>
       </div>
     </div>

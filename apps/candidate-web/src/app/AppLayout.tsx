@@ -5,6 +5,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { MaintenanceBanner } from '../components/MaintenanceBanner';
 import { RouteAnalytics } from '../lib/use-analytics';
+import { LEGAL_PATHS } from '../features/legal/legal-paths';
 import { useCandidateAuth } from './session';
 import './app-shell.scss';
 
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { to: '/app/purchases', key: 'nav.purchases', icon: 'bi-cart3' },
   { to: '/pricing', key: 'nav.buyCredits', icon: 'bi-database' },
   { to: '/app/profile', key: 'nav.profile', icon: 'bi-person' },
+  { to: '/app/privacy', key: 'nav.privacy', icon: 'bi-shield-lock' },
 ] as const;
 
 /** Avatar button with the candidate's name, a profile link and sign-out. */
@@ -133,6 +135,25 @@ export function AppLayout() {
                   </NavLink>
                 </li>
               ))}
+            </ul>
+          </nav>
+          <nav aria-label={t('footer.legalNavigation')} className="mt-auto pt-4 small">
+            <ul className="list-unstyled mb-0 d-flex flex-column gap-1">
+              <li>
+                <Link to={LEGAL_PATHS.privacy} className="cb-app-brand-muted">
+                  {t('footer.privacy')}
+                </Link>
+              </li>
+              <li>
+                <Link to={LEGAL_PATHS.terms} className="cb-app-brand-muted">
+                  {t('footer.terms')}
+                </Link>
+              </li>
+              <li>
+                <Link to={LEGAL_PATHS.grievance} className="cb-app-brand-muted">
+                  {t('footer.grievance')}
+                </Link>
+              </li>
             </ul>
           </nav>
         </aside>

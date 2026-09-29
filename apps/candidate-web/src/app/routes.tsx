@@ -141,6 +141,13 @@ export const routes: RouteObject[] = [
                   Component: (await import('../features/payments/PurchasesPage')).PurchasesPage,
                 }),
               },
+              {
+                // Data rights: export, deletion, consent history, grievances (DPDP Act 2023).
+                path: 'privacy',
+                lazy: async () => ({
+                  Component: (await import('../features/privacy/PrivacyPage')).PrivacyPage,
+                }),
+              },
             ],
           },
         ],
@@ -174,6 +181,37 @@ export const routes: RouteObject[] = [
         path: 'proof/:token',
         lazy: async () => ({
           Component: (await import('../features/proof/ProofPage')).ProofPage,
+        }),
+      },
+      {
+        // Legal pages: public, linked from every footer and the sign-in screen.
+        path: 'terms',
+        lazy: async () => ({
+          Component: (await import('../features/legal/LegalPage')).TermsPage,
+        }),
+      },
+      {
+        path: 'privacy-policy',
+        lazy: async () => ({
+          Component: (await import('../features/legal/LegalPage')).PrivacyPolicyPage,
+        }),
+      },
+      {
+        path: 'grievance',
+        lazy: async () => ({
+          Component: (await import('../features/legal/LegalPage')).GrievancePage,
+        }),
+      },
+      {
+        path: 'how-scoring-works',
+        lazy: async () => ({
+          Component: (await import('../features/legal/LegalPage')).ScoringPage,
+        }),
+      },
+      {
+        path: 'account-deleted',
+        lazy: async () => ({
+          Component: (await import('../features/privacy/AccountDeletedPage')).AccountDeletedPage,
         }),
       },
       {

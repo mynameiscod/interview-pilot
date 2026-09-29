@@ -7,3 +7,7 @@ import { afterEach } from 'vitest';
 configure({ asyncUtilTimeout: 15_000 });
 
 afterEach(() => cleanup());
+
+// Session managers sync sign-outs across tabs with BroadcastChannel; tests
+// create many managers in one process, so they must not hear each other.
+Object.defineProperty(globalThis, 'BroadcastChannel', { value: undefined, configurable: true });
