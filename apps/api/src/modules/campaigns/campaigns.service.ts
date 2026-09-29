@@ -46,11 +46,11 @@ import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
 import { refuseDuringMaintenance } from '../../lib/maintenance.js';
 import { buildZip, type ZipEntry } from '../../lib/zip.js';
+import { CSV_BOM as BOM, csvCell } from '../../lib/csv.js';
 
 /** Invite tokens: 144 random bits, URL-safe. Only the SHA-256 is stored. */
 const newToken = () => randomBytes(18).toString('base64url');
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
-const BOM = String.fromCharCode(0xfeff);
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 
 /** Allowed status changes; CLOSED is final. */
@@ -127,14 +127,6 @@ export function campaignSummary(c: CampaignRecord): CampaignSummary {
     createdAt: iso(c.createdAt),
     updatedAt: iso(c.updatedAt),
   };
-}
-
-/** CSV cell: quoted, and text that a spreadsheet would run as a formula is neutralised. */
-export function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  let s = String(value);
-  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 const slug = (s: string) =>

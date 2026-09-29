@@ -1966,5 +1966,17 @@
     "save": "Save password",
     "saving": "Saving…",
     "saved": "Password saved."
+  },
+  "auditTools": {
+    "filtersLabel": "Audit log filters",
+    "actorId": "Actor ID",
+    "resourceId": "Resource ID",
+    "from": "From",
+    "to": "To",
+    "clear": "Clear",
+    "rangeInvalid": "The start date must be on or before the end date.",
+    "export": "Export CSV",
+    "exporting": "Preparing…",
+    "exportHint": "The CSV holds every entry that matches the filters, newest first. Each export is recorded in the audit log."
   }
 }

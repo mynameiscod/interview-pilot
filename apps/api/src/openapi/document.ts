@@ -144,6 +144,7 @@ import {
   AdminUserSummary,
   ApiErrorBody,
   AuditLogPage,
+  AuditLogExportQuery,
   AuditLogQuery,
   AuthProvidersResponse,
   GoogleLoginBody,
@@ -414,6 +415,16 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     auth: 'bearer',
     query: AuditLogQuery,
     response: AuditLogPage,
+    errors: [400, 401, 403],
+  });
+  route('get', '/admin/audit-logs/export.csv', {
+    tag: 'Admin',
+    summary:
+      'Every matching audit entry as CSV (text/csv), streamed newest first; same filters (audit.export; audited)',
+    auth: 'bearer',
+    query: AuditLogExportQuery,
+    response: null,
+    status: 200,
     errors: [400, 401, 403],
   });
 

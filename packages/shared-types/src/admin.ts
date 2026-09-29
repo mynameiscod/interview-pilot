@@ -64,15 +64,32 @@ export const AuditLogEntry = z.object({
 });
 export type AuditLogEntry = z.infer<typeof AuditLogEntry>;
 
-export const AuditLogQuery = z.object({
+const auditLogFilters = z.object({
   action: z.string().max(80).optional(),
   actorId: z.string().max(64).optional(),
   resourceId: z.string().max(64).optional(),
-  /** Cursor: return entries older than this entry id. */
-  before: z.string().max(64).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  /** Entries at or after this instant (ISO 8601 with offset). */
+  from: z.iso.datetime({ offset: true }).optional(),
+  /** Entries before this instant (exclusive). */
+  to: z.iso.datetime({ offset: true }).optional(),
 });
+
+const fromBeforeTo = (q: { from?: string; to?: string }) =>
+  !q.from || !q.to || Date.parse(q.from) < Date.parse(q.to);
+const RANGE_MESSAGE = { message: '`from` must be before `to`', path: ['to'] };
+
+export const AuditLogQuery = auditLogFilters
+  .extend({
+    /** Cursor: return entries older than this entry id. */
+    before: z.string().max(64).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .refine(fromBeforeTo, RANGE_MESSAGE);
 export type AuditLogQuery = z.infer<typeof AuditLogQuery>;
+
+/** `GET /admin/audit-logs/export.csv`: the same filters, every matching entry (newest first). */
+export const AuditLogExportQuery = auditLogFilters.refine(fromBeforeTo, RANGE_MESSAGE);
+export type AuditLogExportQuery = z.infer<typeof AuditLogExportQuery>;
 
 export const AuditLogPage = z.object({
   items: z.array(AuditLogEntry),
