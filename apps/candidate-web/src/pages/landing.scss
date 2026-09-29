@@ -1,0 +1,77 @@
+// Public landing page. Colours come from the design tokens (var(--cb-*)) and
+// Bootstrap's RGB variables, used only for light tints of navy and teal.
+
+.cb-landing-hero {
+  background-color: var(--cb-surface-muted);
+}
+
+.cb-landing-eyebrow {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cb-secondary-strong);
+}
+
+.cb-landing-card {
+  height: 100%;
+  padding: 1.5rem;
+  background-color: var(--cb-surface);
+  border: 1px solid var(--cb-border);
+  border-radius: 1rem;
+}
+
+.cb-landing-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  font-size: 1.25rem;
+  color: var(--cb-secondary-strong);
+  background-color: rgba(var(--bs-secondary-rgb), 0.14);
+}
+
+.cb-landing-band {
+  background-color: var(--cb-primary);
+  color: var(--cb-background);
+  border-radius: 1rem;
+}
+
+// FAQ: native <details>, so it opens with the keyboard and screen readers
+// without any script.
+.cb-landing-faq {
+  background-color: var(--cb-surface);
+  border: 1px solid var(--cb-border);
+  border-radius: 0.75rem;
+
+  summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+  }
+
+  .cb-landing-faq-chevron {
+    transition: transform 0.2s ease;
+  }
+
+  &[open] .cb-landing-faq-chevron {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cb-landing-faq-chevron {
+      transition: none;
+    }
+  }
+}
