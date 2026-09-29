@@ -48,7 +48,8 @@
     "flags": "Feature flags",
     "settings": "Settings",
     "integrations": "Integrations",
-    "account": "Your account"
+    "account": "Your account",
+    "candidates": "Candidates"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -109,7 +110,11 @@
     "invalidMobile": "Enter a valid mobile number.",
     "notConfigured": "This service is not set up yet. A super admin can set it up in System → Integrations.",
     "invalidCredentials": "The email or password is incorrect.",
-    "accountLocked": "Too many attempts. Wait 15 minutes, or sign in with an email code."
+    "accountLocked": "Too many attempts. Wait 15 minutes, or sign in with an email code.",
+    "deletionPending": "This account is scheduled for deletion.",
+    "quotaExceeded": "The daily limit has been reached. Please try again tomorrow.",
+    "mfaInvalid": "That code is not correct.",
+    "mfaExpired": "This sign-in step has expired. Please sign in again."
   },
   "forbidden": {
     "title": "You do not have access to this section",
@@ -175,7 +180,8 @@
     "home": "Back to dashboard"
   },
   "common": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "cancel": "Cancel"
   },
   "ai": {
     "title": "AI providers",
@@ -1965,6 +1971,93 @@
     "tooShort": "Use at least 12 characters.",
     "save": "Save password",
     "saving": "Saving…",
-    "saved": "Password saved."
+    "saved": "Password saved.",
+    "devicesTitle": "Signed-in devices",
+    "devicesHint": "Admin sessions end 7 days after sign-in at the latest. Sign out any device you do not recognise.",
+    "thisDevice": "This device",
+    "unknownDevice": "Unknown browser",
+    "deviceMeta": "Signed in {{signedIn}} · ends by {{expires}}",
+    "signOutDevice": "Sign out",
+    "signOutDeviceNamed": "Sign out {{name}}"
+  },
+  "mfa": {
+    "verifyTitle": "Enter your authenticator code",
+    "enrollTitle": "Set up two-factor authentication",
+    "verifyIntro": "Open your authenticator app and enter the 6-digit code for CareerPilot Interview Admin.",
+    "enrollIntro": "Two-factor authentication is required for your account. Add it to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password or similar), then enter the code it shows.",
+    "enrollStep1": "Open your authenticator app and choose to add an account.",
+    "enrollStep2": "Choose to enter a setup key, and type or paste the key below (time-based).",
+    "enrollStep3": "Enter the 6-digit code the app shows.",
+    "secretLabel": "Setup key",
+    "copySecret": "Copy key",
+    "copyCodes": "Copy codes",
+    "copied": "Copied.",
+    "showUri": "Show the otpauth link (for password managers)",
+    "codeLabel": "6-digit code",
+    "recoveryLabel": "Recovery code",
+    "codeFormat": "Enter the 6-digit code from your authenticator app.",
+    "verify": "Verify and sign in",
+    "turnOnAndSignIn": "Turn on and sign in",
+    "useRecovery": "Use a recovery code instead",
+    "useAuthenticator": "Use the authenticator app instead",
+    "startOver": "Start over",
+    "recoveryTitle": "Save your recovery codes",
+    "recoveryHint": "Each code signs you in once if you lose your phone. Store them somewhere safe (for example a password manager). They will not be shown again.",
+    "savedCodes": "I have saved these codes",
+    "sectionTitle": "Two-factor authentication",
+    "offHint": "Add an authenticator app so a stolen password or email is not enough to sign in.",
+    "requiredNotOn": "Two-factor authentication is required for your role. You will be asked to set it up the next time you sign in, or you can set it up now.",
+    "requiredHint": "It is required for your role and cannot be turned off.",
+    "setUp": "Set up an authenticator app",
+    "turnOn": "Turn on",
+    "onSince": "On since {{date}}.",
+    "codesLeft_one": "{{count}} recovery code left.",
+    "codesLeft_other": "{{count}} recovery codes left.",
+    "confirmWithCode": "Enter a current code from your authenticator app to confirm",
+    "newCodes": "Get new recovery codes",
+    "turnOff": "Turn off"
+  },
+  "candidates": {
+    "title": "Candidates",
+    "subtitle": "Find a candidate to help with their account. Search by email, mobile number or name.",
+    "searchForm": "Search candidates",
+    "searchLabel": "Email, mobile number or name",
+    "searchPlaceholder": "asha@example.com, 98765 43210 or Asha",
+    "statusFilter": "Status",
+    "anyStatus": "Any status",
+    "search": "Search",
+    "auditNote": "Searches and opened profiles are recorded in the audit log.",
+    "none": "No candidates match.",
+    "name": "Name",
+    "contact": "Contact",
+    "lastSignIn": "Last sign-in",
+    "noName": "(no name yet)",
+    "back": "← All candidates",
+    "status": {
+      "ACTIVE": "Active",
+      "SUSPENDED": "Suspended",
+      "DELETION_PENDING": "Deletion pending",
+      "DELETED": "Deleted"
+    },
+    "profile": "Profile",
+    "email": "Email",
+    "mobile": "Mobile",
+    "signInMethods": "Sign-in methods",
+    "experience": "Experience",
+    "currentRole": "Current role",
+    "joined": "Joined",
+    "credits": "Credits",
+    "creditsValue": "{{available}} available, {{reserved}} reserved",
+    "consents": "Consents",
+    "interviews": "Recent interviews",
+    "purchases": "Purchases",
+    "noneYet": "None yet.",
+    "accepted": "agreed",
+    "declined": "declined",
+    "suspend": "Suspend account",
+    "reinstate": "Lift suspension",
+    "suspendHint": "Suspending signs the candidate out everywhere at once and blocks sign-in until the suspension is lifted. The reason is kept in the audit log.",
+    "suspendedOn": "Suspended on {{date}}: {{reason}}",
+    "deletionScheduled": "The candidate asked for their account to be deleted. It will be erased on {{date}} unless they sign in again first."
   }
 }

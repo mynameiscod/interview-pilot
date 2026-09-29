@@ -87,6 +87,27 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                // Support console: search, candidate summary, suspend/reinstate.
+                path: 'candidates',
+                element: <RequirePermission permission="candidates.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/candidates/CandidatesPage'))
+                        .CandidatesPage,
+                    }),
+                  },
+                  {
+                    path: ':id',
+                    lazy: async () => ({
+                      Component: (await import('../features/candidates/CandidatesPage'))
+                        .CandidateDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: 'admins',
                 element: <RequirePermission permission="admin_users.read" />,
                 children: [
