@@ -1,7 +1,18 @@
 import { createLogger } from '@cbi/config';
 import { MEDIA_LIMITS } from '@cbi/shared-types';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { finalizeMediaAsset, sweepMedia, type MediaStorage } from './media.js';
+import {
+  claimMediaFileBuild,
+  completeMediaFileBuild,
+  deleteMediaAsset,
+  finalizeMediaAsset,
+  MEDIA_DELETE_SWEEP_DELAY_MS,
+  MEDIA_FILE_MAX_ATTEMPTS,
+  mediaParts,
+  noteOrphanedMediaKey,
+  sweepMedia,
+  type MediaStorage,
+} from './media.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import { MediaAssetModel } from './models/media.js';
 import { connectMongo, disconnectMongo, mongoose } from './mongo.js';
@@ -124,7 +135,7 @@ describe('media sweep', () => {
     const expired = await asset({ segments: [0, 1], retentionExpiresAt: ago(1000), objects });
 
     const result = await sweepMedia(storage, { now: NOW });
-    expect(result).toEqual({ finalized: 1, deleted: 1, errors: 0 });
+    expect(result).toEqual({ finalized: 1, deleted: 1, swept: 0, errors: 0 });
     expect((await MediaAssetModel.findById(abandoned).lean())!.status).toBe('PARTIAL');
     expect((await MediaAssetModel.findById(recent).lean())!.status).toBe('RECORDING');
     expect((await MediaAssetModel.findById(stillLive).lean())!.status).toBe('RECORDING');
@@ -141,6 +152,7 @@ describe('media sweep', () => {
     expect(await sweepMedia(storage, { now: NOW })).toEqual({
       finalized: 0,
       deleted: 0,
+      swept: 0,
       errors: 0,
     });
   });
@@ -152,6 +164,109 @@ describe('media sweep', () => {
     const result = await sweepMedia(storage, { now: NOW, onError: (_e, id) => errors.push(id) });
     expect(result).toMatchObject({ deleted: 0, errors: 1 });
     expect(errors).toEqual([String(expired)]);
-    expect((await MediaAssetModel.findById(expired).lean())!.deletion.status).toBe('NONE');
+    // Half-deleted: no longer playable or uploadable, and retried by a later run.
+    expect((await MediaAssetModel.findById(expired).lean())!.deletion.status).toBe('DELETING');
+    const healthy = memoryStorage();
+    const later = await sweepMedia(healthy.storage, { now: new Date(NOW.getTime() + 10 * 60_000) });
+    expect(later).toMatchObject({ deleted: 1, errors: 0 });
+    expect((await MediaAssetModel.findById(expired).lean())!.deletion.status).toBe('DELETED');
+  });
+});
+
+describe('deleting a recording', () => {
+  it('refuses segments once the delete begins and sweeps keys written during it', async () => {
+    const { storage, objects } = memoryStorage();
+    const id = await asset({ segments: [0, 1], objects });
+    let pushedDuringDelete = true;
+    const racing: MediaStorage = {
+      put: storage.put,
+      async delete(key) {
+        // A segment upload finishing while the delete runs: its push must be refused.
+        if (pushedDuringDelete) {
+          pushedDuringDelete = false;
+          const pushed = await MediaAssetModel.updateOne(
+            { _id: id, 'deletion.status': 'NONE' },
+            {
+              $push: {
+                segments: { idx: 2, storageKey: 'late', bytes: 1, sha256: 'x', uploadedAt: NOW },
+              },
+            },
+          );
+          expect(pushed.modifiedCount).toBe(0);
+          // The uploader could not delete its object: it records the key for the sweep.
+          objects.set('media/late/seg-2.webm', Buffer.from('late'));
+          await noteOrphanedMediaKey(id, 'media/late/seg-2.webm', NOW);
+        }
+        return storage.delete(key);
+      },
+    };
+    expect(await deleteMediaAsset(id, racing, { reason: 'Test', by: 'system', now: NOW })).toBe(
+      true,
+    );
+    const gone = (await MediaAssetModel.findById(id).lean())!;
+    expect(gone.deletion.status).toBe('DELETED');
+    expect(gone.segments).toEqual([]);
+    expect(gone.deletion.keys).toContain('media/late/seg-2.webm');
+    expect(objects.has('media/late/seg-2.webm')).toBe(true);
+
+    // After the delay the sweep deletes every recorded key once more.
+    const later = new Date(NOW.getTime() + MEDIA_DELETE_SWEEP_DELAY_MS + 1000);
+    expect(await sweepMedia(storage, { now: later })).toMatchObject({ swept: 1, errors: 0 });
+    expect([...objects.keys()]).toEqual([]);
+    expect((await MediaAssetModel.findById(id).lean())!.deletion.sweepAfter).toBeNull();
+    expect(await deleteMediaAsset(id, storage, { reason: 'Again', by: 'system' })).toBe(false);
+  });
+});
+
+describe('joined playback file', () => {
+  it('groups segments by recorder part and skips parts whose header never arrived', () => {
+    const seg = (idx: number, part: number, header: boolean) => ({
+      idx,
+      part,
+      header,
+      storageKey: `k${idx}`,
+      bytes: 10,
+      sha256: 'x',
+      uploadedAt: NOW,
+    });
+    const parts = mediaParts({
+      segments: [seg(3, 1, true), seg(0, 0, true), seg(1, 0, false), seg(5, 2, false)],
+    });
+    expect(parts.map((p) => [p.part, p.segments.map((s) => s.idx), p.bytes])).toEqual([
+      [0, [0, 1], 20],
+      [1, [3], 10],
+    ]);
+    // Older records have neither field: one part, the header in segment 0.
+    const legacy = mediaParts({
+      segments: [{ idx: 0, storageKey: 'a', bytes: 1, sha256: 'x', uploadedAt: NOW }],
+    });
+    expect(legacy).toHaveLength(1);
+  });
+
+  it('is claimed once, completed only while the claim stands, and retried before failing', async () => {
+    const { storage } = memoryStorage();
+    const id = await asset({ segments: [0, 1] });
+    await finalizeMediaAsset(id, storage, { now: NOW });
+    const claimed = (await claimMediaFileBuild(NOW))!;
+    expect(claimed.playbackFile).toMatchObject({ status: 'PROCESSING', attempts: 1 });
+    expect(await claimMediaFileBuild(NOW)).toBeNull();
+
+    // A late segment re-finalizes meanwhile: the stale build cannot mark it READY.
+    await finalizeMediaAsset(id, storage, { now: new Date(NOW.getTime() + 1) });
+    expect(await completeMediaFileBuild(claimed, { status: 'READY', key: 'k', bytes: 1 })).toBe(
+      false,
+    );
+
+    let current = (await claimMediaFileBuild(new Date(NOW.getTime() + 2)))!;
+    for (let attempt = 1; attempt < MEDIA_FILE_MAX_ATTEMPTS; attempt++) {
+      expect(await completeMediaFileBuild(current, { status: 'FAILED', error: 'bad' })).toBe(true);
+      expect((await MediaAssetModel.findById(id).lean())!.playbackFile.status).toBe('PENDING');
+      current = (await claimMediaFileBuild(new Date(NOW.getTime() + 10 + attempt)))!;
+    }
+    await completeMediaFileBuild(current, { status: 'FAILED', error: 'bad' });
+    expect((await MediaAssetModel.findById(id).lean())!.playbackFile).toMatchObject({
+      status: 'FAILED',
+      error: 'bad',
+    });
   });
 });

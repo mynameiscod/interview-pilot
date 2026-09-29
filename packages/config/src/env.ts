@@ -386,6 +386,19 @@ export const workerEnvSchema = baseEnvSchema
       .int()
       .min(60_000)
       .default(15 * 60_000),
+    /** How often finalized recordings are checked for a joined playback file to build. */
+    WORKER_MEDIA_FILE_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+    /**
+     * The ffmpeg binary that joins recording parts into one seekable file. Without it
+     * (not installed), recordings play part by part.
+     */
+    MEDIA_FFMPEG_PATH: z.string().trim().min(1).default('ffmpeg'),
+    /** Longest a single join may run before it is abandoned (and retried). */
+    MEDIA_FFMPEG_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(10_000)
+      .default(20 * 60_000),
     /** How often today's and yesterday's analytics rollups are recomputed (Phase 11). */
     WORKER_ANALYTICS_ROLLUP_INTERVAL_MS: z.coerce
       .number()

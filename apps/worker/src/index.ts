@@ -9,6 +9,7 @@ import {
   createStorage,
 } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
+import { createFfmpegRunner } from './processors/media-file.js';
 import { startWorkers } from './worker.js';
 
 const env = loadEnv(workerEnvSchema);
@@ -66,6 +67,14 @@ async function main(): Promise<void> {
     providerHealthIntervalMs: env.WORKER_PROVIDER_HEALTH_INTERVAL_MS,
     liveSweepIntervalMs: env.WORKER_LIVE_SWEEP_INTERVAL_MS,
     media: { storage, intervalMs: env.WORKER_MEDIA_SWEEP_INTERVAL_MS },
+    mediaFiles: {
+      storage,
+      ffmpeg: createFfmpegRunner({
+        path: env.MEDIA_FFMPEG_PATH,
+        timeoutMs: env.MEDIA_FFMPEG_TIMEOUT_MS,
+      }),
+      intervalMs: env.WORKER_MEDIA_FILE_INTERVAL_MS,
+    },
     analyticsRollupIntervalMs: env.WORKER_ANALYTICS_ROLLUP_INTERVAL_MS,
     payments: {
       gateway: integrations.payments,

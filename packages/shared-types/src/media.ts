@@ -8,6 +8,11 @@ import { z } from 'zod';
  * `timesliceMs`; each is uploaded through the API to private storage,
  * idempotently by index. A failed or missing segment makes the recording
  * PARTIAL; it never fails the interview.
+ *
+ * Every MediaRecorder instance (a reload, the camera re-acquired, recording
+ * toggled) starts a new container with its own header, so segments carry the
+ * recorder's `part`. After finalize the worker joins the parts into one
+ * seekable file; until then (or without ffmpeg) each part plays on its own.
  */
 
 export const MEDIA_LIMITS = {
@@ -17,8 +22,10 @@ export const MEDIA_LIMITS = {
   maxAssetBytes: 1024 * 1024 * 1024,
   /** Segments queued in the browser may still arrive this long after the interview ends. */
   uploadGraceMs: 30 * 60_000,
-  /** Signed playback links expire after this long. */
-  playbackTtlSec: 300,
+  /** Signed playback links expire after this long (the player asks for a new one after that). */
+  playbackTtlSec: 30 * 60,
+  /** Recorder instances (parts) per recording. */
+  maxParts: 200,
 } as const;
 
 /** Containers MediaRecorder produces for video (Chrome/Firefox WebM, Safari MP4). */
@@ -42,6 +49,33 @@ export type MediaStatus = z.infer<typeof MediaStatus>;
 
 export const MediaDeletionStatus = z.enum(['NONE', 'DELETED']);
 export type MediaDeletionStatus = z.infer<typeof MediaDeletionStatus>;
+
+/** The single seekable file the worker builds from the parts after finalize. */
+export const MediaFileStatus = z.enum([
+  /** Still recording: nothing to build yet. */
+  'NONE',
+  /** Waiting for the worker (again after a late segment). */
+  'PENDING',
+  'PROCESSING',
+  /** Built: playback serves it (with byte ranges). */
+  'READY',
+  /** Could not be built; the parts still play one by one. */
+  'FAILED',
+  /** The worker has no ffmpeg; the parts play one by one. */
+  'UNAVAILABLE',
+]);
+export type MediaFileStatus = z.infer<typeof MediaFileStatus>;
+
+/** `POST …/media/segments/:idx?part=n`: the recorder instance that produced the segment. */
+export const SegmentUploadQuery = z.object({
+  part: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(MEDIA_LIMITS.maxParts - 1)
+    .default(0),
+});
+export type SegmentUploadQuery = z.infer<typeof SegmentUploadQuery>;
 
 export const SegmentUploadResult = z.object({
   index: z.number().int(),
@@ -72,6 +106,9 @@ export const MediaAssetSummary = z.object({
   segmentCount: z.number().int(),
   expectedSegments: z.number().int().nullable(),
   missingSegments: z.array(z.number().int()),
+  /** Recorder instances with a playable start (their first segment arrived). */
+  parts: z.number().int(),
+  playbackFile: MediaFileStatus,
   bytes: z.number().int(),
   durationMs: z.number().int().nullable(),
   retentionExpiresAt: z.iso.datetime(),
@@ -100,11 +137,17 @@ export const AdminMediaQuery = z.object({
 });
 export type AdminMediaQuery = z.infer<typeof AdminMediaQuery>;
 
-/** A short-lived link a `<video>` element can use directly (no auth header). */
+/**
+ * Short-lived links a `<video>` element can use directly (no auth header).
+ * FILE: `url` is the joined recording (seekable, byte ranges). PARTS: the
+ * file is not built (yet); `parts` are played in order and `url` is the first.
+ */
 export const PlaybackUrl = z.object({
   url: z.string(),
   expiresAt: z.iso.datetime(),
   mimeType: MediaMime,
+  source: z.enum(['FILE', 'PARTS']),
+  parts: z.array(z.string()),
 });
 export type PlaybackUrl = z.infer<typeof PlaybackUrl>;
 

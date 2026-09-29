@@ -8,8 +8,13 @@ export interface SendResult {
   code?: string | null;
 }
 
-/** Uploads one segment. Throws on a network error (retried). */
-export type SegmentSender = (idx: number, blob: Blob, contentType: string) => Promise<SendResult>;
+/** Uploads one segment of a recorder part. Throws on a network error (retried). */
+export type SegmentSender = (
+  idx: number,
+  blob: Blob,
+  contentType: string,
+  part: number,
+) => Promise<SendResult>;
 /** Tells the server the recording ended. Throws on a network error (retried). */
 export type RecordingFinalizer = (body: FinalizeMediaBody) => Promise<SendResult>;
 
@@ -92,7 +97,7 @@ export class SegmentUploadQueue {
     readonly sessionId: string,
     private readonly deps: UploadQueueDeps,
   ) {
-    this.meta = { sessionId, nextIdx: 0, durationMs: 0, ended: false };
+    this.meta = { sessionId, nextIdx: 0, nextPart: 0, durationMs: 0, ended: false };
     this.loaded = this.load();
   }
 
@@ -110,6 +115,8 @@ export class SegmentUploadQueue {
         this.meta = {
           ...meta,
           nextIdx: Math.max(meta.nextIdx, this.meta.nextIdx),
+          // An older page stored no part counter: its segments were part 0, so continue after it.
+          nextPart: Math.max(meta.nextPart ?? (meta.nextIdx > 0 ? 1 : 0), this.meta.nextPart ?? 0),
           durationMs: Math.max(meta.durationMs, this.meta.durationMs),
           ended: meta.ended || this.meta.ended,
         };
@@ -117,6 +124,7 @@ export class SegmentUploadQueue {
       for (const segment of stored) {
         if (!this.pending.has(segment.idx)) this.pending.set(segment.idx, segment);
         this.meta.nextIdx = Math.max(this.meta.nextIdx, segment.idx + 1);
+        this.meta.nextPart = Math.max(this.meta.nextPart ?? 0, (segment.part ?? 0) + 1);
       }
     } catch {
       // Nothing persisted can be read: carry on with what this page records.
@@ -168,15 +176,29 @@ export class SegmentUploadQueue {
   }
 
   /**
-   * Adds a recorded chunk as the next segment and starts uploading it.
-   * Returns its index (-1 when the recording no longer takes segments).
+   * A new MediaRecorder is about to start: returns its part number (its
+   * chunks form one container, starting with a header), or -1 when the
+   * recording takes no more parts. Call after `ready()`.
    */
-  add(blob: Blob, contentType: string, durationMs: number): number {
+  startPart(): number {
+    const part = this.meta.nextPart ?? 0;
+    if (!this.accepting || part >= MEDIA_LIMITS.maxParts) return -1;
+    this.meta.nextPart = part + 1;
+    this.persistMeta();
+    return part;
+  }
+
+  /**
+   * Adds a recorded chunk of recorder `part` as the next segment and starts
+   * uploading it. Returns its index (-1 when the recording no longer takes
+   * segments).
+   */
+  add(blob: Blob, contentType: string, durationMs: number, part = 0): number {
     if (this.closed || this.disposed || this.meta.nextIdx >= MEDIA_LIMITS.maxSegments) return -1;
     const idx = this.meta.nextIdx;
     this.meta.nextIdx += 1;
     this.meta.durationMs += Math.max(0, durationMs);
-    const segment: StoredSegment = { sessionId: this.sessionId, idx, blob, contentType };
+    const segment: StoredSegment = { sessionId: this.sessionId, idx, part, blob, contentType };
     this.pending.set(idx, segment);
     void this.deps.store.putSegment(segment).catch(() => undefined);
     this.persistMeta();
@@ -254,7 +276,7 @@ export class SegmentUploadQueue {
         const segment = this.pending.get(idx)!;
         let result: SendResult | null;
         try {
-          result = await this.deps.send(idx, segment.blob, segment.contentType);
+          result = await this.deps.send(idx, segment.blob, segment.contentType, segment.part ?? 0);
         } catch {
           result = null; // Offline or the connection dropped.
         }

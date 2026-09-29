@@ -19,7 +19,7 @@ type Handlers = Parameters<typeof fakeApiWithUploads>[0];
 let fake: FakeMedia;
 /** Answers for segment uploads, in order (then 201). */
 let segmentReplies: number[];
-let segmentCalls: { idx: number; init: RequestInit }[];
+let segmentCalls: { idx: number; part: number; init: RequestInit }[];
 
 function stubFetch() {
   segmentCalls = [];
@@ -27,9 +27,9 @@ function stubFetch() {
     'fetch',
     vi.fn(async (url: string, init: RequestInit = {}) => {
       if (url.endsWith('/audio')) return new Response('mp3-bytes', { status: 200 });
-      const m = /\/media\/segments\/(\d+)$/.exec(url);
+      const m = /\/media\/segments\/(\d+)\?part=(\d+)$/.exec(url);
       if (m) {
-        segmentCalls.push({ idx: Number(m[1]), init });
+        segmentCalls.push({ idx: Number(m[1]), part: Number(m[2]), init });
         const status = segmentReplies.shift() ?? 201;
         const body =
           status >= 400
@@ -162,7 +162,10 @@ describe('video interview room', () => {
     await waitFor(() => expect(videoRecorder()).toBeDefined());
     act(() => videoRecorder()!.emit('segment-3'));
     await waitFor(() => expect(segmentCalls.map((c) => c.idx)).toEqual([2, 3]));
+    // The earlier page's recorder was part 0; this page's recorder writes a new container: part 1.
+    expect(segmentCalls.map((c) => c.part)).toEqual([0, 1]);
     expect(await store.segments('int1')).toEqual([]);
+    expect(await store.getMeta('int1')).toMatchObject({ nextIdx: 4, nextPart: 2 });
   });
 
   it('does not record when the candidate declined recording, but still shows the self-view', async () => {

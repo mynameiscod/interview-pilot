@@ -6,6 +6,7 @@ import {
   FinalizeMediaBody,
   MEDIA_LIMITS,
   PurgeMediaBody,
+  SegmentUploadQuery,
 } from '@cbi/shared-types';
 import express, { Router, type RequestHandler } from 'express';
 import type { Container } from '../../container.js';
@@ -45,12 +46,14 @@ export function mediaInterviewRouter(c: Container): Router {
   });
 
   router.post('/:id/media/segments/:idx', c.limiters.media, segmentBody, async (req, res) => {
+    const { part } = SegmentUploadQuery.parse(req.query);
     const result = await c.media.uploadSegment(
       requireAuth(req).userId,
       String(req.params.id),
       Number(req.params.idx),
       Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
       req.get('content-type'),
+      part,
     );
     res.status(result.duplicate ? 200 : 201).json({ data: result });
   });
@@ -85,14 +88,21 @@ export function mediaInterviewRouter(c: Container): Router {
   return router;
 }
 
-/** `GET /media/play/:assetId?exp&sig`: signed, short-lived playback (no auth header, for `<video>`). */
+/**
+ * `GET /media/play/:assetId?exp&sig[&part]`: signed, short-lived playback
+ * (no auth header, for `<video>`), with single byte ranges for seeking.
+ */
 export function mediaPlaybackRouter(c: Container): Router {
   const router = Router();
   router.get('/play/:assetId', async (req, res) => {
     await c.media.stream(
       String(req.params.assetId),
-      String(req.query.exp ?? ''),
-      String(req.query.sig ?? ''),
+      {
+        exp: String(req.query.exp ?? ''),
+        sig: String(req.query.sig ?? ''),
+        part: req.query.part === undefined ? undefined : String(req.query.part),
+      },
+      { method: req.method, range: req.get('range') },
       res,
     );
   });

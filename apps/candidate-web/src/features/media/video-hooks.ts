@@ -67,6 +67,8 @@ export function useCameraStream(enabled: boolean, onTrackEnded?: (kind: TrackKin
  * Records a video interview for its whole length: one MediaRecorder on the
  * camera stream emits a segment every `MEDIA_LIMITS.timesliceMs`, and each
  * goes into the interview's upload queue (persisted, retried, in order).
+ * Every new MediaRecorder (after a reload, a new camera stream, recording
+ * turned back on) writes a fresh container, so it records a new part.
  *
  * - `active`: record now (video mode with recording on). Turning it off, or
  *   unmounting, stops the recorder; its last chunk is still queued.
@@ -92,8 +94,8 @@ export function useInterviewRecording({
   const makeDeps = useCallback(
     () => ({
       store: defaultSegmentStore(),
-      send: (idx: number, blob: Blob, contentType: string) =>
-        sendSegment(manager, sessionId, idx, blob, contentType),
+      send: (idx: number, blob: Blob, contentType: string, part: number) =>
+        sendSegment(manager, sessionId, idx, blob, contentType, part),
       finalize: (body: Parameters<typeof api.finalize>[1]) =>
         asSendResult(() => api.finalize(sessionId, body)),
     }),
@@ -124,12 +126,17 @@ export function useInterviewRecording({
       } catch {
         return;
       }
+      const part = queue.startPart();
+      if (part < 0) {
+        recorder = null;
+        return;
+      }
       const type = containerType(recorder.mimeType || mimeType);
       let lastChunkAt = performance.now();
       recorder.ondataavailable = (e: BlobEvent) => {
         const now = performance.now();
         if (!e.data || e.data.size === 0) return;
-        queue.add(e.data, type, now - lastChunkAt);
+        queue.add(e.data, type, now - lastChunkAt, part);
         lastChunkAt = now;
       };
       recorder.start(MEDIA_LIMITS.timesliceMs);

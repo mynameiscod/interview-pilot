@@ -8,6 +8,8 @@
 export interface StoredSegment {
   sessionId: string;
   idx: number;
+  /** The MediaRecorder instance that produced it (absent in segments stored before parts: 0). */
+  part?: number;
   blob: Blob;
   /** The container without codecs (the upload's Content-Type). */
   contentType: string;
@@ -17,6 +19,12 @@ export interface RecordingMeta {
   sessionId: string;
   /** The next segment index: also the number of segments produced so far. */
   nextIdx: number;
+  /**
+   * The next recorder part. Every MediaRecorder starts a new container, so
+   * each instance (a reload, the camera re-acquired) gets its own part.
+   * Absent in meta stored before parts.
+   */
+  nextPart?: number;
   /** Time recorded so far, across page loads. */
   durationMs: number;
   /** Recording has ended: finalize once every segment is uploaded. */

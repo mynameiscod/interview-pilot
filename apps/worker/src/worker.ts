@@ -11,6 +11,7 @@ import {
   type JdExtractJobData,
   type ResumeExtractJobData,
 } from '@cbi/shared-types';
+import type { StorageProvider } from '@cbi/provider-adapters';
 import { DelayedError, Queue, Worker, type Job } from 'bullmq';
 import {
   renderRevisionPdf,
@@ -28,6 +29,7 @@ import {
 } from './processors/documents.js';
 import { sweepLiveSessions } from './processors/live-sweep.js';
 import { reconcilePayments } from './processors/payment-reconcile.js';
+import { runMediaFileBuilds, type FfmpegRunner } from './processors/media-file.js';
 import { runMediaSweep } from './processors/media-sweep.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
@@ -36,6 +38,7 @@ export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
 export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
 export const MEDIA_SWEEP_JOB = 'media-sweep' as const;
+export const MEDIA_FILE_JOB = 'media-file' as const;
 export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
 
 export interface WorkerRuntimeOptions {
@@ -59,6 +62,12 @@ export interface WorkerRuntimeOptions {
   payments?: { gateway: ReconcileGateway; intervalMs: number };
   /** Recording finalization and retention; omit to disable. */
   media?: { storage: MediaStorage; intervalMs: number };
+  /** Joined, seekable recording files (ffmpeg); omit to disable (recordings play part by part). */
+  mediaFiles?: {
+    storage: Pick<StorageProvider, 'get' | 'put'>;
+    ffmpeg: FfmpegRunner;
+    intervalMs: number;
+  };
   /** Analytics rollups for today and yesterday; omit to disable. */
   analyticsRollupIntervalMs?: number;
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
@@ -136,6 +145,17 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.mediaFiles) {
+    await systemQueue.upsertJobScheduler(
+      MEDIA_FILE_JOB,
+      { every: opts.mediaFiles.intervalMs },
+      { name: MEDIA_FILE_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+  // Joining a long recording can take minutes: it runs beside the system queue (whose
+  // jobs include the heartbeat), one run at a time per process.
+  let mediaFileRun: Promise<unknown> | null = null;
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -179,6 +199,16 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
           case MEDIA_SWEEP_JOB: {
             if (!opts.media) return;
             await runMediaSweep({ storage: opts.media.storage, logger: opts.logger });
+            return;
+          }
+          case MEDIA_FILE_JOB: {
+            const files = opts.mediaFiles;
+            if (!files || mediaFileRun) return;
+            mediaFileRun = runMediaFileBuilds({ ...files, logger: opts.logger })
+              .catch((err: unknown) => opts.logger.error({ err }, 'recording file builds failed'))
+              .finally(() => {
+                mediaFileRun = null;
+              });
             return;
           }
           case ANALYTICS_ROLLUP_JOB: {
@@ -297,6 +327,8 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
         ...workers.map((w) => w.close()),
         systemQueue.close(),
         evaluationQueue?.close(),
+        // An unfinished build is claimed again once its lease runs out.
+        mediaFileRun,
       ]);
     },
   };

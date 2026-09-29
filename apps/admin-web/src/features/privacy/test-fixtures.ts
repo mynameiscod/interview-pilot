@@ -12,6 +12,8 @@ export const mediaAsset = (overrides: Partial<AdminMediaAsset> = {}): AdminMedia
   segmentCount: 60,
   expectedSegments: 60,
   missingSegments: [],
+  parts: 1,
+  playbackFile: 'READY',
   bytes: 52_428_800,
   durationMs: 600_000,
   retentionExpiresAt: '2026-12-23T10:00:00.000Z',

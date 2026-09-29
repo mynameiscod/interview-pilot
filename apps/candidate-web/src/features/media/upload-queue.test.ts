@@ -15,7 +15,7 @@ type Reply = SendResult | Error;
 /** A sender that answers from a script (then 201s), recording every index sent. */
 function scriptedSender(script: Reply[] = []) {
   const sent: number[] = [];
-  const send = vi.fn(async (idx: number, _blob: Blob, _contentType: string) => {
+  const send = vi.fn(async (idx: number, _blob: Blob, _contentType: string, _part = 0) => {
     sent.push(idx);
     const next = script.shift() ?? { status: 201 };
     if (next instanceof Error) throw next;
@@ -198,6 +198,41 @@ describe('recording upload queue', () => {
     expect(finalize).toHaveBeenCalledWith({ segmentCount: 3, durationMs: 24_500 });
     expect(queue.getStatus()).toMatchObject({ done: true, waiting: 0 });
     expect(await store.getMeta(SESSION)).toBeNull();
+  });
+
+  it('numbers recorder parts across restarts and reloads, and sends each segment with its part', async () => {
+    const store = createMemorySegmentStore();
+    const { send } = scriptedSender();
+    const first = makeQueue({ store, send });
+    await first.ready();
+    const p0 = first.startPart();
+    first.add(chunk('header-a'), 'video/webm', 10_000, p0);
+    first.add(chunk('b'), 'video/webm', 10_000, p0);
+    // The camera was re-acquired: a new MediaRecorder, a new container.
+    const p1 = first.startPart();
+    first.add(chunk('header-c'), 'video/webm', 10_000, p1);
+    await settle();
+    expect([p0, p1]).toEqual([0, 1]);
+    expect(send.mock.calls.map((c) => [c[0], c[3]])).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 1],
+    ]);
+    first.dispose();
+
+    // After a reload the next recorder continues the numbering.
+    const second = makeQueue({ store, send });
+    await second.ready();
+    expect(second.startPart()).toBe(2);
+    expect(await store.getMeta(SESSION)).toMatchObject({ nextIdx: 3, nextPart: 3 });
+  });
+
+  it('refuses new parts once the recording ended', async () => {
+    const queue = makeQueue();
+    await queue.ready();
+    queue.add(chunk('a'), 'video/webm', 1_000, queue.startPart());
+    await queue.finish();
+    expect(queue.startPart()).toBe(-1);
   });
 
   it('does not finalize an interview that never recorded here', async () => {

@@ -59,6 +59,7 @@ import {
   MediaAssetSummary,
   PlaybackUrl,
   PurgeMediaBody,
+  SegmentUploadQuery,
   SegmentUploadResult,
   SessionConsents,
   UserConsentEntry,
@@ -940,7 +941,8 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     tag: 'Recordings',
     auth: 'bearer',
     summary:
-      'Upload one MediaRecorder segment as the raw body (Content-Type video/webm or video/mp4, ≤ 8 MB). Idempotent by index: 200 duplicate, 201 stored; 503 means retry later',
+      'Upload one MediaRecorder segment as the raw body (Content-Type video/webm or video/mp4, ≤ 8 MB), with the recorder part that produced it (each MediaRecorder instance is a new part). Idempotent by index: 200 duplicate, 201 stored; 503 means retry later',
+    query: SegmentUploadQuery,
     response: SegmentUploadResult,
     status: 201,
     errors: [400, 401, 404, 409, 413, 415, 429, 503],
@@ -961,7 +963,8 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
   });
   candidate('get', '/interviews/{id}/media/playback-url', {
     tag: 'Recordings',
-    summary: 'A signed playback link for my recording (valid 5 minutes)',
+    summary:
+      'Signed playback links for my recording (valid 30 minutes; ask again when they expire): the joined file, or its parts in order',
     response: PlaybackUrl,
     errors: [401, 404],
   });
@@ -974,10 +977,10 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
   route('get', '/media/play/{assetId}', {
     tag: 'Recordings',
     summary:
-      'Stream a recording from a signed link (exp and sig query parameters; no Authorization header, for <video>)',
+      'Stream a recording from a signed link (exp, sig and, for one part, part query parameters; no Authorization header, for <video>). Single byte ranges: 206 with Content-Range, 416 past the end',
     response: null,
     status: 200,
-    errors: [403, 404],
+    errors: [403, 404, 416, 503],
   });
   const media = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
     route(method, path, {

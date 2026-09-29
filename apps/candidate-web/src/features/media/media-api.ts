@@ -70,8 +70,9 @@ export async function sendSegment(
   idx: number,
   blob: Blob,
   contentType: string,
+  part = 0,
 ): Promise<SendResult> {
-  const url = `${config.VITE_API_URL}${API_V1_PREFIX}${path(sessionId)}/segments/${idx}`;
+  const url = `${config.VITE_API_URL}${API_V1_PREFIX}${path(sessionId)}/segments/${idx}?part=${part}`;
   const post = (token: string | null) =>
     fetch(url, {
       method: 'POST',
