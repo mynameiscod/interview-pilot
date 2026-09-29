@@ -1533,7 +1533,13 @@
         "OPTIONAL": "Video interviews are recorded only if you agree; it is your choice.",
         "REQUIRED": "Video interviews are recorded; you will be asked to agree before you start."
       },
-      "observations": "Tab switches, focus changes and pastes are noted during the interview (observations, never judgements)."
+      "observations": "Tab switches, focus changes and pastes are noted during the interview (observations, never judgements).",
+      "employerView": {
+        "SCORES": "{{company}} will see your scores (overall and by area), not your answers or report.",
+        "FULL_REPORT": "{{company}} will see your scores, your report and the interview transcript."
+      },
+      "idCapture": "Before you start, you take a selfie and a photo of an ID so {{company}} can confirm it is you.",
+      "inviteOnly": "Only invited candidates can join. Sign in with the email address the invitation was sent to."
     },
     "join": {
       "title": "Join",
@@ -1552,7 +1558,8 @@
       "FULL": "This interview has reached its limit of candidates and cannot accept more."
     },
     "errors": {
-      "closed": "This interview is not open right now. The company may have paused or closed it."
+      "closed": "This interview is not open right now. The company may have paused or closed it.",
+      "inviteRequired": "This interview is by invitation only. Sign in with the email address that received the invitation."
     }
   },
   "maintenance": {
@@ -1632,5 +1639,31 @@
       "scoring": "How AI scoring works"
     },
     "loading": "Loading…"
+  },
+  "identity": {
+    "title": "Confirm your identity",
+    "intro": "{{company}} asks candidates to confirm who they are. Take a selfie and a photo of an identity document; their reviewers compare them by eye.",
+    "consentFirst": "First, read and agree to the identity notice.",
+    "steps": {
+      "selfie": "A selfie",
+      "id-document": "A photo of your ID (for example your college ID, PAN card or driving licence)"
+    },
+    "done": "(done)",
+    "notDone": "(not done yet)",
+    "take": "Take photo",
+    "retake": "Retake",
+    "idHint": "Cover any number you do not need to show, such as all but the last four digits of an Aadhaar number.",
+    "framing": {
+      "selfie": "Look at the camera with your face clearly visible, then take the photo.",
+      "id-document": "Hold your ID close to the camera so the photo and name are readable."
+    },
+    "preview": "Camera preview",
+    "capture": "Capture",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "complete": "Both photos are saved. You can start when you are ready.",
+    "noCamera": "Your browser cannot use a camera here. Try Chrome or Edge on this device, or another device with a camera.",
+    "cameraBlocked": "We could not open your camera. Allow camera access for this site and try again.",
+    "noPicture": "The camera has no picture yet. Wait a moment and try again."
   }
 }

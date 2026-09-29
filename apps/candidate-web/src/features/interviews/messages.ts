@@ -42,6 +42,8 @@ export function inputErrorMessage(t: TFunction, err: unknown): string {
         return t('errors.notConfigured');
       case 'CAMPAIGN_CLOSED':
         return t('campaign.errors.closed');
+      case 'INVITE_REQUIRED':
+        return t('campaign.errors.inviteRequired');
       case 'MAINTENANCE':
         // The admin's notice (set in the admin app) is shown as written.
         return err.message.trim() || t('maintenance.fallback');

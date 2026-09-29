@@ -177,6 +177,13 @@ export const routes: RouteObject[] = [
         }),
       },
       {
+        // Personal invites from an organisation (same page; the invite is tracked as opened).
+        path: 'campaign/i/:inviteToken',
+        lazy: async () => ({
+          Component: (await import('../features/campaigns/CampaignPage')).CampaignPage,
+        }),
+      },
+      {
         // Candidate Proof: a read-only report summary shared by link (no sign-in).
         path: 'proof/:token',
         lazy: async () => ({

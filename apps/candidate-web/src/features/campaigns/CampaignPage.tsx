@@ -10,7 +10,12 @@ import { RouteLoading } from '../../app/RouteStates';
 import { useCandidateAuth } from '../../app/session';
 import { queryKeys, useInterview, useResumes } from '../interviews/interviews-api';
 import { formatMinutes, inputErrorMessage, interviewPath } from '../interviews/messages';
-import { usePublicCampaign, useCampaignsApi } from './campaigns-api';
+import {
+  sourcePath,
+  usePublicCampaign,
+  useCampaignsApi,
+  type CampaignSource,
+} from './campaigns-api';
 
 function formatDateTime(lng: string | undefined, iso: string): string {
   try {
@@ -94,7 +99,7 @@ function ResumePicker({
   );
 }
 
-function JoinSection({ token, campaign }: { token: string; campaign: PublicCampaign }) {
+function JoinSection({ source, campaign }: { source: CampaignSource; campaign: PublicCampaign }) {
   const { t, i18n } = useTranslation();
   const { status } = useCandidateAuth();
   const api = useCampaignsApi();
@@ -108,14 +113,16 @@ function JoinSection({ token, campaign }: { token: string; campaign: PublicCampa
     setJoining(true);
     setError(null);
     try {
-      const result = await api.join(token, resumeId);
+      const result = await api.join(source, resumeId);
       void queryClient.invalidateQueries({ queryKey: queryKeys.interviews, exact: true });
       await navigate(`/app/interviews/${encodeURIComponent(result.interviewId)}/analysis`);
     } catch (err) {
       setError(inputErrorMessage(t, err));
       if (err instanceof ApiClientError && err.code === 'CAMPAIGN_CLOSED') {
         // The campaign closed since the page loaded: show why.
-        await queryClient.invalidateQueries({ queryKey: ['campaigns', token] });
+        await queryClient.invalidateQueries({
+          queryKey: ['campaigns', source.kind, source.token],
+        });
       }
       setJoining(false);
     }
@@ -152,7 +159,7 @@ function JoinSection({ token, campaign }: { token: string; campaign: PublicCampa
   }
 
   if (status !== 'signedIn') {
-    const next = encodeURIComponent(`/campaign/${token}`);
+    const next = encodeURIComponent(sourcePath(source));
     return (
       <div className="d-flex flex-column gap-2 align-items-start">
         <p className="mb-0">{t('campaign.join.signInFirst')}</p>
@@ -271,15 +278,38 @@ function Notices({ campaign }: { campaign: PublicCampaign }) {
           {t('campaign.notices.observations')}
         </li>
       )}
+      <li>
+        <i className="bi bi-person-vcard me-2 text-secondary" aria-hidden="true" />
+        {t(`campaign.notices.employerView.${campaign.employerView}`, { company })}
+      </li>
+      {campaign.idCapture && (
+        <li>
+          <i className="bi bi-camera me-2 text-secondary" aria-hidden="true" />
+          {t('campaign.notices.idCapture', { company })}
+        </li>
+      )}
+      {campaign.inviteOnly && (
+        <li>
+          <i className="bi bi-envelope-check me-2 text-secondary" aria-hidden="true" />
+          {t('campaign.notices.inviteOnly')}
+        </li>
+      )}
     </ul>
   );
 }
 
-/** Public invite landing page (`/campaign/:token`): what the interview is, and joining it. */
+/**
+ * Public invite landing page: the company's shared link (`/campaign/:token`)
+ * or a personal invite (`/campaign/i/:inviteToken`). What the interview is,
+ * what the company will see, and joining it.
+ */
 export function CampaignPage() {
   const { t } = useTranslation();
-  const { token = '' } = useParams();
-  const campaign = usePublicCampaign(token);
+  const { token = '', inviteToken } = useParams();
+  const source: CampaignSource = inviteToken
+    ? { kind: 'invite', token: inviteToken }
+    : { kind: 'link', token };
+  const campaign = usePublicCampaign(source);
   useTrackOnce('campaign_landing_viewed', Boolean(campaign.data));
 
   if (campaign.isPending) return <RouteLoading />;
@@ -342,7 +372,7 @@ export function CampaignPage() {
           <h2 id="campaign-join" className="h5">
             {t('campaign.join.title')}
           </h2>
-          <JoinSection token={token} campaign={data} />
+          <JoinSection source={source} campaign={data} />
         </section>
       </div>
     </div>

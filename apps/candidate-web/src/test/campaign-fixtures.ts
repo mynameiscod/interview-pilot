@@ -16,6 +16,9 @@ export function makePublicCampaign(overrides: Partial<PublicCampaign> = {}): Pub
     window: { startAt: '2026-09-01T04:30:00.000Z', endAt: '2026-10-31T12:30:00.000Z' },
     closedReason: null,
     joinedInterviewId: null,
+    inviteOnly: false,
+    employerView: 'FULL_REPORT',
+    idCapture: false,
     ...overrides,
   };
 }
@@ -32,6 +35,7 @@ export function makeInterviewCampaign(overrides: Partial<Campaign> = {}): Campai
     reportVisible: true,
     modes: ['TEXT', 'VOICE'],
     languages: ['en', 'hi'],
+    identity: null,
     ...overrides,
   };
 }

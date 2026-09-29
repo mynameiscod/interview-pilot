@@ -1245,7 +1245,9 @@
     "consentType": {
       "VOICE_PROCESSING": "Voice processing",
       "RECORDING": "Recording",
-      "INTEGRITY": "Browser observations"
+      "INTEGRITY": "Browser observations",
+      "CAMPAIGN_SHARING": "Sharing with the company",
+      "IDENTITY_CAPTURE": "Identity capture"
     },
     "consentTypeHint": {
       "VOICE_PROCESSING": "Asked before voice and video interviews: answers are sent to speech providers and questions are read aloud.",

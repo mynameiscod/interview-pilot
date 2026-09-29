@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useNavigate, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { CampaignBanner } from '../campaigns/CampaignBanner';
+import { IdentityCaptureCard } from '../campaigns/IdentityCaptureCard';
 import { queryKeys, useCreditBalance, useInterview, useInterviewsApi } from './interviews-api';
 import {
   formatMinutes,
@@ -146,8 +147,17 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
   } | null>(null);
   const rounds = interview.analysis?.plannedRounds ?? [];
   const isVoice = isSpokenMode(interview.mode);
-  const voiceBlocked = isVoice ? interview.voice?.ready !== true : interview.consentsPending;
-  const blockedBy = isVoice ? 'start-voice' : 'start-consent';
+  // Campaigns with identity capture: both photos before starting.
+  const identity = interview.campaign?.identity ?? null;
+  const identityBlocked = Boolean(identity && !identity.complete);
+  const voiceBlocked =
+    (isVoice ? interview.voice?.ready !== true : interview.consentsPending) || identityBlocked;
+  const blockedBy =
+    identityBlocked && !interview.consentsPending
+      ? 'start-identity'
+      : isVoice
+        ? 'start-voice'
+        : 'start-consent';
 
   async function start() {
     setStarting(true);
@@ -225,6 +235,7 @@ function StartScreen({ interview }: { interview: InterviewSummary }) {
 
       {isVoice && <VoiceReadinessCard interview={interview} />}
       {!isVoice && interview.consentsPending && <ConsentCard interview={interview} />}
+      {identity && <IdentityCaptureCard interview={interview} />}
 
       {interview.campaign?.sponsored ? (
         <SponsoredSummary companyName={interview.campaign.companyName} />
