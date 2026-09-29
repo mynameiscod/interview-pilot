@@ -90,6 +90,8 @@ Socket.IO on the API port, path `/socket.io`, WebSocket first with long-polling 
 | S→C       | `interview:completed` | `InterviewSnapshot`                          | State `PROCESSING`                                                            |
 | S→C       | `server:draining`     | `{}`                                         | The instance is shutting down; the client reconnects to another               |
 
+Realtime voice (flag `voice.realtime`) adds the `voice:stream:*`, `voice:barge-in` and `question:*` events: see [voice.md](voice.md#realtime-conversational-voice-flag-voicerealtime). With it, `advance` streams the next question's text and speech to the room before the question is saved; `interview:question` stays the authoritative event.
+
 Every client event is acknowledged with `{ok: true, …}` or `{ok: false, code, message}` (`NOT_FOUND`, `INVALID_STATE`, `STALE_QUESTION`, `BUSY`, `VALIDATION_FAILED`, `INTERNAL`). `GET /interviews/:id/live` returns the same snapshot over REST.
 
 A socket joins a session's room only after the server has checked that the session belongs to its user, so a refused join never receives the room's events. While an answer waits for its acknowledgement, the room re-joins with a `lastSeq` just below that question, so the snapshot shows whether the answer was already saved. If it was, the room treats it as sent and shows "Preparing the next question…" (noting that the clock is paused) instead of an error. Busy answers are retried, and a re-join settles them before anything is reported as failed.
