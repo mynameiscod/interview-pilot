@@ -123,23 +123,43 @@ interface Judge0Submission {
   memory?: number | null;
 }
 
+/** Judge0's default MAX_SUBMISSION_BATCH_SIZE: larger batches are refused. */
+export const JUDGE0_DEFAULT_BATCH_SIZE = 20;
+
+/** Splits `items` into chunks of at most `size`, in order. */
+function chunks<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 /**
- * Judge0 CE batch API: one Judge0 submission per test. Our token encodes the
- * batch's tokens. Requests carry the HMAC headers too, for a verifying proxy
- * in front of the judge host.
+ * Judge0 CE batch API: one Judge0 submission per test, sent (and read back)
+ * in batches of at most `maxBatchSize` (the judge's MAX_SUBMISSION_BATCH_SIZE).
+ * Our token encodes every batch's tokens, in test order. Requests carry the
+ * HMAC headers too, for a verifying proxy in front of the judge host.
  */
-export function createJudge0Adapter(opts: HttpOptions & { authToken?: string }): JudgeAdapter {
+export function createJudge0Adapter(
+  opts: HttpOptions & { authToken?: string; maxBatchSize?: number },
+): JudgeAdapter {
   const call = client('judge0', {
     ...opts,
     headers: { ...opts.headers, ...(opts.authToken ? { 'X-Auth-Token': opts.authToken } : {}) },
   });
+  const batchSize = Math.max(1, Math.floor(opts.maxBatchSize ?? JUDGE0_DEFAULT_BATCH_SIZE));
   const decode = (token: string) =>
     JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as string[];
-  const fetchBatch = (token: string, fields: string) =>
-    call<{ submissions: Judge0Submission[] }>(
-      'GET',
-      `/submissions/batch?tokens=${decode(token).join(',')}&base64_encoded=true&fields=${fields}`,
+  const fetchBatch = async (token: string, fields: string) => {
+    const pages = await Promise.all(
+      chunks(decode(token), batchSize).map((tokens) =>
+        call<{ submissions: Judge0Submission[] }>(
+          'GET',
+          `/submissions/batch?tokens=${tokens.join(',')}&base64_encoded=true&fields=${fields}`,
+        ),
+      ),
     );
+    return { submissions: pages.flatMap((p) => p.submissions) };
+  };
   return {
     name: 'judge0',
     async listLanguages() {
@@ -150,21 +170,26 @@ export function createJudge0Adapter(opts: HttpOptions & { authToken?: string }):
         .map(([lang]) => lang);
     },
     async submit(request: JudgeRequest) {
-      const res = await call<{ token: string }[]>(
-        'POST',
-        '/submissions/batch?base64_encoded=true',
-        {
-          submissions: request.tests.map((t) => ({
-            language_id: JUDGE0_LANGUAGE_IDS[request.language],
-            source_code: b64(request.source),
-            stdin: b64(t.input),
-            expected_output: b64(t.expectedOutput),
-            cpu_time_limit: request.limits.cpuMs / 1000,
-            memory_limit: request.limits.memoryMb * 1024,
-          })),
-        },
-      );
-      return { token: Buffer.from(JSON.stringify(res.map((r) => r.token))).toString('base64url') };
+      const tokens: string[] = [];
+      // One batch at a time, so the tokens stay in test order.
+      for (const tests of chunks(request.tests, batchSize)) {
+        const res = await call<{ token: string }[]>(
+          'POST',
+          '/submissions/batch?base64_encoded=true',
+          {
+            submissions: tests.map((t) => ({
+              language_id: JUDGE0_LANGUAGE_IDS[request.language],
+              source_code: b64(request.source),
+              stdin: b64(t.input),
+              expected_output: b64(t.expectedOutput),
+              cpu_time_limit: request.limits.cpuMs / 1000,
+              memory_limit: request.limits.memoryMb * 1024,
+            })),
+          },
+        );
+        tokens.push(...res.map((r) => r.token));
+      }
+      return { token: Buffer.from(JSON.stringify(tokens)).toString('base64url') };
     },
     async status(token) {
       const { submissions } = await fetchBatch(token, 'token,status_id');
@@ -278,6 +303,8 @@ export interface JudgeSettings {
   JUDGE_BASE_URL?: string;
   JUDGE_HMAC_SECRET?: string;
   JUDGE0_AUTH_TOKEN?: string;
+  /** Judge0's MAX_SUBMISSION_BATCH_SIZE (default 20). */
+  JUDGE0_MAX_BATCH_SIZE?: number;
 }
 
 let sharedMock: ReturnType<typeof createMockJudge> | null = null;
@@ -297,6 +324,7 @@ export function createJudge(env: JudgeSettings): JudgeAdapter | null {
         baseUrl: env.JUDGE_BASE_URL!,
         hmacSecret: env.JUDGE_HMAC_SECRET!,
         authToken: env.JUDGE0_AUTH_TOKEN,
+        maxBatchSize: env.JUDGE0_MAX_BATCH_SIZE,
       });
     case 'mock':
       sharedMock ??= createMockJudge();

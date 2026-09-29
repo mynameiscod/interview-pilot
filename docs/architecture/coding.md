@@ -14,7 +14,7 @@ Candidate code runs only on an **external judge on a separate host**, through `J
 - **Signing.** Every request is signed. The headers `X-CB-Timestamp` and `X-CB-Signature` carry `HMAC-SHA256(secret, "<ts>.<METHOD>.<path>.<sha256(body)>")`. The judge rejects signatures outside a ±5 minute window. `verifyJudgeSignature` is the reference check for the judge side.
 - **Adapters.**
   - `codebegun`: the target CodeBegun Judge API (`/v1/languages`, `/v1/submissions`).
-  - `judge0`: the interim adapter for a self-hosted Judge0 CE on its own VPS. It uses the batch API with one Judge0 submission per test and base64 payloads. Requests carry the HMAC headers for a verifying proxy, plus `X-Auth-Token` when Judge0 authentication is on.
+  - `judge0`: the interim adapter for a self-hosted Judge0 CE on its own VPS. It uses the batch API with one Judge0 submission per test and base64 payloads, sent and read back in batches of at most `JUDGE0_MAX_BATCH_SIZE` (Judge0's own `MAX_SUBMISSION_BATCH_SIZE`, 20 by default), so a problem with 5 visible and 30 hidden tests goes out as batches of 20 and 15 and the results are merged in test order. Requests carry the HMAC headers for a verifying proxy, plus `X-Auth-Token` when Judge0 authentication is on.
   - `mock`: for development and tests only, and refused when deployed. It **never executes code**. The result comes from markers in the source: `MOCK_PASS_<n>`, `MOCK_COMPILE_ERROR`, `MOCK_TIMEOUT` and `MOCK_JUDGE_DOWN`.
 - **Waiting and failure.** `runOnJudge` submits, then polls with backoff for up to 20 seconds. Any transport failure, refusal or timeout becomes `JudgeUnavailableError`. The caller treats that as "the judge is down", never as a failure of the interview.
 - **Languages:** Python 3, JavaScript (Node.js), Java and C++. Judge0 CE language ids are 71, 63, 62 and 54.
@@ -47,6 +47,8 @@ A coding round gets a problem at the round's difficulty (or any problem if none 
 
 - Typed socket answers to a coding question are refused.
 - Submitting twice does nothing the second time.
+- The submit request waits for the judge (up to 20 seconds) and for the answer to be saved, but not for the AI: the answer's assessment and the next question follow in the background, as for any answer (see [A turn](live-interview.md#a-turn)), and arrive in the room as events.
+- **Recoverable.** The submission is saved before the question is answered. If answering fails (the interview was busy, a restart), the submission stays and submitting again answers the question with the saved code (idempotent per question: `clientMsgId` `coding-<questionId>`). The editor accepts saves, runs and submits in the states the answer path accepts: `ACTIVE`, and `RECONNECTING`, where the submission resumes the interview first.
 - Runs and submissions share the `coding` rate limit: 60 per 10 minutes per user.
 
 ## When the judge is down
@@ -74,12 +76,13 @@ A coding round gets a problem at the round's difficulty (or any problem if none 
 
 ## Configuration
 
-| Variable            | Where       | Notes                                                                   |
-| ------------------- | ----------- | ----------------------------------------------------------------------- |
-| `JUDGE_PROVIDER`    | API, worker | `mock` (default; development and test only), `judge0` or `codebegun`    |
-| `JUDGE_BASE_URL`    | API, worker | For example `https://judge.internal.example`; required for a real judge |
-| `JUDGE_HMAC_SECRET` | API, worker | At least 32 characters, shared with the judge or its proxy              |
-| `JUDGE0_AUTH_TOKEN` | API, worker | Judge0's `X-Auth-Token`, when enabled                                   |
+| Variable                | Where       | Notes                                                                                     |
+| ----------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| `JUDGE_PROVIDER`        | API, worker | `mock` (default; development and test only), `judge0` or `codebegun`                      |
+| `JUDGE_BASE_URL`        | API, worker | For example `https://judge.internal.example`; required for a real judge                   |
+| `JUDGE_HMAC_SECRET`     | API, worker | At least 32 characters, shared with the judge or its proxy                                |
+| `JUDGE0_AUTH_TOKEN`     | API, worker | Judge0's `X-Auth-Token`, when enabled                                                     |
+| `JUDGE0_MAX_BATCH_SIZE` | API, worker | Judge0's `MAX_SUBMISSION_BATCH_SIZE` (default 20); tests are sent in batches of this size |
 
 **Deploying Judge0 (interim).** Run it on a **separate** VPS, never on the interview host. Put a proxy in front of it that checks the HMAC headers, and don't expose Judge0 directly to the internet. Turn on its own authentication, and keep its resource limits at least as strict as the problem limits.
 

@@ -179,6 +179,63 @@ describe('Judge0 adapter', () => {
     expect(String(fetchImpl.mock.calls[1]![0])).toContain('tokens=a,b,c');
   });
 
+  it('splits large test sets into batches the judge accepts and merges the results in order', async () => {
+    const tests = Array.from({ length: 45 }, (_, i) => ({
+      input: `${i}\n`,
+      expectedOutput: `${i}\n`,
+    }));
+    const posted: number[] = [];
+    const read: number[] = [];
+    const fetchImpl = vi.fn(async (url: string, init: { method: string; body?: string }) => {
+      if (init.method === 'POST') {
+        const { submissions } = JSON.parse(init.body!) as { submissions: { stdin: string }[] };
+        posted.push(submissions.length);
+        // Judge0's default MAX_SUBMISSION_BATCH_SIZE.
+        if (submissions.length > 20) return json(422, { error: 'too many submissions' });
+        return json(
+          201,
+          submissions.map((s) => ({
+            token: `t${Buffer.from(s.stdin, 'base64').toString().trim()}`,
+          })),
+        );
+      }
+      const tokens = new URL(url).searchParams.get('tokens')!.split(',');
+      read.push(tokens.length);
+      if (tokens.length > 20) return json(422, { error: 'too many tokens' });
+      return json(200, {
+        submissions: tokens.map((t) => ({
+          status_id: 3,
+          stdout: Buffer.from(`${t.slice(1)}\n`).toString('base64'),
+        })),
+      });
+    });
+    const judge = createJudge0Adapter({
+      baseUrl: 'http://judge0.internal:2358',
+      hmacSecret: 'k',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const result = await runOnJudge(judge, { ...request, tests }, { waitMs: 5000, sleep: noSleep });
+    expect(posted).toEqual([20, 20, 5]);
+    expect(read.slice(-3)).toEqual([20, 20, 5]);
+    expect(result.tests).toHaveLength(45);
+    expect(result.tests.map((t) => t.stdout)).toEqual(tests.map((t) => t.expectedOutput));
+
+    // The batch size is configurable (a judge set up with a smaller limit).
+    posted.length = 0;
+    const small = createJudge0Adapter({
+      baseUrl: 'http://judge0.internal:2358',
+      hmacSecret: 'k',
+      maxBatchSize: 8,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await runOnJudge(
+      small,
+      { ...request, tests: tests.slice(0, 20) },
+      { waitMs: 5000, sleep: noSleep },
+    );
+    expect(posted).toEqual([8, 8, 4]);
+  });
+
   it('maps every Judge0 status to a verdict', () => {
     expect([3, 4, 5, 6, 7, 11, 13, 14].map(judge0Verdict)).toEqual([
       'ACCEPTED',

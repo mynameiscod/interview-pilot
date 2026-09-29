@@ -8,6 +8,7 @@ import type {
   JobTargetSummary,
   LibrarySearchItem,
   ResumeSummary,
+  StartInterviewBody,
   UpdateInterviewSetupBody,
   UpdateJobTargetBody,
   UploadJobTargetFields,
@@ -67,8 +68,9 @@ function interviewsApi(api: ApiClient) {
      * Starts the interview (READY or READY_TO_START → ACTIVE), reserving a credit. A voice
      * interview needs a recent passing device check and consent first (409 otherwise).
      */
-    start: (id: string) =>
-      api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/start`),
+    /** The UI locale settles an `auto` interview language when the profile does not. */
+    start: (id: string, body: StartInterviewBody = {}) =>
+      api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/start`, body),
     /** Ends an interview in progress early (→ PROCESSING). */
     end: (id: string) =>
       api.post<InterviewSummary>(`/interviews/${encodeURIComponent(id)}/end`, {

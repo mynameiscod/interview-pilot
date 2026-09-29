@@ -3,9 +3,12 @@ import {
   elapsedMs,
   endCurrentRound,
   hasNextRound,
+  holdClock,
   IN_PROGRESS_STATES,
   isMeaningfulUsage,
+  LIVE_STATES,
   pauseClock,
+  releaseClock,
   resumeClock,
   skipRemainingRounds,
   startClock,
@@ -86,12 +89,36 @@ const toClock = (c: SessionClockRecord): ClockState => ({
   budgetMs: c.budgetMs,
   activeMs: c.activeMs,
   runningSince: c.runningSince ? new Date(c.runningSince).getTime() : null,
+  held: c.held ?? false,
 });
 const fromClock = (c: ClockState): SessionClockRecord => ({
   budgetMs: c.budgetMs,
   activeMs: c.activeMs,
   runningSince: c.runningSince === null ? null : new Date(c.runningSince),
+  held: c.held ?? false,
 });
+
+/**
+ * The clock held while the system assesses an answer and prepares the next
+ * question (null before the start). Saved by the caller, conditional on the
+ * session's stateVersion.
+ */
+export function heldSessionClock(
+  s: Pick<InterviewSessionRecord, 'clock'>,
+  now: Date,
+): SessionClockRecord | null {
+  return s.clock ? fromClock(holdClock(toClock(s.clock), now.getTime())) : null;
+}
+
+/** The clock released when the next question is asked; it runs again only while live. */
+export function releasedSessionClock(
+  s: Pick<InterviewSessionRecord, 'clock' | 'state'>,
+  now: Date,
+): SessionClockRecord | null {
+  if (!s.clock) return null;
+  const running = LIVE_STATES.includes(s.state);
+  return fromClock(releaseClock(toClock(s.clock), now.getTime(), running));
+}
 
 /** Interview time used so far (0 before the start). */
 export function sessionElapsedMs(s: Pick<InterviewSessionRecord, 'clock'>, now: Date): number {

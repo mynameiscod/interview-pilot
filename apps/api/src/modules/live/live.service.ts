@@ -6,14 +6,17 @@ import {
   CampaignModel,
   applySessionEvent,
   grantFreeCredits,
+  heldSessionClock,
   inTransaction,
   InsufficientCreditsError,
   InterviewSessionModel,
   InterviewTemplateModel,
   InterviewTurnModel,
+  releasedSessionClock,
   RoleBlueprintModel,
   sessionElapsedMs,
   sessionRemainingMs,
+  UserProfileModel,
   type InterviewSessionRecord,
   type InterviewTurnRecord,
   type Redis,
@@ -31,14 +34,18 @@ import {
 import {
   AssessTurnAi,
   InterviewQuestionAi,
+  resolveInterviewLanguage,
   RtEvent,
   type AiFeature,
   type AnswerTextPayload,
   type BlueprintContent,
+  type InterviewLanguage,
   type InterviewSnapshot,
   type LiveQuestion,
   type RtErrorCode,
   type MaintenanceSetting,
+  type TurnEvalSufficiency,
+  type UiLocale,
 } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
 import type { z } from 'zod';
@@ -93,12 +100,22 @@ export class LiveError extends Error {
   }
 }
 
-const LANGUAGE_NAMES: Record<string, string> = {
-  auto: 'English',
+const LANGUAGE_NAMES: Record<InterviewLanguage, string> = {
   en: 'English',
   hi: 'Hindi',
   te: 'Telugu',
 };
+
+/** The language questions are asked in (`auto` was resolved at start; English for older sessions). */
+export const questionLanguage = (s: Pick<Session, 'language' | 'resolvedLanguage'>) =>
+  resolveInterviewLanguage(s.language, [s.resolvedLanguage]);
+
+/**
+ * States in which the candidate can answer the current question. An answer
+ * from the owner while RECONNECTING resumes the interview first, as a rejoin
+ * would (the answer itself proves the candidate is back).
+ */
+export const ANSWERABLE_STATES: ReadonlySet<string> = new Set(['ACTIVE', 'RECONNECTING']);
 
 /** States a candidate can join to see (and continue) their interview. */
 const JOINABLE = new Set([
@@ -276,7 +293,7 @@ export function createLiveInterviewService({
       'interview.question',
       InterviewQuestionAi,
       {
-        language: LANGUAGE_NAMES[s.language] ?? 'English',
+        language: LANGUAGE_NAMES[questionLanguage(s)],
         role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
         roundType: target.roundType,
         objective: target.objective,
@@ -301,10 +318,14 @@ export function createLiveInterviewService({
       : { text: fallbackQuestion(target), model: null, promptVersion: null };
   }
 
-  async function assessAnswer(s: Session, turn: InterviewTurnRecord, answer: string) {
+  async function assessAnswer(
+    s: Session,
+    turn: InterviewTurnRecord,
+    answer: string,
+  ): Promise<NonNullable<InterviewTurnRecord['turnEval']>> {
     if (!answer.trim()) {
       return {
-        sufficiency: 'NO_ANSWER' as const,
+        sufficiency: 'NO_ANSWER',
         followUpNeeded: false,
         followUpAngle: null,
         evidence: [],
@@ -335,9 +356,16 @@ export function createLiveInterviewService({
         fallback: false,
       };
     }
-    // Without an assessment the plan moves on as if the answer were adequate; Phase 5 re-evaluates.
+    return unassessed();
+  }
+
+  /**
+   * Stands in when the assessment could not run: no verdict is invented. The
+   * planner counts the answer and moves on; the evaluation treats it neutrally.
+   */
+  function unassessed(): NonNullable<InterviewTurnRecord['turnEval']> {
     return {
-      sufficiency: 'ADEQUATE' as const,
+      sufficiency: 'UNASSESSED' satisfies TurnEvalSufficiency,
       followUpNeeded: false,
       followUpAngle: null,
       evidence: [],
@@ -441,9 +469,55 @@ export function createLiveInterviewService({
   }
 
   /**
-   * Moves the interview forward until it waits for the candidate: starts the
-   * next round, ends rounds, finishes the interview, or asks the next
-   * question. Must run under the session's turn lock.
+   * Holds the interview clock while the system works (assessing an answer,
+   * preparing the next question), so that time is never the candidate's.
+   * Conditional on the stateVersion read; retried if the session moved on.
+   */
+  async function holdClock(sessionId: string) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const fresh = await load(sessionId);
+      if (!fresh?.clock || fresh.clock.held) return;
+      const updated = await InterviewSessionModel.updateOne(
+        { _id: fresh._id, stateVersion: fresh.stateVersion },
+        { $set: { clock: heldSessionClock(fresh, now()) }, $inc: { stateVersion: 1 } },
+      );
+      if (updated.modifiedCount === 1) return;
+    }
+  }
+
+  /** Assesses a saved answer and applies the assessment to the latest plan. */
+  async function assessTurn(s: Session, turn: InterviewTurnRecord) {
+    rooms.emit(String(s._id), RtEvent.THINKING, { sessionId: String(s._id) });
+    const assessment = await assessAnswer(s, turn, turn.answer?.text ?? '').catch(
+      (err: unknown) => {
+        logger.error({ err, sessionId: String(s._id) }, 'turn assessment failed');
+        return unassessed();
+      },
+    );
+    await InterviewTurnModel.updateOne({ _id: turn._id }, { $set: { turnEval: assessment } });
+    // Apply the assessment to the latest plan (a disconnect may have changed the session meanwhile).
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const fresh = await load(String(s._id));
+      if (!fresh?.planner || fresh.planner.thread?.lastQuestionId !== turn.questionId) break;
+      const planner = recordAssessment(fresh.planner, {
+        sufficiency: assessment.sufficiency,
+        followUpNeeded: assessment.followUpNeeded,
+        followUpAngle: assessment.followUpAngle,
+        evidenceCount: assessment.evidence.length,
+      });
+      const updated = await InterviewSessionModel.updateOne(
+        { _id: fresh._id, stateVersion: fresh.stateVersion },
+        { $set: { planner }, $inc: { stateVersion: 1 } },
+      );
+      if (updated.modifiedCount === 1) break;
+    }
+  }
+
+  /**
+   * Moves the interview forward until it waits for the candidate: assesses
+   * the latest answer, starts the next round, ends rounds, finishes the
+   * interview, or asks the next question. Must run under the session's turn
+   * lock. The clock is held from the answer until the next question is saved.
    */
   async function advance(sessionId: string): Promise<void> {
     for (let guard = 0; guard < 20; guard++) {
@@ -467,16 +541,29 @@ export function createLiveInterviewService({
       }
       if (s.state !== 'ACTIVE' || !s.planner) return;
 
+      const last =
+        s.lastSeq > 0
+          ? await InterviewTurnModel.findOne({ sessionId: s._id, seq: s.lastSeq }).lean()
+          : null;
+      // The answer was acknowledged when it was saved; its assessment happens here.
+      if (last?.answer && !last.turnEval) {
+        await assessTurn(s, last);
+        continue;
+      }
+
       const at = now();
       if (sessionRemainingMs(s, at) <= 0) {
         await event(s, { type: 'TIME_UP' });
         continue;
       }
-      // A question is already waiting for an answer.
-      if (
-        s.lastSeq > 0 &&
-        (await InterviewTurnModel.exists({ sessionId: s._id, seq: s.lastSeq, answer: null }))
-      ) {
+      if (last && !last.answer) {
+        // A question is already waiting for an answer; its clock runs (a stray hold is released).
+        if (s.clock?.held) {
+          await InterviewSessionModel.updateOne(
+            { _id: s._id, stateVersion: s.stateVersion },
+            { $set: { clock: releasedSessionClock(s, at) }, $inc: { stateVersion: 1 } },
+          );
+        }
         return;
       }
 
@@ -490,6 +577,11 @@ export function createLiveInterviewService({
         );
         continue;
       }
+      // Preparing the question is the system's time, not the candidate's.
+      if (s.clock && !s.clock.held) {
+        await holdClock(sessionId);
+        continue;
+      }
 
       rooms.emit(sessionId, RtEvent.THINKING, { sessionId });
       const question = await generateQuestion(s, step.target, blueprint);
@@ -497,9 +589,14 @@ export function createLiveInterviewService({
       const seq = s.lastSeq + 1;
       const planner = recordQuestion(s.planner, step.target, questionId);
       const saved = await inTransaction(undefined, async (tx) => {
+        // The question goes on screen: the candidate's clock runs again from here.
+        const clock = releasedSessionClock(s, now());
         const updated = await InterviewSessionModel.updateOne(
           { _id: s._id, stateVersion: s.stateVersion, state: 'ACTIVE' },
-          { $set: { planner, lastSeq: seq }, $inc: { stateVersion: 1 } },
+          {
+            $set: { planner, lastSeq: seq, ...(clock ? { clock } : {}) },
+            $inc: { stateVersion: 1 },
+          },
           { session: tx },
         );
         if (updated.modifiedCount !== 1) return null;
@@ -528,7 +625,7 @@ export function createLiveInterviewService({
                 coding: question.coding ?? null,
               },
               askedAt: now(),
-              language: s.language === 'auto' ? 'en' : s.language,
+              language: questionLanguage(s),
             },
           ],
           { session: tx },
@@ -554,7 +651,18 @@ export function createLiveInterviewService({
     return result;
   }
 
-  /** Advances in the background (after start or reconnect); errors are logged. */
+  /** A resend of an answer that is already saved (read without the turn lock). */
+  async function answerSaved(userId: string, payload: AnswerTextPayload) {
+    const found = await InterviewTurnModel.exists({
+      sessionId: objectId(payload.sessionId, 'Interview'),
+      userId,
+      questionId: payload.questionId,
+      'answer.clientMsgId': payload.clientMsgId,
+    }).catch(() => null);
+    return Boolean(found);
+  }
+
+  /** Advances in the background (after start, an answer or a reconnect); errors are logged. */
   function kick(sessionId: string) {
     void locked(sessionId, () => advance(sessionId), 30_000).catch((err: unknown) =>
       logger.error({ err, sessionId }, 'failed to advance interview'),
@@ -574,7 +682,12 @@ export function createLiveInterviewService({
     kick,
 
     /** READY or READY_TO_START → ACTIVE, reserving a credit (REST `POST /interviews/:id/start`). */
-    async start(userId: string, sessionId: string, ctx?: ClientContext) {
+    async start(
+      userId: string,
+      sessionId: string,
+      ctx?: ClientContext,
+      opts: { uiLocale?: UiLocale } = {},
+    ) {
       const s = await load(sessionId, userId);
       if (!s) throw AppError.notFound('Interview not found');
       if (s.state === 'ACTIVE' || s.state === 'ROUND_TRANSITION') return s; // double click
@@ -587,6 +700,15 @@ export function createLiveInterviewService({
       const readiness = await consent.readiness(s, now());
       if (readiness.blocker) throw new AppError(409, 'INVALID_STATE', readiness.blocker);
       const planner = await templateAndPlan(s);
+      // An auto language follows the candidate's profile, then the UI they started from.
+      const profile =
+        s.language === 'auto'
+          ? await UserProfileModel.findOne({ userId }, { preferredInterviewLanguage: 1 }).lean()
+          : null;
+      const resolvedLanguage = resolveInterviewLanguage(s.language, [
+        profile?.preferredInterviewLanguage,
+        opts.uiLocale,
+      ]);
       if (s.campaignId) {
         const campaign = await CampaignModel.findById(s.campaignId, {
           status: 1,
@@ -659,7 +781,12 @@ export function createLiveInterviewService({
             event: { type: 'START' },
             expectedVersion: version,
             // Recording is decided once, at start: video, allowed by the template, and consented.
-            set: { planner, recording: { enabled: readiness.recording }, sponsored },
+            set: {
+              planner,
+              recording: { enabled: readiness.recording },
+              sponsored,
+              resolvedLanguage,
+            },
             now: now(),
             session: tx,
           });
@@ -721,6 +848,15 @@ export function createLiveInterviewService({
       });
     },
 
+    /** The interview exists and belongs to the user (checked before a socket joins its room). */
+    async assertOwner(userId: string, sessionId: string) {
+      const found = await InterviewSessionModel.exists({
+        _id: objectId(sessionId, 'Interview'),
+        userId,
+      }).catch(() => null);
+      if (!found) throw new LiveError('NOT_FOUND', 'Interview not found');
+    },
+
     /** A candidate's room connects: resume a disconnected or paused interview. */
     async join(userId: string, sessionId: string, lastSeq: number) {
       const s = await load(sessionId, userId).catch(() => null);
@@ -775,17 +911,29 @@ export function createLiveInterviewService({
         await withLock(redis, `cbi:lock:turn:${sessionId}`, () => advance(sessionId), {
           ttlMs: TURN_LOCK_TTL_MS,
         });
+      } else if (s.clock?.held) {
+        // An answer waits for its assessment and next question. That is normally under way
+        // (the lock is busy); if the process doing it died, this picks it up again.
+        void withLock(redis, `cbi:lock:turn:${sessionId}`, () => advance(sessionId), {
+          ttlMs: TURN_LOCK_TTL_MS,
+        }).catch((err: unknown) => logger.error({ err, sessionId }, 'failed to advance interview'));
       }
     },
 
-    /** Records an answer, assesses it and moves on. Idempotent per clientMsgId. */
+    /**
+     * Records an answer and acknowledges it as soon as it is saved; the
+     * assessment and the next question follow in the background. Idempotent
+     * per clientMsgId: a resend of a saved answer succeeds without waiting for
+     * the turn lock, even while the next question is being prepared.
+     */
     async answer(
       userId: string,
       payload: AnswerTextPayload,
       opts: { coding?: true } = {},
     ): Promise<{ duplicate: boolean }> {
-      return locked(payload.sessionId, async () => {
-        const s = await load(payload.sessionId, userId);
+      if (await answerSaved(userId, payload)) return { duplicate: true };
+      const result = await locked(payload.sessionId, async () => {
+        let s = await load(payload.sessionId, userId);
         if (!s) throw new LiveError('NOT_FOUND', 'Interview not found');
         const turn = await InterviewTurnModel.findOne({
           sessionId: s._id,
@@ -794,6 +942,13 @@ export function createLiveInterviewService({
         if (turn?.answer) {
           if (turn.answer.clientMsgId === payload.clientMsgId) return { duplicate: true };
           throw new LiveError('STALE_QUESTION', 'This question was already answered.');
+        }
+        if (!ANSWERABLE_STATES.has(s.state))
+          throw new LiveError('INVALID_STATE', 'The interview is not active.');
+        if (s.state === 'RECONNECTING') {
+          // The owner is answering, so they are back: resume as a rejoin would.
+          const resumed = await event(s, { type: 'RECONNECTED' });
+          if (resumed.ok) s = resumed.session;
         }
         if (s.state !== 'ACTIVE')
           throw new LiveError('INVALID_STATE', 'The interview is not active.');
@@ -852,28 +1007,14 @@ export function createLiveInterviewService({
         ).lean();
         if (!saved) throw new LiveError('STALE_QUESTION', 'This question was already answered.');
         await InterviewSessionModel.updateOne({ _id: s._id }, { $set: { lastSeenAt: at } });
-
-        const assessment = await assessAnswer(s, saved, text);
-        await InterviewTurnModel.updateOne({ _id: saved._id }, { $set: { turnEval: assessment } });
-        // Apply the assessment to the latest plan (a disconnect may have changed the session meanwhile).
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const fresh = await load(payload.sessionId);
-          if (!fresh?.planner || fresh.planner.thread?.lastQuestionId !== saved.questionId) break;
-          const planner = recordAssessment(fresh.planner, {
-            sufficiency: assessment.sufficiency,
-            followUpNeeded: assessment.followUpNeeded,
-            followUpAngle: assessment.followUpAngle,
-            evidenceCount: assessment.evidence.length,
-          });
-          const updated = await InterviewSessionModel.updateOne(
-            { _id: fresh._id, stateVersion: fresh.stateVersion },
-            { $set: { planner }, $inc: { stateVersion: 1 } },
-          );
-          if (updated.modifiedCount === 1) break;
-        }
-        await advance(payload.sessionId);
+        // From here until the next question is on screen, the time is the system's.
+        await holdClock(payload.sessionId);
         return { duplicate: false };
       });
+      // Acknowledged once saved: the assessment and the next question follow in the
+      // background (under the turn lock) and reach the room as events.
+      kick(payload.sessionId);
+      return result;
     },
   };
 }

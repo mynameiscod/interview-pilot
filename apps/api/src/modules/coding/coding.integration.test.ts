@@ -268,6 +268,63 @@ describe('coding round', () => {
     expect((await InterviewSessionModel.findById(id).lean())!.state).toBe('ACTIVE');
   });
 
+  it('answers the question on a retry when the submission was saved but not answered', async () => {
+    const { userId, accessToken, call } = await candidate();
+    const id = await codingInterview(userId);
+    const { socket, question } = await startAndJoin(accessToken, call, id);
+    await call('get', `/interviews/${id}/coding/${question.questionId}`).expect(200);
+    // What a failure between saving the submission and answering the question leaves behind.
+    await CodingAttemptModel.updateOne(
+      { sessionId: id, questionId: question.questionId },
+      {
+        $set: {
+          submission: {
+            at: new Date(),
+            language: 'python',
+            code: 'print("saved")',
+            result: null,
+            judgeUnavailable: true,
+            source: 'CANDIDATE',
+          },
+        },
+      },
+    );
+    expect(
+      (await InterviewTurnModel.findOne({ questionId: question.questionId }).lean())!.answer,
+    ).toBeNull();
+
+    // The connection drops too: the interview waits in RECONNECTING.
+    socket.disconnect();
+    for (let i = 0; i < 100; i++) {
+      if ((await InterviewSessionModel.findById(id).lean())!.state === 'RECONNECTING') break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await InterviewSessionModel.findById(id).lean())!.state).toBe('RECONNECTING');
+
+    // Submitting again answers the question with the saved code, resuming the interview.
+    const retried = await call('post', `/interviews/${id}/coding/${question.questionId}/submit`)
+      .send({ language: 'python', code: 'print("other")' })
+      .expect(200);
+    expect(CodingWorkspace.parse(retried.body.data).submission).toMatchObject({
+      judgeUnavailable: true,
+    });
+    const turn = (await InterviewTurnModel.findOne({ questionId: question.questionId }).lean())!;
+    expect(turn.answer).toMatchObject({ clientMsgId: `coding-${question.questionId}` });
+    expect(turn.answer!.text).toContain('print("saved")');
+    expect((await InterviewSessionModel.findById(id).lean())!.state).toBe('ACTIVE');
+    // The next question follows in the background.
+    for (let i = 0; i < 200; i++) {
+      if ((await InterviewSessionModel.findById(id).lean())!.lastSeq === 2) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect((await InterviewSessionModel.findById(id).lean())!.lastSeq).toBe(2);
+    // And once more changes nothing.
+    await call('post', `/interviews/${id}/coding/${question.questionId}/submit`)
+      .send({ language: 'python', code: 'print("other")' })
+      .expect(200);
+    expect(await InterviewTurnModel.countDocuments({ sessionId: id })).toBe(2);
+  });
+
   it('lets library admins manage the problem bank', async () => {
     const support = await adminAs(['SUPPORT_ADMIN']);
     await support('get', '/problems').expect(403);

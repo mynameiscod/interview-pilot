@@ -198,6 +198,8 @@ const judgeShape = {
   JUDGE_HMAC_SECRET: optionalString,
   /** Judge0 only: its X-Auth-Token, when authentication is enabled on the judge. */
   JUDGE0_AUTH_TOKEN: optionalString,
+  /** Judge0 only: its MAX_SUBMISSION_BATCH_SIZE; larger test sets are sent in several batches. */
+  JUDGE0_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(20),
 };
 
 type JudgeEnv = {

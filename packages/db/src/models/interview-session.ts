@@ -1,6 +1,7 @@
 import {
   AnalysisFailureCode,
   ConsentType,
+  InterviewLanguage,
   InterviewLanguagePreference,
   InterviewMode,
   InterviewState,
@@ -13,6 +14,7 @@ import type {
   ProcessingStatus,
   RecommendationsAi,
   AnalysisFailureCode as AnalysisFailureCodeT,
+  InterviewLanguage as InterviewLanguageT,
   InterviewLanguagePreference as InterviewLanguagePreferenceT,
   InterviewMode as InterviewModeT,
   InterviewState as InterviewStateT,
@@ -52,6 +54,8 @@ export interface SessionClockRecord {
   budgetMs: number;
   activeMs: number;
   runningSince: Date | null;
+  /** Held while the system assesses an answer and prepares the next question. */
+  held?: boolean;
 }
 
 export interface InterviewSessionRecord {
@@ -65,6 +69,8 @@ export interface InterviewSessionRecord {
   promptVersions: Record<string, number>;
   mode: InterviewModeT;
   language: InterviewLanguagePreferenceT;
+  /** The language questions are asked in: `language`, with `auto` resolved at start. */
+  resolvedLanguage: InterviewLanguageT | null;
   state: InterviewStateT;
   /** Optimistic-concurrency counter: every transition is conditional on it. */
   stateVersion: number;
@@ -168,6 +174,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
       required: true,
       default: 'auto',
     },
+    resolvedLanguage: { type: String, enum: [...InterviewLanguage.options, null], default: null },
     state: { type: String, enum: InterviewState.options, required: true, default: 'DRAFT' },
     stateVersion: { type: Number, required: true, default: 0 },
     stateHistory: {
@@ -203,6 +210,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
           budgetMs: { type: Number, required: true },
           activeMs: { type: Number, required: true },
           runningSince: { type: Date, default: null },
+          held: { type: Boolean, default: false },
         },
         { _id: false },
       ),

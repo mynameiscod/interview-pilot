@@ -1,6 +1,20 @@
-import type { BlueprintContent, TemplateRound, TurnSufficiency } from '@cbi/shared-types';
+import type {
+  BlueprintContent,
+  TemplateRound,
+  TurnEvalSufficiency,
+  TurnSufficiency,
+} from '@cbi/shared-types';
 import { describe, expect, it } from 'vitest';
-import { elapsedMs, isTimeUp, pauseClock, remainingMs, resumeClock, startClock } from './clock.js';
+import {
+  elapsedMs,
+  holdClock,
+  isTimeUp,
+  pauseClock,
+  releaseClock,
+  remainingMs,
+  resumeClock,
+  startClock,
+} from './clock.js';
 import {
   competenciesForRound,
   createPlanner,
@@ -9,6 +23,7 @@ import {
   hasNextRound,
   MIN_QUESTION_MS,
   nextStep,
+  RECENT_LIMIT,
   recordAssessment,
   recordQuestion,
   skipRemainingRounds,
@@ -84,7 +99,7 @@ function ask(p: PlannerState, elapsed: number, id: string) {
 }
 
 const assess = (
-  sufficiency: TurnSufficiency,
+  sufficiency: TurnEvalSufficiency,
   followUpNeeded = false,
   angle: string | null = null,
 ) => ({
@@ -107,6 +122,23 @@ describe('clock', () => {
     expect(remainingMs(c, 520_000)).toBe(30_000);
     expect(isTimeUp(c, 550_000)).toBe(true);
     expect(remainingMs(c, 900_000)).toBe(0);
+  });
+
+  it('holds while the system works, even across a disconnect, until released', () => {
+    let c = startClock(60_000, 0);
+    c = holdClock(c, 10_000); // the answer arrived; assessment and the next question follow
+    expect(c).toMatchObject({ held: true, runningSince: null, activeMs: 10_000 });
+    expect(elapsedMs(c, 40_000)).toBe(10_000);
+    expect(holdClock(c, 50_000)).toEqual(c); // idempotent
+    // A reconnect while the next question is being prepared does not restart it.
+    expect(resumeClock(pauseClock(c, 45_000), 46_000)).toMatchObject({ runningSince: null });
+    c = releaseClock(c, 50_000, true); // the next question is on screen
+    expect(c).toMatchObject({ held: false, runningSince: 50_000 });
+    expect(elapsedMs(c, 55_000)).toBe(15_000);
+    // Released while disconnected: stays stopped and restarts on reconnect.
+    const away = releaseClock(holdClock(c, 56_000), 60_000, false);
+    expect(away).toMatchObject({ held: false, runningSince: null, activeMs: 16_000 });
+    expect(resumeClock(away, 70_000).runningSince).toBe(70_000);
   });
 
   it('ignores clock skew and rejects bad budgets', () => {
@@ -228,6 +260,60 @@ describe('planner basics', () => {
         rounds: p.rounds.map((r) => ({ ...r, difficulty: 'MEDIUM' as const })),
       }),
     ).toBe('MEDIUM');
+  });
+
+  it('seeds a new competency from recent performance across competencies', () => {
+    const p = startNextRound(started(), 0); // TECHNICAL, ADAPTIVE; api-design is picked first
+    const difficulty = (q: PlannerState) => {
+      const step = nextStep(q, BLUEPRINT, 0);
+      return step.kind === 'ASK' ? step.target.difficulty : null;
+    };
+    expect(difficulty({ ...p, recent: ['STRONG', 'STRONG', 'ADEQUATE'] })).toBe('HARD');
+    expect(difficulty({ ...p, recent: ['WEAK', 'NO_ANSWER', 'ADEQUATE'] })).toBe('EASY');
+    expect(difficulty({ ...p, recent: ['STRONG', 'WEAK'] })).toBe('MEDIUM');
+    // Plans saved before `recent` existed keep the default.
+    expect(difficulty({ ...p, recent: undefined })).toBe('MEDIUM');
+    // The competency's own last result still wins once it has one.
+    expect(
+      difficulty({
+        ...p,
+        recent: ['STRONG', 'STRONG'],
+        coverage: {
+          ...p.coverage,
+          'api-design': { ...p.coverage['api-design']!, lastSufficiency: 'WEAK' },
+        },
+      }),
+    ).toBe('EASY');
+  });
+
+  it('carries recent answers into the next competency', () => {
+    let p = startNextRound(started(), 0);
+    for (const id of ['q1', 'q2']) p = recordAssessment(ask(p, 0, id).p, assess('WEAK'));
+    expect(p.recent).toEqual(['WEAK', 'WEAK']);
+    // system-design (HARD) has not been asked yet; the weak trend starts it one level lower.
+    const r = ask(p, 0, 'q3');
+    expect(r.target).toMatchObject({ competencyKey: 'system-design', difficulty: 'MEDIUM' });
+    p = recordAssessment(r.p, assess('STRONG'));
+    p = recordAssessment(ask(p, 0, 'q4').p, assess('STRONG'));
+    // Only the latest few count.
+    expect(p.recent).toHaveLength(RECENT_LIMIT);
+    expect(p.recent).toEqual(['WEAK', 'STRONG', 'STRONG']);
+  });
+
+  it('counts an unassessed answer without inventing a verdict', () => {
+    let p = startNextRound(started(), 0);
+    const r = ask(p, 0, 'q1');
+    p = recordAssessment(r.p, assess('UNASSESSED'));
+    expect(p.answeredCount).toBe(1);
+    expect(p.coverage['api-design']).toMatchObject({
+      asked: 1,
+      strong: 0,
+      adequate: 0,
+      weak: 0,
+      lastSufficiency: null,
+    });
+    expect(p.recent).toEqual([]);
+    expect(p.thread!.pendingFollowUp).toBeNull();
   });
 
   it('ends the round after its question count', () => {

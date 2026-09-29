@@ -6,6 +6,7 @@ import type {
   RoundState,
   RoundType,
   TemplateRound,
+  TurnEvalSufficiency,
   TurnSufficiency,
 } from '@cbi/shared-types';
 
@@ -62,6 +63,12 @@ export interface PlannerState {
   askedCount: number;
   /** Answers with content (NO_ANSWER is not counted). */
   answeredCount: number;
+  /**
+   * The latest assessed answers to competency questions, oldest first (at most
+   * RECENT_LIMIT). Seeds adaptive difficulty for a competency not yet assessed.
+   * Absent on plans saved before it existed.
+   */
+  recent?: TurnSufficiency[];
 }
 
 export interface QuestionTarget {
@@ -100,6 +107,16 @@ const PROBE_ROUNDS: readonly RoundType[] = ['TECHNICAL', 'PROBLEM_SOLVING', 'COD
 
 const DIFFICULTY_ORDER: readonly Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 
+/** How many recent assessments seed the difficulty of a new competency. */
+export const RECENT_LIMIT = 3;
+
+const SUFFICIENCY_SCORE: Record<TurnSufficiency, number> = {
+  STRONG: 1,
+  ADEQUATE: 0,
+  WEAK: -1,
+  NO_ANSWER: -1,
+};
+
 const OPEN_OBJECTIVES: Partial<Record<RoundType, string>> = {
   INTRO:
     'Warm-up: invite the candidate to introduce themselves and the experience most relevant to this role.',
@@ -137,6 +154,7 @@ export function createPlanner(
     probesUsed: [],
     askedCount: 0,
     answeredCount: 0,
+    recent: [],
   };
 }
 
@@ -205,8 +223,20 @@ function shift(difficulty: Difficulty, by: -1 | 0 | 1): Difficulty {
   return DIFFICULTY_ORDER[Math.min(DIFFICULTY_ORDER.length - 1, Math.max(0, i))]!;
 }
 
-/** ADAPTIVE rounds move up after a strong answer and down after a weak one. */
+/** Overall direction of the recent answers across competencies: up, down or level. */
+function recentTrend(recent: readonly TurnSufficiency[] | undefined): -1 | 0 | 1 {
+  if (!recent?.length) return 0;
+  const mean = recent.reduce((sum, s) => sum + SUFFICIENCY_SCORE[s], 0) / recent.length;
+  return mean >= 0.5 ? 1 : mean <= -0.5 ? -1 : 0;
+}
+
+/**
+ * ADAPTIVE rounds move up after a strong answer and down after a weak one. A
+ * competency not assessed yet starts from the candidate's overall recent
+ * performance, so a new topic does not reset the level to the default.
+ */
 function difficultyFor(
+  p: Pick<PlannerState, 'recent'>,
   round: PlannerRound,
   competency: Competency | null,
   coverage: CompetencyCoverage | undefined,
@@ -219,8 +249,10 @@ function difficultyFor(
     case 'WEAK':
     case 'NO_ANSWER':
       return shift(base, -1);
-    default:
+    case 'ADEQUATE':
       return base;
+    default:
+      return shift(base, recentTrend(p.recent));
   }
 }
 
@@ -266,6 +298,7 @@ export function nextStep(
         competencyName: competency?.name ?? null,
         source: 'FOLLOW_UP',
         difficulty: difficultyFor(
+          p,
           round,
           competency,
           competency ? p.coverage[competency.key] : undefined,
@@ -311,6 +344,7 @@ export function nextStep(
       competencyName: competency?.name ?? null,
       source: probe ? probe.source : 'ROLE',
       difficulty: difficultyFor(
+        p,
         round,
         competency,
         competency ? p.coverage[competency.key] : undefined,
@@ -364,7 +398,8 @@ export function recordQuestion(
 }
 
 export interface TurnAssessment {
-  sufficiency: TurnSufficiency;
+  /** UNASSESSED: the assessment could not run; the answer counts, but no verdict is recorded. */
+  sufficiency: TurnEvalSufficiency;
   followUpNeeded: boolean;
   followUpAngle: string | null;
   evidenceCount: number;
@@ -376,21 +411,27 @@ export function recordAssessment(p: PlannerState, a: TurnAssessment): PlannerSta
   const thread = p.thread;
   if (!round || !thread) throw new Error('no question awaiting an assessment');
   const coverage = { ...p.coverage };
-  if (thread.competencyKey && coverage[thread.competencyKey]) {
+  const verdict = a.sufficiency === 'UNASSESSED' ? null : a.sufficiency;
+  if (verdict && thread.competencyKey && coverage[thread.competencyKey]) {
     const prev = coverage[thread.competencyKey]!;
     coverage[thread.competencyKey] = {
       ...prev,
       strong: prev.strong + (a.sufficiency === 'STRONG' ? 1 : 0),
       adequate: prev.adequate + (a.sufficiency === 'ADEQUATE' ? 1 : 0),
       weak: prev.weak + (a.sufficiency === 'WEAK' || a.sufficiency === 'NO_ANSWER' ? 1 : 0),
-      lastSufficiency: a.sufficiency,
+      lastSufficiency: verdict,
     };
   }
+  const recent =
+    verdict && thread.competencyKey
+      ? [...(p.recent ?? []), verdict].slice(-RECENT_LIMIT)
+      : (p.recent ?? []);
   const canFollowUp =
     a.followUpNeeded && a.sufficiency !== 'NO_ANSWER' && thread.depth < round.followUpDepth;
   return {
     ...withRound(p, p.roundIdx, { evidence: round.evidence + Math.max(0, a.evidenceCount) }),
     coverage,
+    recent,
     answeredCount: p.answeredCount + (a.sufficiency === 'NO_ANSWER' ? 0 : 1),
     thread: { ...thread, pendingFollowUp: canFollowUp ? { angle: a.followUpAngle } : null },
   };

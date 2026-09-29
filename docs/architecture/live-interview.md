@@ -37,7 +37,9 @@ Any in-progress state ──FAIL──▶ FAILED (the credit is refunded)
 
 ## The clock
 
-The server is authoritative. The clock (`{budgetMs, activeMs, runningSince}`) runs only in `ACTIVE` and `ROUND_TRANSITION`, so reconnecting, pauses and server restarts never use up the candidate's time. The budget is the sum of the template's round durations. Each round has its own budget, measured from the clock reading when it started. The room shows `remainingMs` and counts down locally, resynchronising on every snapshot.
+The server is authoritative. The clock (`{budgetMs, activeMs, runningSince, held}`) runs only in `ACTIVE` and `ROUND_TRANSITION`, so reconnecting, pauses and server restarts never use up the candidate's time. The budget is the sum of the template's round durations. Each round has its own budget, measured from the clock reading when it started. The room shows `remainingMs` and counts down locally, resynchronising on every snapshot.
+
+The clock is also **held while the system works**: from the moment an answer is saved (and before any question is generated) until the next question is saved, so assessment and question-generation latency never count against the candidate. A held clock stays stopped even if the candidate reconnects in the meantime (`resumeClock` leaves it alone); saving the next question releases it in the same write (`holdClock` / `releaseClock` in the engine, `heldSessionClock` / `releasedSessionClock` in `@cbi/db`). The snapshot then reports `clockRunning: false`, and the room freezes its countdown on `interview:thinking` and restarts it with the next question.
 
 ## Planning questions
 
@@ -46,7 +48,7 @@ For the active round the planner (`nextStep`) returns either a question target o
 1. **Follow-up first.** If the last assessment asked for a follow-up and the round's `followUpDepth` allows it, the next question follows up on the same thread, even in the round's last minute. A non-answer never gets a follow-up.
 2. **End the round** when its primary question count is reached, its time is up, or less than a minute is left.
 3. **Otherwise pick a competency** that this round assesses (by `roundTypes`, falling back to categories), least-covered first, then heaviest. After the first technical question, resume and JD **probe areas** from the blueprint are used once each.
-4. **Difficulty**: fixed per round, or `ADAPTIVE`: one step up after a strong answer and one step down after a weak one or a non-answer.
+4. **Difficulty**: fixed per round, or `ADAPTIVE`: one step up after a strong answer and one step down after a weak one or a non-answer. A competency that has not been assessed yet starts from the candidate's overall recent performance (the last 3 assessed answers across competencies, `planner.recent`): one step up when they average strong, one step down when they average weak, the competency's own level otherwise.
 
 The target carries the objective, expected evidence, source (`ROLE`, `JD`, `RESUME`, `COMPANY`, `FOLLOW_UP`) and follow-up depth. These are stored with the question in `interviewTurns`, which is the question ledger that [evaluation](evaluation-and-reports.md) reads.
 
@@ -54,17 +56,23 @@ The target carries the objective, expected evidence, source (`ROLE`, `JD`, `RESU
 
 ```text
 candidate: answer:text {questionId, text, clientMsgId}
-API (Redis lock cbi:lock:turn:<session>, shared by every replica):
-  duplicate clientMsgId?          → ack {duplicate: true}
-  not the current question?       → STALE_QUESTION
-  save the answer (conditional on answer = null)
+API:
+  already saved with this clientMsgId? → ack {duplicate: true}   (read without the lock: never BUSY)
+  under the Redis lock cbi:lock:turn:<session> (shared by every replica):
+    RECONNECTING?                 → RECONNECTED first (the owner is answering, so they are back)
+    not the current question?     → STALE_QUESTION
+    save the answer (conditional on answer = null), hold the clock
+  ack {ok: true}                  ← the answer is safe from here
+in the background, under the same lock (kick → advance):
   interview.assessTurn            → sufficiency, followUpNeeded, followUpAngle, evidence (internal only)
   planner.recordAssessment        → coverage, follow-up thread
-  advance: next step → round change / finish / interview.question → save turn + plan atomically → emit interview:question
+  next step → round change / finish / interview.question → save turn + plan + released clock atomically → emit interview:question
 ```
 
+The acknowledgement does not wait for the two model calls, so it arrives well within the client's 10 s timeout. `advance` assesses any saved-but-unassessed answer before it plans the next step, so the assessment happens exactly once, whichever replica gets the lock (after the answer, a rejoin, or a heartbeat that finds a held clock with nothing in progress, for example after an API restart). Every change is still conditional on the session's `stateVersion`.
+
 - **Bounded context.** The question prompt receives the round, objective, competency, difficulty and expected evidence, the analysis highlights and gaps, the last 15 questions (to avoid repeats) and, for a follow-up, only the question and answer it builds on. It never receives the whole transcript. Everything the candidate wrote is passed through `untrusted()` data blocks.
-- **AI outages do not stop the interview.** If question generation fails, a templated question for the target is used (`fallbackQuestion`). If the assessment fails, the answer counts as adequate with no follow-up, and the turn is flagged `fallback: true`; evaluation extracts evidence from the answer itself. An empty answer counts as `NO_ANSWER` without an AI call.
+- **AI outages do not stop the interview.** If question generation fails, a templated question for the target is used (`fallbackQuestion`). If the assessment fails, no verdict is invented: the turn is recorded as `sufficiency: UNASSESSED` with `fallback: true`. The planner counts the answer without touching coverage or adaptive difficulty and asks no follow-up, and evaluation leaves it out of the live-assessment fallback (evidence comes from the answer itself). An empty answer counts as `NO_ANSWER` without an AI call.
 - **Nothing scored is sent live.** Snapshots and events contain questions, answers, rounds and time only.
 
 ## Realtime protocol (`/rt`)
@@ -74,7 +82,7 @@ Socket.IO on the API port, path `/socket.io`, WebSocket first with long-polling 
 | Direction | Event                 | Payload                                      | Notes                                                                         |
 | --------- | --------------------- | -------------------------------------------- | ----------------------------------------------------------------------------- |
 | C→S       | `interview:join`      | `{sessionId, lastSeq}`                       | Ack carries the snapshot (turns after `lastSeq`). Resumes RECONNECTING/PAUSED |
-| C→S       | `answer:text`         | `{sessionId, questionId, text, clientMsgId}` | Idempotent per `clientMsgId` (unique index on the turn)                       |
+| C→S       | `answer:text`         | `{sessionId, questionId, text, clientMsgId}` | Acked once saved; idempotent per `clientMsgId` (unique index on the turn)     |
 | C→S       | `presence:heartbeat`  | `{sessionId}`                                | Every 10 s; also ends the interview when its time is up                       |
 | S→C       | `interview:thinking`  | `{sessionId}`                                | The next question is being prepared                                           |
 | S→C       | `interview:question`  | `LiveQuestion`                               |                                                                               |
@@ -84,9 +92,14 @@ Socket.IO on the API port, path `/socket.io`, WebSocket first with long-polling 
 
 Every client event is acknowledged with `{ok: true, …}` or `{ok: false, code, message}` (`NOT_FOUND`, `INVALID_STATE`, `STALE_QUESTION`, `BUSY`, `VALIDATION_FAILED`, `INTERNAL`). `GET /interviews/:id/live` returns the same snapshot over REST.
 
+A socket joins a session's room only after the server has checked that the session belongs to its user, so a refused join never receives the room's events. While an answer waits for its acknowledgement, the room re-joins with a `lastSeq` just below that question, so the snapshot shows whether the answer was already saved. If it was, the room treats it as sent and shows "Preparing the next question…" (noting that the clock is paused) instead of an error. Busy answers are retried, and a re-join settles them before anything is reported as failed.
+
+**Question language.** An interview whose language preference is `auto` is resolved once, at start (`resolvedLanguage`): the candidate's profile language, then the UI locale the start request sends (`{uiLocale}`), and English only when neither is `en`, `hi` or `te`. Questions and turns use the resolved language; speech recognition still detects the spoken language.
+
 ## Reconnect and resume
 
 - When the candidate's last socket for a session closes (checked across replicas with `fetchSockets`), the session moves to `RECONNECTING` and the clock stops. Joining again resumes it (`RECONNECTED`) and returns the turns after the client's `lastSeq`. A pending answer is simply resent with the same `clientMsgId`.
+- An answer from the owner that arrives while the session is `RECONNECTING` (for example on a socket that outlived a missed-heartbeat sweep, or a coding submission over HTTP) resumes the interview exactly as a rejoin would, and is then saved. `PAUSED` interviews still need a rejoin.
 - If the API instance itself dies, the worker sweep notices the missing heartbeats (45 s) and moves the session to `RECONNECTING`.
 - After 10 minutes the sweep pauses the interview; the candidate can still resume it for 24 hours or end it early. After 24 hours it expires: a meaningful interview goes on to evaluation and consumes its credit, otherwise the credit is refunded.
 - On deploys, the old API instance emits `server:draining`, closes its sockets (which pauses the affected interviews) and clients reconnect to the new one, which rebuilds everything from MongoDB.

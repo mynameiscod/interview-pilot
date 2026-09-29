@@ -39,7 +39,10 @@ describe('start screen', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start interview' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/app/interviews/int1/room'));
-    expect(api.calls.filter((c) => c.key === 'POST /interviews/int1/start')).toHaveLength(1);
+    const starts = api.calls.filter((c) => c.key === 'POST /interviews/int1/start');
+    expect(starts).toHaveLength(1);
+    // The UI language settles an "auto" interview language on the server.
+    expect(starts[0]!.body).toEqual({ uiLocale: 'en' });
   });
 
   it('explains when there are no credits left and links to pricing', async () => {

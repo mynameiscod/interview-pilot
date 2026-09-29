@@ -6,8 +6,10 @@ import {
   getCreditBalance,
   grantCredits,
   grantFreeCredits,
+  heldSessionClock,
   InsufficientCreditsError,
   recomputeCreditAccount,
+  releasedSessionClock,
   reserveCredit,
   sessionElapsedMs,
   settleCredit,
@@ -282,6 +284,31 @@ describe('applySessionEvent', () => {
       ok: false,
       reason: 'GUARD_FAILED',
     });
+  });
+
+  it('keeps a held clock stopped across a reconnect until it is released', async () => {
+    const ctx = await readySession();
+    await grantFreeCredits(ctx.userId);
+    const started = await start(ctx);
+    if (!started.ok) throw new Error(started.reason);
+    const id = ctx.session._id;
+    // An answer at 20 s: the system assesses it and prepares the next question.
+    const held = heldSessionClock(started.session, at(20))!;
+    expect(held).toMatchObject({ held: true, runningSince: null, activeMs: 20_000 });
+    await InterviewSessionModel.updateOne({ _id: id }, { $set: { clock: held } });
+    await applySessionEvent({ sessionId: id, event: { type: 'DISCONNECTED' }, now: at(25) });
+    const back = await applySessionEvent({
+      sessionId: id,
+      event: { type: 'RECONNECTED' },
+      now: at(30),
+    });
+    if (!back.ok) throw new Error(back.reason);
+    expect(back.session.state).toBe('ACTIVE');
+    expect(back.session.clock).toMatchObject({ held: true, runningSince: null });
+    expect(sessionElapsedMs(back.session, at(90))).toBe(20_000);
+    // The next question is on screen at 40 s: the candidate's time runs again from there.
+    const released = releasedSessionClock(back.session, at(40))!;
+    expect(released).toMatchObject({ held: false, runningSince: at(40), activeMs: 20_000 });
   });
 
   it('consumes the credit when a meaningful interview finishes', async () => {
