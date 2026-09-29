@@ -19,7 +19,7 @@ Every item needs an owner and evidence (a link, screenshot or command output) be
 
 ## Legal and content
 
-- [ ] **BLOCKER** Legal review of all consent texts (terms, privacy, recording/media consent, marketing), the DPDP Act notices, retention periods (`MEDIA_RETENTION_DAYS_DEFAULT`) and the refund policy. Approved versions are published in Admin → Consent texts.
+- [ ] **BLOCKER** Legal review of all consent texts (terms, privacy, recording/media consent, marketing), the DPDP Act notices, retention periods (`MEDIA_RETENTION_DAYS_DEFAULT`, `AUDIT_LOG_RETENTION_DAYS`) and the refund policy. Approved versions are published in Admin → Consent texts.
 - [ ] **BLOCKER** Brand assets: every item in [docs/product/brand-assets-required.md](../product/brand-assets-required.md) is supplied and `pnpm brand:check` passes. This is a known release blocker: no official logo files are in the repository yet.
 - [ ] Support contact, grievance officer and company details are shown where the law requires them.
 

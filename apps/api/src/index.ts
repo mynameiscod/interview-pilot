@@ -45,7 +45,7 @@ async function main(): Promise<void> {
     redis.connect(),
     queueRedis.connect(),
   ]);
-  await ensureIndexes();
+  await ensureIndexes({ auditLogRetentionDays: env.AUDIT_LOG_RETENTION_DAYS });
 
   const container = buildContainer({ env, logger, redis, rateLimitRedis: redis, queueRedis });
   logger.info(container.providers, 'providers configured');
