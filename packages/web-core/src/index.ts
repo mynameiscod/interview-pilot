@@ -19,3 +19,4 @@ export { errorMessage } from './auth/errors';
 export { safeNextPath } from './auth/next-path';
 export { OtpCodeForm } from './auth/OtpCodeForm';
 export { OtpRequestForm, type OtpRequested } from './auth/OtpRequestForm';
+export { toUiLocale } from './i18n/ui-locale';

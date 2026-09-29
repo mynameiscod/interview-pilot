@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UiLocale } from './i18n.js';
 import { MeResponse } from './users.js';
 
 /** Which app a session belongs to. Tokens for one audience are rejected by the other. */
@@ -17,6 +18,11 @@ export const OtpRequestBody = z.object({
   channel: OtpChannel,
   /** Email address or phone number; the server normalizes it. */
   destination: z.string().trim().min(3).max(254),
+  /**
+   * Language for the code email/SMS (the sender's UI locale). Optional: the
+   * server falls back to Accept-Language, then English.
+   */
+  lang: UiLocale.optional(),
 });
 export type OtpRequestBody = z.infer<typeof OtpRequestBody>;
 

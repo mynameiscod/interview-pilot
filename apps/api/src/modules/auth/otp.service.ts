@@ -12,12 +12,12 @@ import type { Logger } from '@cbi/config';
 import type { Redis } from '@cbi/db';
 import { mongoose, OtpChallengeModel } from '@cbi/db';
 import type { EmailProvider, OtpSmsProvider } from '@cbi/provider-adapters';
-import type { OtpChannel, OtpRequestResponse, SessionAudience } from '@cbi/shared-types';
+import type { OtpChannel, OtpRequestResponse, SessionAudience, UiLocale } from '@cbi/shared-types';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { AccountService } from './account.service.js';
-import { otpEmail } from './messages.js';
+import { otpEmail, otpSms } from './messages.js';
 
 export type OtpPurpose = 'LOGIN' | 'LINK';
 
@@ -84,6 +84,8 @@ export function createOtpService(opts: OtpServiceOptions) {
       channel: OtpChannel;
       rawDestination: string;
       userId?: string;
+      /** Language of the code email/SMS; default English. */
+      lang?: UiLocale;
       ctx: ClientContext;
     }): Promise<OtpRequestResponse> {
       const { audience, purpose, channel, ctx } = input;
@@ -129,9 +131,14 @@ export function createOtpService(opts: OtpServiceOptions) {
         const ttlMinutes = Math.round(opts.ttlSec / 60);
         try {
           if (channel === 'EMAIL') {
-            await opts.email.send(otpEmail(destination, code, ttlMinutes, audience));
+            await opts.email.send(otpEmail(destination, code, ttlMinutes, audience, input.lang));
           } else {
-            await opts.sms!.sendOtp({ to: destination, code, ttlMinutes });
+            await opts.sms!.sendOtp({
+              to: destination,
+              code,
+              ttlMinutes,
+              text: otpSms(code, ttlMinutes, audience, input.lang),
+            });
           }
         } catch (err) {
           opts.logger.error({ err, channel }, 'otp delivery failed');

@@ -4,20 +4,23 @@ import type {
   OtpChannel,
   OtpRequestResponse,
   SessionResponse,
+  UiLocale,
   UpdateProfileBody,
 } from '@cbi/shared-types';
-import type { ApiClient } from '@cbi/web-core';
+import { toUiLocale, type ApiClient } from '@cbi/web-core';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useCandidateAuth } from '../../app/session';
 
-function candidateApi(api: ApiClient) {
+/** `lang` is read at call time so a language switch applies to the next code sent. */
+function candidateApi(api: ApiClient, lang: () => UiLocale | undefined) {
   return {
     providers: () => api.get<AuthProvidersResponse>('/auth/providers'),
     requestOtp: (channel: OtpChannel, destination: string) =>
       api.post<OtpRequestResponse>(
         '/auth/otp/request',
-        { channel, destination },
+        { channel, destination, lang: lang() },
         { noRefresh: true },
       ),
     verifyOtp: (challengeId: string, code: string) =>
@@ -25,7 +28,11 @@ function candidateApi(api: ApiClient) {
     google: (idToken: string) =>
       api.post<SessionResponse>('/auth/google', { idToken }, { noRefresh: true }),
     requestLinkOtp: (channel: OtpChannel, destination: string) =>
-      api.post<OtpRequestResponse>('/auth/link/otp/request', { channel, destination }),
+      api.post<OtpRequestResponse>('/auth/link/otp/request', {
+        channel,
+        destination,
+        lang: lang(),
+      }),
     verifyLinkOtp: (challengeId: string, code: string) =>
       api.post<MeResponse>('/auth/link/otp/verify', { challengeId, code }),
     linkGoogle: (idToken: string) => api.post<MeResponse>('/auth/link/google', { idToken }),
@@ -37,7 +44,11 @@ export type CandidateApi = ReturnType<typeof candidateApi>;
 
 export function useCandidateApi(): CandidateApi {
   const { manager } = useCandidateAuth();
-  return useMemo(() => candidateApi(manager.api), [manager]);
+  const { i18n } = useTranslation();
+  return useMemo(
+    () => candidateApi(manager.api, () => toUiLocale(i18n.resolvedLanguage)),
+    [manager, i18n],
+  );
 }
 
 export function useAuthProviders() {

@@ -10,6 +10,7 @@ import {
   OtpCodeForm,
   OtpRequestForm,
   safeNextPath,
+  toUiLocale,
   type OtpRequested,
 } from '@cbi/web-core';
 import { useQuery } from '@tanstack/react-query';
@@ -20,7 +21,7 @@ import { useAdminAuth } from '../../app/session';
 import { config } from '../../config';
 
 export function LoginPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { manager, completeSignIn } = useAdminAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -36,7 +37,7 @@ export function LoginPage() {
   const requestOtp = (channel: OtpChannel, destination: string) =>
     api.post<OtpRequestResponse>(
       '/admin/auth/otp/request',
-      { channel, destination },
+      { channel, destination, lang: toUiLocale(i18n.resolvedLanguage) },
       { noRefresh: true },
     );
 

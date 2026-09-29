@@ -102,6 +102,11 @@ describe('admin sign-in', () => {
       await screen.findByText('Signed in as root@codebegun.com (Super admin).'),
     ).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
+    expect(api.calls.find((c) => c.key === 'POST /admin/auth/otp/request')!.body).toEqual({
+      channel: 'EMAIL',
+      destination: 'root@codebegun.com',
+      lang: 'en',
+    });
   });
 });
 

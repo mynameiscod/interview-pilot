@@ -16,6 +16,7 @@ import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requireCsrfHeader } from '../../middleware/authenticate.js';
 import type { UserDocument } from '@cbi/db';
 import { clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './cookies.js';
+import { resolveMessageLocale } from './locale.js';
 
 /**
  * Sign-in endpoints. Mounted twice: `/auth` (candidate app) and `/admin/auth`
@@ -81,6 +82,10 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
       purpose: 'LOGIN',
       channel: body.channel,
       rawDestination: body.destination,
+      lang: resolveMessageLocale({
+        requested: body.lang,
+        acceptLanguage: req.headers['accept-language'],
+      }),
       ctx: clientContext(req),
     });
     res.status(202).json({ data: result });
@@ -188,6 +193,10 @@ export function authRouter(audience: SessionAudience, c: Container): Router {
         channel: body.channel,
         rawDestination: body.destination,
         userId: requireAuth(req).userId,
+        lang: resolveMessageLocale({
+          requested: body.lang,
+          acceptLanguage: req.headers['accept-language'],
+        }),
         ctx: clientContext(req),
       });
       res.status(202).json({ data: result });

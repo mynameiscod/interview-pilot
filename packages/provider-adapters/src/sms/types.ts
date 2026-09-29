@@ -3,6 +3,11 @@ export interface OtpSms {
   to: string;
   code: string;
   ttlMinutes: number;
+  /**
+   * Full localised message, for providers that send free text (dev mailbox).
+   * Template-based providers (MSG91/DLT) ignore it and send only the code.
+   */
+  text?: string;
 }
 
 export interface OtpSmsProvider {
