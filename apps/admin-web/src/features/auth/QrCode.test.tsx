@@ -1,7 +1,8 @@
 import { create } from 'qrcode';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { QrCode, qrPath } from './QrCode';
+import { qrPath } from './qr-path';
+import { QrCode } from './QrCode';
 
 const URI =
   'otpauth://totp/CareerPilot%20Interview%20Admin:root%40codebegun.com?secret=JBSWY3DPEHPK3PXP&issuer=CareerPilot%20Interview%20Admin';
