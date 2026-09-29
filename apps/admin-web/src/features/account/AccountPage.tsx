@@ -3,10 +3,11 @@ import { errorMessage } from '@cbi/web-core';
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../app/session';
+import { DevicesSection, MfaSection } from './SecuritySections';
 
 const MIN_LENGTH = 12;
 
-/** The signed-in admin's own account: password sign-in. */
+/** The signed-in admin's own account: password, two-factor authentication, devices. */
 export function AccountPage() {
   const { t } = useTranslation();
   const { user, manager, setUser } = useAdminAuth();
@@ -118,6 +119,8 @@ export function AccountPage() {
           </button>
         </form>
       </section>
+      <MfaSection />
+      <DevicesSection />
     </div>
   );
 }

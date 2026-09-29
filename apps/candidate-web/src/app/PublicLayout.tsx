@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { MaintenanceBanner } from '../components/MaintenanceBanner';
 import { RouteAnalytics } from '../lib/use-analytics';
+import { LEGAL_PATHS } from '../features/legal/legal-paths';
 import { useCandidateAuth } from './session';
 
 function AccountNav() {
@@ -91,8 +92,24 @@ export function PublicLayout() {
         <Outlet />
       </main>
       <footer className="border-top cb-border py-4 mt-5">
-        <div className="container small cb-text-secondary">
-          {t('footer.copyright', { year: new Date().getFullYear() })}
+        <div className="container small cb-text-secondary d-flex flex-wrap justify-content-between gap-2">
+          <span>{t('footer.copyright', { year: new Date().getFullYear() })}</span>
+          <nav aria-label={t('footer.legalNavigation')}>
+            <ul className="list-inline mb-0">
+              <li className="list-inline-item">
+                <Link to={LEGAL_PATHS.terms}>{t('footer.terms')}</Link>
+              </li>
+              <li className="list-inline-item">
+                <Link to={LEGAL_PATHS.privacy}>{t('footer.privacy')}</Link>
+              </li>
+              <li className="list-inline-item">
+                <Link to={LEGAL_PATHS.grievance}>{t('footer.grievance')}</Link>
+              </li>
+              <li className="list-inline-item">
+                <Link to={LEGAL_PATHS.scoring}>{t('footer.scoring')}</Link>
+              </li>
+            </ul>
+          </nav>
         </div>
       </footer>
     </>

@@ -9,6 +9,21 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 /** Seconds a client is asked to wait before retrying a refused write. */
 export const MAINTENANCE_RETRY_AFTER_SEC = 120;
 
+/** A slow settings read must not stall every write; past this the request goes through. */
+const SETTING_TIMEOUT_MS = 2000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`maintenance setting read timed out after ${ms} ms`)),
+      ms,
+    );
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Writes that stay open during maintenance, as paths under `/api/v1`:
  * - `/auth/**`: signing in and out, OTP, refresh and identity linking, so
@@ -75,9 +90,12 @@ export function maintenanceGuard(deps: {
 }): RequestHandler {
   return async (req, res, next) => {
     if (!blockedDuringMaintenance(req.method, req.path)) return next();
+    // Without a bearer token the route refuses the write anyway (401), so there
+    // is nothing to protect and no reason to read the setting.
+    if (!req.headers.authorization?.startsWith('Bearer ')) return next();
     let m: MaintenanceSetting;
     try {
-      m = await deps.maintenance();
+      m = await withTimeout(deps.maintenance(), SETTING_TIMEOUT_MS);
     } catch (err) {
       req.log?.warn({ err }, 'maintenance setting unavailable; request allowed');
       return next();

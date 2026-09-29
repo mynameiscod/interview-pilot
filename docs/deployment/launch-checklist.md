@@ -20,6 +20,9 @@ Every item needs an owner and evidence (a link, screenshot or command output) be
 ## Legal and content
 
 - [ ] **BLOCKER** Legal review of all consent texts (terms, privacy, recording/media consent, marketing), the DPDP Act notices, retention periods (`MEDIA_RETENTION_DAYS_DEFAULT`, `AUDIT_LOG_RETENTION_DAYS`) and the refund policy. Approved versions are published in Admin → Consent texts.
+- [ ] **BLOCKER** Legal sign-off of the public drafts (`/terms`, `/privacy-policy`, `/grievance`, `/how-scoring-works`, in en/hi/te — texts in `apps/candidate-web/src/i18n/locales/*/legal.json`), then set `LEGAL_DRAFT_BANNER=false` and `LEGAL_LAST_UPDATED`. See [data protection](../security/data-protection.md#legal-pages).
+- [ ] **BLOCKER** Appoint the Grievance Officer and set `GRIEVANCE_OFFICER_NAME`, `GRIEVANCE_OFFICER_EMAIL` and `GRIEVANCE_OFFICER_ADDRESS`.
+- [ ] Every super admin has signed in once and set up an authenticator app (2FA is required for them).
 - [ ] **BLOCKER** Brand assets: every item in [docs/product/brand-assets-required.md](../product/brand-assets-required.md) is supplied and `pnpm brand:check` passes. This is a known release blocker: no official logo files are in the repository yet.
 - [ ] Support contact, grievance officer and company details are shown where the law requires them.
 

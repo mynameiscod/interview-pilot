@@ -105,8 +105,12 @@ describe('which requests maintenance mode refuses', () => {
 
 describe('maintenanceGuard', () => {
   it('answers 503 MAINTENANCE with the notice and a Retry-After', async () => {
-    const { app } = tinyApp({});
-    const res = await request(app).post('/api/v1/interviews').send({}).expect(503);
+    const { app } = tinyApp({ users: { cand1: active() } });
+    const res = await request(app)
+      .post('/api/v1/interviews')
+      .set('Authorization', await bearer('cand1', 'candidate'))
+      .send({})
+      .expect(503);
     expect(res.headers['retry-after']).toBe('120');
     expect(res.body.error).toMatchObject({
       code: 'MAINTENANCE',
@@ -117,13 +121,20 @@ describe('maintenanceGuard', () => {
 
   it('uses a default message when the notice is empty', async () => {
     const { app } = tinyApp({ setting: { enabled: true, message: '' } });
-    const res = await request(app).delete('/api/v1/resumes/abc').expect(503);
+    const res = await request(app)
+      .delete('/api/v1/resumes/abc')
+      .set('Authorization', await bearer('cand1', 'candidate'))
+      .expect(503);
     expect(res.body.error.message).toMatch(/maintenance/i);
   });
 
   it('lets everything through when maintenance is off, without reading it for reads', async () => {
     const { app, maintenance } = tinyApp({ setting: { enabled: false, message: '' } });
-    await request(app).post('/api/v1/interviews').send({}).expect(200);
+    await request(app)
+      .post('/api/v1/interviews')
+      .set('Authorization', await bearer('cand1', 'candidate'))
+      .send({})
+      .expect(200);
     await request(app).get('/api/v1/reports/abc').expect(200);
     await request(app).post('/api/v1/auth/otp/request').send({}).expect(200);
     expect(maintenance).toHaveBeenCalledTimes(1);
@@ -176,6 +187,16 @@ describe('maintenanceGuard', () => {
 
   it('fails open when the setting cannot be read', async () => {
     const { app } = tinyApp({ setting: new Error('mongo down') });
+    await request(app)
+      .post('/api/v1/interviews')
+      .set('Authorization', await bearer('cand1', 'candidate'))
+      .send({})
+      .expect(200);
+  });
+
+  it('leaves unauthenticated writes to the route (401) without reading the setting', async () => {
+    const { app, maintenance } = tinyApp({});
     await request(app).post('/api/v1/interviews').send({}).expect(200);
+    expect(maintenance).not.toHaveBeenCalled();
   });
 });

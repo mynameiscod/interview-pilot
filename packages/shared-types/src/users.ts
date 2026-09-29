@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { AdminRole } from './permissions.js';
 
-export const UserStatus = z.enum(['ACTIVE', 'SUSPENDED']);
+/**
+ * DELETION_PENDING: the candidate asked for erasure; sign-in within the grace
+ * period cancels it. DELETED: erased (only a pseudonymous tombstone remains so
+ * retained tax records keep a valid reference).
+ */
+export const UserStatus = z.enum(['ACTIVE', 'SUSPENDED', 'DELETION_PENDING', 'DELETED']);
 export type UserStatus = z.infer<typeof UserStatus>;
 
 export const ExperienceLevel = z.enum([
@@ -62,6 +67,7 @@ export const UpdateProfileBody = z.object({
   preferredInterviewLanguage: InterviewLanguagePreference,
   experienceLevel: ExperienceLevel.nullable().optional(),
   currentRole: trimmedText(80).nullable().optional(),
-  productUpdatesOptIn: z.boolean().default(false),
+  /** Omitted = unchanged (a partial update must never opt the person out). */
+  productUpdatesOptIn: z.boolean().optional(),
 });
 export type UpdateProfileBody = z.infer<typeof UpdateProfileBody>;

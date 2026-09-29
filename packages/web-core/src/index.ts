@@ -13,7 +13,12 @@ export {
   type AuthProviderProps,
   type AuthStatus,
 } from './auth/AuthProvider';
-export { createSessionManager, type SessionManager } from './auth/session-manager';
+export {
+  createSessionManager,
+  type SessionChangeReason,
+  type SessionChannel,
+  type SessionManager,
+} from './auth/session-manager';
 export { GoogleSignInButton, type GoogleSignInButtonProps } from './google/GoogleSignInButton';
 export { errorMessage } from './auth/errors';
 export { safeNextPath } from './auth/next-path';
@@ -26,3 +31,4 @@ export {
   type BrowserErrorTrackingConfig,
 } from './error-tracking';
 export { toUiLocale } from './i18n/ui-locale';
+export { deviceName } from './device-name';

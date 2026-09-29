@@ -21,6 +21,7 @@ export * from './models/user-profile.js';
 export * from './models/user.js';
 export * from './campaign-results.js';
 export * from './credits.js';
+export * from './erasure.js';
 export * from './evaluation-state.js';
 export * from './indexes.js';
 export * from './purchases.js';

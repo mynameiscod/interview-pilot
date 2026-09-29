@@ -1,8 +1,11 @@
-import type {
-  AuthProvidersResponse,
-  OtpChannel,
-  OtpRequestResponse,
-  SessionResponse,
+import {
+  isMfaChallenge,
+  type AdminSignInResponse,
+  type AuthProvidersResponse,
+  type MfaChallenge,
+  type OtpChannel,
+  type OtpRequestResponse,
+  type SessionResponse,
 } from '@cbi/shared-types';
 import {
   errorMessage,
@@ -19,6 +22,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useAdminAuth } from '../../app/session';
 import { config } from '../../config';
+import { MfaStep } from './MfaStep';
 
 export function LoginPage() {
   const { t, i18n } = useTranslation();
@@ -28,6 +32,7 @@ export function LoginPage() {
   const [method, setMethod] = useState<'password' | 'code'>('password');
   const [requested, setRequested] = useState<OtpRequested | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<MfaChallenge | null>(null);
   const api = manager.api;
   const providers = useQuery({
     queryKey: ['admin-auth', 'providers'],
@@ -41,9 +46,18 @@ export function LoginPage() {
       { noRefresh: true },
     );
 
-  async function finish(session: SessionResponse) {
+  async function complete(session: SessionResponse) {
     await completeSignIn(session);
     navigate(safeNextPath(params.get('next'), '/'), { replace: true });
+  }
+
+  /** After the first factor: a session, or the authenticator step (2FA). */
+  async function finish(result: AdminSignInResponse) {
+    if (isMfaChallenge(result)) {
+      setChallenge(result);
+      return;
+    }
+    await complete(result);
   }
 
   const googleEnabled = Boolean(config.googleClientId) && providers.data?.google.enabled;
@@ -68,15 +82,35 @@ export function LoginPage() {
     <main id="main" className="container py-5">
       <div className="row justify-content-center">
         <div className="col-sm-10 col-md-7 col-lg-5">
-          <h1 className="h3">{requested ? t('auth.verifyTitle') : t('auth.loginTitle')}</h1>
-          {!requested && <p className="cb-text-secondary">{t('auth.loginSubtitle')}</p>}
+          <h1 className="h3">
+            {challenge
+              ? challenge.mode === 'ENROLL'
+                ? t('mfa.enrollTitle')
+                : t('mfa.verifyTitle')
+              : requested
+                ? t('auth.verifyTitle')
+                : t('auth.loginTitle')}
+          </h1>
+          {!requested && !challenge && (
+            <p className="cb-text-secondary">{t('auth.loginSubtitle')}</p>
+          )}
           <div className="p-4 border cb-border rounded-3 bg-white mt-3">
-            {requested ? (
+            {challenge ? (
+              <MfaStep
+                api={api}
+                challenge={challenge}
+                onSignedIn={complete}
+                onRestart={() => {
+                  setChallenge(null);
+                  setRequested(null);
+                }}
+              />
+            ) : requested ? (
               <OtpCodeForm
                 sent={requested.response}
                 verify={async (challengeId, code) =>
                   finish(
-                    await api.post<SessionResponse>(
+                    await api.post<AdminSignInResponse>(
                       '/admin/auth/otp/verify',
                       { challengeId, code },
                       { noRefresh: true },
@@ -93,7 +127,7 @@ export function LoginPage() {
                   <PasswordForm
                     signIn={async (email, password) =>
                       finish(
-                        await api.post<SessionResponse>(
+                        await api.post<AdminSignInResponse>(
                           '/admin/auth/password/login',
                           { email, password },
                           { noRefresh: true },
@@ -117,7 +151,7 @@ export function LoginPage() {
                         setGoogleError(null);
                         try {
                           await finish(
-                            await api.post<SessionResponse>(
+                            await api.post<AdminSignInResponse>(
                               '/admin/auth/google',
                               { idToken },
                               { noRefresh: true },

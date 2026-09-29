@@ -2,14 +2,21 @@ import { randomUUID } from 'node:crypto';
 import type { AccessTokenIssuer } from '@cbi/auth-core';
 import { generateRefreshToken, hashToken, keyedHash } from '@cbi/auth-core';
 import { RefreshTokenModel, UserModel } from '@cbi/db';
-import type { AdminRole, SessionAudience } from '@cbi/shared-types';
+import type { ActiveSession, AdminRole, SessionAudience } from '@cbi/shared-types';
 import type { ClientSession, Types } from 'mongoose';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { UserStateCache } from './user-state.js';
 
-type RevokeReason = 'LOGOUT' | 'LOGOUT_ALL' | 'REUSE_DETECTED' | 'SUSPENDED' | 'ROLE_CHANGE';
+type RevokeReason =
+  | 'LOGOUT'
+  | 'LOGOUT_ALL'
+  | 'REUSE_DETECTED'
+  | 'SUSPENDED'
+  | 'ROLE_CHANGE'
+  | 'DEVICE_REVOKED'
+  | 'ACCOUNT_DELETION';
 
 export interface IssuedSession {
   userId: string;
@@ -32,11 +39,27 @@ export interface SessionServiceOptions {
   hashSecret: string;
   refreshTtlMs: Record<SessionAudience, number>;
   /**
+   * Absolute lifetime of a session (refresh-token family), measured from
+   * sign-in. Rotation extends a token's expiry by `refreshTtlMs` but never
+   * past this cap, so a stolen-but-active refresh chain cannot live forever.
+   */
+  maxAgeMs: Record<SessionAudience, number>;
+  /**
    * A just-rotated token presented again within this window (e.g. two tabs
    * refreshing at once, or a response lost in transit) is rejected without
    * revoking the family. Outside it, reuse means theft.
    */
   reuseGraceMs?: number;
+}
+
+/** Expiry of a newly issued refresh token: the sliding TTL, capped by the family's absolute age. */
+export function refreshExpiry(
+  now: Date,
+  ttlMs: number,
+  familyCreatedAt: Date,
+  maxAgeMs: number,
+): Date {
+  return new Date(Math.min(now.getTime() + ttlMs, familyCreatedAt.getTime() + maxAgeMs));
 }
 
 export function createSessionService(opts: SessionServiceOptions) {
@@ -48,9 +71,15 @@ export function createSessionService(opts: SessionServiceOptions) {
     familyId: string,
     ctx: ClientContext,
     parentId?: Types.ObjectId,
+    familyCreatedAt: Date = new Date(),
   ) {
     const refreshToken = generateRefreshToken();
-    const refreshTokenExpiresAt = new Date(Date.now() + opts.refreshTtlMs[audience]);
+    const refreshTokenExpiresAt = refreshExpiry(
+      new Date(),
+      opts.refreshTtlMs[audience],
+      familyCreatedAt,
+      opts.maxAgeMs[audience],
+    );
     await RefreshTokenModel.create({
       userId: subject.id,
       familyId,
@@ -58,6 +87,7 @@ export function createSessionService(opts: SessionServiceOptions) {
       audience,
       parentId,
       expiresAt: refreshTokenExpiresAt,
+      familyCreatedAt,
       userAgent: ctx.userAgent,
       ipHash: keyedHash(opts.hashSecret, `ip:${ctx.ip}`),
     });
@@ -144,13 +174,68 @@ export function createSessionService(opts: SessionServiceOptions) {
         throw AppError.forbidden('Admin access has been removed from this account.');
       }
 
+      // Rows written before the absolute cap existed start their cap now.
+      const familyCreatedAt = row.familyCreatedAt ?? row.createdAt ?? now;
+      if (familyCreatedAt.getTime() + opts.maxAgeMs[audience] <= now.getTime()) {
+        await revokeFamily(row.familyId, 'LOGOUT');
+        throw AppError.unauthenticated('Your session has ended. Please sign in again.');
+      }
       return createRefreshRow(
         { id: userId, tokenVersion: state.tokenVersion, adminRoles: state.adminRoles },
         audience,
         row.familyId,
         ctx,
         row._id,
+        familyCreatedAt,
       );
+    },
+
+    /**
+     * The person's signed-in devices for one app: each family's current
+     * (unused, unrevoked, unexpired) token.
+     */
+    async list(
+      userId: string,
+      audience: SessionAudience,
+      currentFamilyId: string,
+    ): Promise<ActiveSession[]> {
+      const rows = await RefreshTokenModel.find({
+        userId,
+        audience,
+        usedAt: { $exists: false },
+        revokedAt: { $exists: false },
+        expiresAt: { $gt: new Date() },
+      })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+      const seen = new Set<string>();
+      return rows.flatMap((r) => {
+        if (seen.has(r.familyId)) return [];
+        seen.add(r.familyId);
+        return [
+          {
+            id: r.familyId,
+            userAgent: r.userAgent ?? null,
+            signedInAt: (r.familyCreatedAt ?? r.createdAt).toISOString(),
+            lastActiveAt: r.createdAt.toISOString(),
+            expiresAt: r.expiresAt.toISOString(),
+            current: r.familyId === currentFamilyId,
+          },
+        ];
+      });
+    },
+
+    /**
+     * Signs one of the person's devices out. Its access token (at most a few
+     * minutes old) expires on its own; it can no longer refresh.
+     */
+    async revokeFamilyOf(userId: string, audience: SessionAudience, familyId: string) {
+      const res = await RefreshTokenModel.updateMany(
+        { userId, audience, familyId, revokedAt: { $exists: false } },
+        { $set: { revokedAt: new Date(), revokedReason: 'DEVICE_REVOKED' } },
+      );
+      return res.modifiedCount > 0;
     },
 
     /** Ends the session the refresh token belongs to (this device only). */

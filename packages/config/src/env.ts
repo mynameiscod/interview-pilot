@@ -350,6 +350,41 @@ const apiObjectSchema = baseEnvSchema.extend({
   JWT_ACCESS_TTL_SEC: z.coerce.number().int().min(60).max(3600).default(600),
   REFRESH_TTL_CANDIDATE_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   REFRESH_TTL_ADMIN_HOURS: z.coerce.number().int().min(1).max(72).default(12),
+  /**
+   * Absolute session lifetime: a signed-in device must sign in again this long
+   * after its first sign-in, however often it refreshes.
+   */
+  SESSION_MAX_AGE_CANDIDATE_DAYS: z.coerce.number().int().min(1).max(365).default(90),
+  SESSION_MAX_AGE_ADMIN_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+
+  // --- Admin two-factor authentication -----------------------------------
+  /** Who must use an authenticator app: `super_admin` (default) or `all` admins. */
+  ADMIN_MFA_REQUIRED: z.enum(['super_admin', 'all']).default('super_admin'),
+  /** Issuer label shown in authenticator apps. */
+  ADMIN_MFA_ISSUER: z.string().trim().min(1).max(60).default('CareerPilot Interview Admin'),
+
+  // --- Data rights and input quotas ----------------------------------------
+  /** Days between an account deletion request and erasure (sign-in within it cancels). */
+  ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().min(0).max(30).default(7),
+  /** Job descriptions (paste, upload or link) a candidate may add per rolling 24 hours. */
+  INPUT_DAILY_LIMIT_JOBS: z.coerce.number().int().min(1).max(1000).default(40),
+  /** Resume uploads a candidate may make per rolling 24 hours. */
+  INPUT_DAILY_LIMIT_RESUMES: z.coerce.number().int().min(1).max(1000).default(20),
+
+  // --- Legal pages (served publicly by GET /legal) --------------------------
+  /** Grievance Officer (DPDP Act s.8(10)) shown on the legal pages; never hard-coded. */
+  GRIEVANCE_OFFICER_NAME: optionalString,
+  GRIEVANCE_OFFICER_EMAIL: optionalString.pipe(z.email().optional()),
+  GRIEVANCE_OFFICER_ADDRESS: optionalString,
+  /** Shows "Draft — pending legal review" on the legal pages until legal sign-off. */
+  LEGAL_DRAFT_BANNER: booleanString.default(true),
+  /** Date shown as "last updated" on the legal pages (YYYY-MM-DD). */
+  LEGAL_LAST_UPDATED: optionalString.pipe(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+      .optional(),
+  ),
   /** Leave unset to scope cookies to the API host only (recommended). */
   COOKIE_DOMAIN: optionalString,
 
@@ -480,6 +515,12 @@ export const workerEnvSchema = baseEnvSchema
       .int()
       .min(60_000)
       .default(15 * 60_000),
+    /** How often accounts past their deletion grace period are erased. */
+    WORKER_ACCOUNT_ERASURE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(60_000)
+      .default(60 * 60_000),
     /** Parallel evaluation stages (AI calls and PDF rendering). */
     WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */

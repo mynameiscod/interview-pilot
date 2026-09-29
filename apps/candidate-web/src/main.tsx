@@ -9,6 +9,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router';
 import { routes } from './app/routes';
 import { UnsupportedBrowser } from './components/UnsupportedBrowser';
 import { config } from './config';
+import { forgetOnSignOut } from './app/session';
 import { initI18n } from './i18n';
 import { browserDoNotTrack, fetchSender, initAnalytics, safeLocalStorage } from './lib/analytics';
 import { detectMissingFeatures } from './lib/browser-support';
@@ -47,6 +48,7 @@ async function bootstrap() {
   // is an httpOnly cookie the page cannot read.
   const manager = createSessionManager({ baseUrl: config.VITE_API_URL, audience: 'candidate' });
   const router = createBrowserRouter(routes);
+  forgetOnSignOut(manager, () => queryClient.clear());
 
   // Product analytics: route patterns and a few non-personal props only; off with Do Not Track.
   initAnalytics({

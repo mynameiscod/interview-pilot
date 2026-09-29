@@ -19,7 +19,8 @@ import type { ClientContext } from '../../lib/request-context.js';
 import type { AccountService } from './account.service.js';
 import { otpEmail, otpSms } from './messages.js';
 
-export type OtpPurpose = 'LOGIN' | 'LINK';
+/** REAUTH: a signed-in person proves it is them again (to their own contact) before a risky action. */
+export type OtpPurpose = 'LOGIN' | 'LINK' | 'REAUTH';
 
 export interface OtpServiceOptions {
   redis: Redis;
@@ -226,7 +227,10 @@ export function createOtpService(opts: OtpServiceOptions) {
         }
         throw await fail('not_found_or_used', invalid());
       }
-      if (purpose === 'LINK' && String(challenge.userId) !== input.userId) {
+      if (
+        (purpose === 'LINK' || purpose === 'REAUTH') &&
+        String(challenge.userId) !== input.userId
+      ) {
         throw await fail('wrong_user', invalid());
       }
       if (challenge.expiresAt.getTime() <= Date.now()) {

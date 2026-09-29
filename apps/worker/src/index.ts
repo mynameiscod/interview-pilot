@@ -94,6 +94,7 @@ async function main(): Promise<void> {
       }),
       intervalMs: env.WORKER_MEDIA_FILE_INTERVAL_MS,
     },
+    erasure: { storage, intervalMs: env.WORKER_ACCOUNT_ERASURE_INTERVAL_MS },
     analyticsRollupIntervalMs: env.WORKER_ANALYTICS_ROLLUP_INTERVAL_MS,
     payments: {
       gateway: integrations.payments,

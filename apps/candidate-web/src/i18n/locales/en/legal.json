@@ -1,0 +1,441 @@
+{
+  "terms": {
+    "title": "Terms of Use",
+    "summary": "These terms explain the rules for using CareerPilot Interview, what you can expect from us, and what we expect from you. Please read them before you use the service.",
+    "sections": [
+      {
+        "heading": "Who we are and accepting these terms",
+        "paragraphs": [
+          "CareerPilot Interview is an AI-powered interview practice service operated by CodeBegun in India. In these terms, we, us and our mean CodeBegun, and you means the person using the service.",
+          "By creating an account or using the service, you agree to these terms and to our Privacy Notice. If you do not agree, please do not use the service."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Who can use the service",
+        "paragraphs": [
+          "You must be at least 18 years old to create an account. The service is designed for adults preparing for jobs and is not directed at children.",
+          "If you are under 18, you may use the service only with verifiable consent from your parent or lawful guardian, as required by the Digital Personal Data Protection Act, 2023. If we learn that a child is using the service without such consent, we may close the account and delete the related data."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Your account and sign-in",
+        "paragraphs": [
+          "You can sign in with a one-time password (OTP) sent to your email or mobile number, or with your Google account. You are responsible for activity on your account."
+        ],
+        "points": [
+          "Give us accurate contact details and keep them up to date.",
+          "Never share your OTP with anyone. CodeBegun staff will never ask you for it.",
+          "Tell us promptly if you think someone else has accessed your account."
+        ]
+      },
+      {
+        "heading": "Using the service fairly",
+        "paragraphs": [
+          "We want the service to be useful and fair for everyone. When you use it, you agree not to:"
+        ],
+        "points": [
+          "Take an interview on behalf of someone else, or let someone else take your interview.",
+          "Use outside help, other AI tools or hidden assistance to cheat in an interview that is part of an organisation's campaign.",
+          "Upload resumes, recordings or other personal data of other people without their permission.",
+          "Upload content that is unlawful, abusive, misleading or that infringes someone else's rights.",
+          "Copy, scrape, reverse engineer or try to extract our questions, prompts, models or source code.",
+          "Interfere with the security or normal working of the service, or try to access data that is not yours."
+        ]
+      },
+      {
+        "heading": "AI feedback is guidance, not a guarantee",
+        "paragraphs": [
+          "Interviews, scores, reports and improvement plans are generated with the help of AI. They are meant to help you practise and improve. They are not a hiring decision, a certification or a promise of a job.",
+          "AI can make mistakes. Please use your own judgement, and tell us if something in a report looks wrong. The page How AI scoring works explains our approach in more detail."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Campaigns run by organisations",
+        "paragraphs": [
+          "Employers, colleges and other organisations can invite candidates to interviews through a campaign link. When you apply through a campaign link, the results of that campaign's interviews are shared with that organisation.",
+          "The organisation makes its own decisions about how it uses those results. CodeBegun does not make hiring or admission decisions for any organisation and is not responsible for their decisions."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Credits, payments and refunds",
+        "paragraphs": [
+          "Some features require interview credits, which you can buy inside the app."
+        ],
+        "points": [
+          "Prices are shown in Indian Rupees and include GST. A GST invoice is issued for every purchase.",
+          "Payments are processed by Razorpay. We do not see or store your full card details.",
+          "Refunds, credit validity and any other conditions are as described in the terms of the plan you buy.",
+          "Credits have no cash value and cannot be transferred to another account unless the plan terms say otherwise."
+        ]
+      },
+      {
+        "heading": "Your content and our permission to process it",
+        "paragraphs": [
+          "You keep ownership of your resume, job descriptions, answers, code and recordings. You give us permission to store, process and analyse this content only to provide the service to you, including sending it to our AI providers as described in the Privacy Notice.",
+          "If you create a proof link to share a report, anyone with the link can view that read-only report until you turn the link off."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Our intellectual property",
+        "paragraphs": [
+          "The service, including its software, design, question banks, rubrics and brand, belongs to CodeBegun or its licensors. You may use it for your personal preparation, but you may not copy, resell or redistribute it without our written permission."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Availability and changes",
+        "paragraphs": [
+          "We work to keep the service available and reliable, but we cannot promise that it will always be uninterrupted or error-free. We may need to pause it for maintenance, upgrades or reasons outside our control.",
+          "We may change features or update these terms from time to time. If a change is significant, we will tell you in the app or by email before it takes effect. Continuing to use the service after that means you accept the updated terms."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Limits on our liability",
+        "paragraphs": [
+          "The service is provided as it is. To the extent the law allows, CodeBegun is not liable for indirect or consequential losses, such as a missed job opportunity, arising from your use of the service or of AI-generated feedback.",
+          "Where we are liable, our total liability is limited to the amount you paid us in the 12 months before the claim. Nothing in these terms limits any rights you have under Indian law that cannot be limited by contract."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Suspension and termination",
+        "paragraphs": [
+          "We may suspend or close an account that misuses the service, breaks these terms, puts other users at risk or is required to be closed by law. Where appropriate, we will tell you the reason and give you a chance to respond. If you think a suspension is a mistake, you can raise a grievance.",
+          "You can stop using the service and request deletion of your account at any time from the Privacy page in the app."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Governing law and disputes",
+        "paragraphs": [
+          "These terms are governed by the laws of India. We encourage you to contact us first so that we can try to resolve any concern quickly. If a dispute cannot be resolved that way, it will be handled by the competent courts in India."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Contact us",
+        "paragraphs": [
+          "For questions about these terms or to raise a concern, please write to our Grievance Officer, {{officerName}}, at {{officerEmail}}, or by post to {{officerAddress}}."
+        ],
+        "points": []
+      }
+    ]
+  },
+  "privacy": {
+    "title": "Privacy Notice",
+    "summary": "This notice explains what personal data CareerPilot Interview collects, why we use it, who we share it with, how long we keep it, and the rights you have under the Digital Personal Data Protection Act, 2023.",
+    "sections": [
+      {
+        "heading": "Who we are",
+        "paragraphs": [
+          "CareerPilot Interview is operated by CodeBegun in India. For the personal data described in this notice, CodeBegun is the Data Fiduciary, which means we decide why and how your data is processed.",
+          "When you take part in a campaign run by an employer or college, that organisation decides how it uses the results shared with it and is responsible for that use."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Data we collect",
+        "paragraphs": [
+          "We collect only what we need to run the service. Depending on how you use it, this includes:"
+        ],
+        "points": [
+          "Account and contact details: your name, email address, mobile number and Google sign-in details if you use Google.",
+          "Profile details you add, such as your target role, experience and preferred language.",
+          "Your resume and the job descriptions you paste, upload or link to.",
+          "Your interview answers and transcripts.",
+          "Audio and video recordings, only if you separately agree to recording.",
+          "Your answers to coding questions and the results of running them.",
+          "Evaluation reports, scores, evidence and improvement plans generated for you.",
+          "Session integrity observations, such as switching tabs or the window losing focus.",
+          "Purchase details such as plan, amount, GST invoice and payment status. Payments are handled by Razorpay, and we do not store your card numbers.",
+          "Device and log data, such as browser type, time of access and error logs.",
+          "IP addresses, which we store in hashed form for security and abuse prevention."
+        ]
+      },
+      {
+        "heading": "Why we use your data",
+        "paragraphs": [
+          "We process your personal data on the basis of your consent, which you give when you sign up and when you turn on optional features such as recording. In limited cases we rely on legitimate uses permitted under section 7 of the DPDP Act, for example to meet legal obligations such as tax record-keeping.",
+          "We use your data to:"
+        ],
+        "points": [
+          "Create and secure your account and sign you in.",
+          "Run mock interviews tailored to your resume and the job description.",
+          "Generate evaluation reports, scores and improvement plans.",
+          "Share campaign results with the organisation whose campaign you joined.",
+          "Process payments, issue GST invoices and keep records required by law.",
+          "Keep the service safe, prevent misuse and fix problems."
+        ]
+      },
+      {
+        "heading": "AI processing by third-party providers",
+        "paragraphs": [
+          "To run interviews and produce reports, we send relevant parts of your data, such as your answers, transcripts, resume and job description, to specialised AI providers. They act as our processors and handle the data only to deliver the service to us.",
+          "Where a provider offers it, we choose settings that do not allow your data to be used to train their models.",
+          "Our current AI providers are:"
+        ],
+        "points": [
+          "OpenAI, for language models.",
+          "Anthropic, for language models.",
+          "Google (Gemini), for language models.",
+          "Deepgram, for converting speech to text.",
+          "ElevenLabs, for converting text to speech."
+        ]
+      },
+      {
+        "heading": "Transfer of data outside India",
+        "paragraphs": [
+          "Some of our providers may process your data on servers outside India. Such transfers are permitted under section 16 of the DPDP Act, unless the Government of India restricts transfers to a particular country by notification. We will follow any such restriction."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Who we share data with",
+        "paragraphs": [
+          "We share personal data only when it is needed to provide the service:",
+          "We do not sell your personal data, and we do not share it with advertisers."
+        ],
+        "points": [
+          "Organisations running a campaign, but only for campaigns you choose to join.",
+          "Our payment processor, Razorpay, to handle purchases.",
+          "Email and SMS providers, to send OTPs and service messages.",
+          "The AI providers listed above, and authorities where the law requires it."
+        ]
+      },
+      {
+        "heading": "How long we keep data",
+        "paragraphs": [
+          "We keep personal data only as long as it is needed for the purpose it was collected for, or as the law requires."
+        ],
+        "points": [
+          "Audio and video recordings are kept for {{recordingRetentionDays}} days by default and then deleted automatically.",
+          "Account data, resumes, transcripts and reports are kept until you delete them or delete your account.",
+          "Purchase and credit records are kept for as long as Indian tax law requires, typically 8 years. After you delete your account, these records are pseudonymised so they no longer directly identify you.",
+          "Security and audit logs are kept for a limited period to protect the service and investigate incidents.",
+          "Data shared with a campaign organisation may also be kept by that organisation under its own policies."
+        ]
+      },
+      {
+        "heading": "Your rights",
+        "paragraphs": [
+          "Under the DPDP Act you have the following rights. You can use most of them directly from the Privacy page in the app at /app/privacy.",
+          "We will not ask you for more information than we need to confirm your identity and act on your request."
+        ],
+        "points": [
+          "Access: see a summary of your data and download a copy of it.",
+          "Correction: update or correct inaccurate or incomplete data.",
+          "Erasure: ask us to delete your data or your account.",
+          "Withdraw consent: for example, withdraw recording consent. This does not affect processing already done, but some features may stop working.",
+          "Nominate: name another person to exercise your rights if you die or become unable to do so.",
+          "Grievance: raise a complaint with our Grievance Officer and, if needed, with the Data Protection Board of India."
+        ]
+      },
+      {
+        "heading": "Deleting your account",
+        "paragraphs": [
+          "When you request account deletion, your account is locked immediately. After {{deletionGraceDays}} days, your personal data is permanently erased, except records we must keep by law, which are pseudonymised.",
+          "If you change your mind, simply sign in again within {{deletionGraceDays}} days and the deletion is cancelled."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Children",
+        "paragraphs": [
+          "The service is meant for adults and is not directed at children. Users must be 18 or older. Anyone under 18 may use the service only with verifiable consent from a parent or lawful guardian, as required by section 9 of the DPDP Act. We do not track children or show them targeted advertising."
+        ],
+        "points": []
+      },
+      {
+        "heading": "How we protect your data",
+        "paragraphs": [
+          "We use reasonable security safeguards to protect your personal data, including:"
+        ],
+        "points": [
+          "Encryption of data in transit.",
+          "Encrypted storage of secrets such as keys and credentials.",
+          "Access controls so that only authorised staff can reach personal data, and only when needed.",
+          "Audit logs of sensitive actions."
+        ]
+      },
+      {
+        "heading": "If there is a data breach",
+        "paragraphs": [
+          "If a personal data breach occurs, we will inform the Data Protection Board of India and the affected users as required by law, explaining what happened, the likely impact and the steps we are taking."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Cookies and local storage",
+        "paragraphs": [
+          "We use only one essential cookie: a secure, httpOnly session cookie that keeps you signed in. The app also saves small preferences, such as your language, in your browser's local storage.",
+          "We do not use advertising or cross-site tracking cookies."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Changes to this notice",
+        "paragraphs": [
+          "We may update this notice when our service or the law changes. If a change is significant, we will tell you in the app or by email, and where needed we will ask for your consent again."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Grievance Officer and the Data Protection Board",
+        "paragraphs": [
+          "If you have a question or complaint about how your personal data is handled, please contact our Grievance Officer:",
+          "If you are not satisfied with our response, you can escalate your complaint to the Data Protection Board of India."
+        ],
+        "points": [
+          "Name: {{officerName}}",
+          "Email: {{officerEmail}}",
+          "Address: {{officerAddress}}"
+        ]
+      }
+    ]
+  },
+  "grievance": {
+    "title": "Grievance Redressal",
+    "summary": "If something is not right, we want to hear about it. This page explains how to raise a grievance, what happens next, and where you can escalate if you are not satisfied.",
+    "sections": [
+      {
+        "heading": "How to raise a grievance",
+        "paragraphs": [
+          "Write to our Grievance Officer, {{officerName}}, at {{officerEmail}}. You can also write by post to {{officerAddress}}. Please include:"
+        ],
+        "points": [
+          "The email address or mobile number linked to your account.",
+          "A clear description of the problem, with dates and any report or session it relates to.",
+          "What you would like us to do to resolve it.",
+          "Never include your password or OTP. We will never ask for them."
+        ]
+      },
+      {
+        "heading": "What you can raise",
+        "paragraphs": ["You can raise any concern about the service, including:"],
+        "points": [
+          "How your personal data is collected, used or shared.",
+          "Requests about your data rights, such as access, correction, erasure or withdrawing consent.",
+          "Disagreement with an AI score or report.",
+          "Payments, credits, invoices or refunds.",
+          "Suspension or closure of your account.",
+          "Any other problem with the service."
+        ]
+      },
+      {
+        "heading": "What happens next",
+        "paragraphs": [
+          "We will acknowledge your grievance and look into it. We aim to respond as quickly as possible, usually much sooner than the legal maximum. In every case we will respond within a reasonable period not exceeding 90 days, as required by the Digital Personal Data Protection Rules, 2025.",
+          "If we need more information to understand or verify your request, we will contact you. Our response will explain what we found and what action we have taken."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Campaign results shared with organisations",
+        "paragraphs": [
+          "If you joined an employer's or college's campaign, your results were shared with that organisation. We can help with how our service handled your data, but the organisation is also responsible for what it does with the results, including its hiring or admission decisions. You may also contact the organisation directly."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Escalating to the Data Protection Board of India",
+        "paragraphs": [
+          "If you are not satisfied with our response, or if we do not respond within the required time, you can file a complaint with the Data Protection Board of India under the DPDP Act.",
+          "The Board generally expects you to first use our grievance process, so please contact us before escalating."
+        ],
+        "points": []
+      }
+    ]
+  },
+  "scoring": {
+    "title": "How AI scoring works",
+    "summary": "Your interview reports are generated by AI using a rubric and evidence from your own answers. This page explains what is scored, what is never scored, how humans review results, and the limits you should keep in mind.",
+    "sections": [
+      {
+        "heading": "Overview",
+        "paragraphs": [
+          "After each interview, AI models read your answers and produce a report with scores, the evidence behind them and a plan to help you improve.",
+          "The aim is to give you honest, specific and useful practice feedback. The report is guidance, not a hiring decision."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Scores are based on evidence",
+        "paragraphs": [
+          "Each interview is built from a role blueprint that lists the competencies that matter for the job. Each competency is assessed against a written rubric that describes what weak, average and strong answers look like.",
+          "Every score is linked to evidence from your own answers, so you can see why you got it."
+        ],
+        "points": [
+          "Quotes or short extracts from what you said or wrote.",
+          "The competency and rubric level each piece of evidence supports.",
+          "Specific suggestions for what a stronger answer would include."
+        ]
+      },
+      {
+        "heading": "What is scored",
+        "paragraphs": ["Depending on the interview type, the report looks at:"],
+        "points": [
+          "The content of your answers and whether they address the question.",
+          "The structure and clarity of your answers.",
+          "Relevance to the role and to the job description.",
+          "Technical accuracy of what you explain.",
+          "Communication, meaning how clearly you express your ideas, not your accent.",
+          "For coding questions, correctness measured by test cases, along with code quality."
+        ]
+      },
+      {
+        "heading": "What is never scored",
+        "paragraphs": [
+          "Some things are deliberately kept out of scoring so that results stay fair.",
+          "Integrity observations may appear in a report for context, but they never change your score."
+        ],
+        "points": [
+          "Integrity observations, such as switching tabs or the window losing focus.",
+          "Your accent, appearance, background, gender, caste, religion or region. These are not inputs to scoring.",
+          "Video. Even if you record video, it is not used to calculate scores."
+        ]
+      },
+      {
+        "heading": "Human review",
+        "paragraphs": [
+          "Trained CodeBegun reviewers may check AI scores and revise them where they find a mistake. Any revision is recorded along with the reason.",
+          "If you think a score is wrong, you can give feedback on the report or raise a grievance. Your feedback also helps us improve the scoring over time."
+        ],
+        "points": []
+      },
+      {
+        "heading": "Limitations",
+        "paragraphs": ["AI scoring is useful but not perfect. Please keep these limits in mind:"],
+        "points": [
+          "AI can misunderstand an answer, especially if it is very short or unusual.",
+          "Speech-to-text can make errors, particularly with background noise or when you switch between English, Hindi and Telugu.",
+          "A score reflects one practice session, not your full ability.",
+          "Scores are practice guidance and are not a hiring decision."
+        ]
+      },
+      {
+        "heading": "Getting the most accurate result",
+        "paragraphs": ["A few simple steps can make your report more accurate:"],
+        "points": [
+          "Use a quiet place and a good microphone for voice interviews.",
+          "Speak clearly and at a steady pace.",
+          "Answer fully and give concrete examples from your own experience.",
+          "Upload an up-to-date resume and the real job description.",
+          "Check your transcript and tell us if speech-to-text got something wrong."
+        ]
+      },
+      {
+        "heading": "Your data",
+        "paragraphs": [
+          "Your answers, transcripts and reports are handled as described in our Privacy Notice, including which AI providers process them, how long they are kept and how you can download or delete them."
+        ],
+        "points": []
+      }
+    ]
+  }
+}

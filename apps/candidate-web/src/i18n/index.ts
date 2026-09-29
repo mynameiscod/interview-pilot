@@ -6,26 +6,41 @@ import en from './locales/en/common.json';
 
 export const SUPPORTED_LOCALES = UiLocale.options;
 
+type Bundle = () => Promise<{ default: ResourceKey }>;
+
 /**
- * English ships in the main bundle (it is the default and the fallback); the
- * other languages are separate chunks fetched only when chosen, which keeps
- * ~250 KB of Hindi/Telugu copy out of the first load.
+ * English UI strings ship in the main bundle (they are the default and the
+ * fallback); the other languages are separate chunks fetched only when chosen,
+ * which keeps ~250 KB of Hindi/Telugu copy out of the first load.
  */
-export const localeLoaders: Record<UiLocale, () => Promise<{ default: ResourceKey }>> = {
+export const localeLoaders: Record<UiLocale, Bundle> = {
   en: async () => ({ default: en }),
   hi: () => import('./locales/hi/common.json'),
   te: () => import('./locales/te/common.json'),
 };
 
-/** i18next backend that resolves `common` bundles through `localeLoaders`. */
+/** The long legal texts are only needed on the legal pages, in every language. */
+export const legalLoaders: Record<UiLocale, Bundle> = {
+  en: () => import('./locales/en/legal.json'),
+  hi: () => import('./locales/hi/legal.json'),
+  te: () => import('./locales/te/legal.json'),
+};
+
+const namespaceLoaders: Record<string, Record<UiLocale, Bundle>> = {
+  common: localeLoaders,
+  legal: legalLoaders,
+};
+
+/** i18next backend that resolves bundles through the loaders above. */
 export const lazyLocaleBackend: BackendModule = {
   type: 'backend',
   init: () => undefined,
-  read(lng, _ns, callback) {
+  read(lng, ns, callback) {
     const parsed = UiLocale.safeParse(lng);
-    if (!parsed.success) return callback(null, {});
+    const loaders = namespaceLoaders[ns];
+    if (!parsed.success || !loaders) return callback(null, {});
     // A failed chunk load (e.g. offline) leaves the English fallback in place.
-    localeLoaders[parsed.data]().then(
+    loaders[parsed.data]().then(
       (mod) => callback(null, mod.default),
       (err: Error) => callback(err, false),
     );
@@ -33,9 +48,11 @@ export const lazyLocaleBackend: BackendModule = {
 };
 
 /**
- * UI strings live only in locales/<lng>/common.json. Adding a language means
- * adding a JSON file and registering it in `localeLoaders` and in `UiLocale`;
- * no component changes. Te/Hi copy requires native-speaker review before launch.
+ * UI strings live only in locales/<lng>/common.json; the long legal texts
+ * (Terms, Privacy Notice, Grievance, How AI scoring works) in legal.json. Adding
+ * a language means adding the JSON files and registering them in the loaders
+ * above and in `UiLocale`; no component changes. Te/Hi copy requires
+ * native-speaker review before launch.
  */
 export async function initI18n(opts: { detect?: boolean; lng?: UiLocale } = {}) {
   const instance = i18n.createInstance();
@@ -44,7 +61,7 @@ export async function initI18n(opts: { detect?: boolean; lng?: UiLocale } = {}) 
     .use(lazyLocaleBackend)
     .use(initReactI18next)
     .init({
-      // Bundled English plus the backend for everything else.
+      // Bundled English UI strings plus the backend for everything else.
       resources: { en: { common: en } },
       partialBundledLanguages: true,
       lng: opts.lng,

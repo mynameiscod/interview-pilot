@@ -30,6 +30,9 @@ import { createGoogleVerifier } from './modules/auth/google-verifier.js';
 import { createOtpService } from './modules/auth/otp.service.js';
 import { createPasswordService } from './modules/auth/password.service.js';
 import { createSessionService } from './modules/auth/session.service.js';
+import { createMfaService } from './modules/auth/mfa.service.js';
+import { createCandidateAdminService } from './modules/admin/candidates.service.js';
+import { createPrivacyService } from './modules/users/privacy.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
@@ -152,6 +155,10 @@ export function buildContainer(opts: ContainerOptions) {
       candidate: env.REFRESH_TTL_CANDIDATE_DAYS * 24 * 3600 * 1000,
       admin: env.REFRESH_TTL_ADMIN_HOURS * 3600 * 1000,
     },
+    maxAgeMs: {
+      candidate: env.SESSION_MAX_AGE_CANDIDATE_DAYS * 24 * 3600 * 1000,
+      admin: env.SESSION_MAX_AGE_ADMIN_DAYS * 24 * 3600 * 1000,
+    },
   });
   const otp = createOtpService({
     redis,
@@ -184,7 +191,13 @@ export function buildContainer(opts: ContainerOptions) {
   const aiAdmin = createAiAdminService({ ai, audit, logger });
   const storage = integrations.storage;
   const jobs = opts.overrides?.jobs ?? jobQueues(opts.queueRedis);
-  const inputs = createInputsService({ storage, jobs, audit, logger });
+  const inputs = createInputsService({
+    storage,
+    jobs,
+    audit,
+    logger,
+    dailyLimits: { jobs: env.INPUT_DAILY_LIMIT_JOBS, resumes: env.INPUT_DAILY_LIMIT_RESUMES },
+  });
   const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
   // Flag and setting changes reach every API process over Redis pub/sub.
   const opsChanges = createOpsChangeBus({ redis, logger });
@@ -203,6 +216,23 @@ export function buildContainer(opts: ContainerOptions) {
     // A separate key per purpose, derived from the server secret.
     signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
   });
+  const mfa = createMfaService({
+    redis,
+    secrets: ai.secrets,
+    audit,
+    hashSecret: env.OTP_HMAC_SECRET,
+    issuer: env.ADMIN_MFA_ISSUER,
+    policy: env.ADMIN_MFA_REQUIRED,
+  });
+  const privacy = createPrivacyService({
+    audit,
+    otp,
+    sessions,
+    userState,
+    playbackUrl: (asset) => media.playbackUrl(asset),
+    graceDays: env.ACCOUNT_DELETION_GRACE_DAYS,
+  });
+  const candidatesAdmin = createCandidateAdminService({ audit, sessions, userState });
   const judge = integrations.judge;
   // `live` is created below; submitting code answers through it.
   let liveRef: { answer: LiveAnswer } | null = null;
@@ -283,6 +313,9 @@ export function buildContainer(opts: ContainerOptions) {
     sessions,
     otp,
     passwords,
+    mfa,
+    privacy,
+    candidatesAdmin,
     google,
     adminUsers,
     ai,

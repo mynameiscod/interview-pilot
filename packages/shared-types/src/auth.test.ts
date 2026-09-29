@@ -25,7 +25,15 @@ describe('auth and profile contracts', () => {
       preferredInterviewLanguage: 'auto',
     });
     expect(parsed.displayName).toBe('Asha');
-    expect(parsed.productUpdatesOptIn).toBe(false);
+    // Omitted means "unchanged": a partial update must not opt the person out.
+    expect(parsed.productUpdatesOptIn).toBeUndefined();
+    expect(
+      UpdateProfileBody.parse({
+        displayName: 'A',
+        preferredInterviewLanguage: 'en',
+        productUpdatesOptIn: true,
+      }).productUpdatesOptIn,
+    ).toBe(true);
     expect(
       UpdateProfileBody.safeParse({ displayName: '   ', preferredInterviewLanguage: 'en' }).success,
     ).toBe(false);

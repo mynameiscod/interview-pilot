@@ -35,6 +35,12 @@ const NAV_ITEMS: NavItem[] = [
     permission: 'analytics.read',
     group: 'analytics',
   },
+  {
+    to: '/candidates',
+    key: 'nav.candidates',
+    icon: 'bi-person-lines-fill',
+    permission: 'candidates.read',
+  },
   { to: '/admins', key: 'nav.admins', icon: 'bi-people', permission: 'admin_users.read' },
   { to: '/ai', key: 'nav.ai', icon: 'bi-cpu', permission: 'ai.read' },
   { to: '/ai-usage', key: 'nav.aiUsage', icon: 'bi-graph-up', permission: 'ai_usage.read' },

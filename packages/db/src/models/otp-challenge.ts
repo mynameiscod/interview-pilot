@@ -3,12 +3,13 @@ import mongoose, { Schema, type InferSchemaType, type Model } from 'mongoose';
 
 const otpChallengeSchema = new Schema(
   {
-    purpose: { type: String, enum: ['LOGIN', 'LINK'], required: true },
+    /** REAUTH: a signed-in person proving it is them again (e.g. before deleting the account). */
+    purpose: { type: String, enum: ['LOGIN', 'LINK', 'REAUTH'], required: true },
     audience: { type: String, enum: SessionAudience.options, required: true },
     channel: { type: String, enum: OtpChannel.options, required: true },
     /** Normalized email or E.164 number being proven. */
     destination: { type: String, required: true },
-    /** For LINK: the signed-in user the identity will be attached to. */
+    /** For LINK and REAUTH: the signed-in user the identity will be attached to. */
     userId: { type: Schema.Types.ObjectId, ref: 'User' },
     /** HMAC of challengeId:code. The code itself is never stored. */
     codeHash: { type: String },

@@ -25,6 +25,7 @@ import {
 } from './modules/payments/payments.routes.js';
 import { feedbackRouter, reportsRouter } from './modules/reports/reports.routes.js';
 import { usersRouter } from './modules/users/users.routes.js';
+import { legalRouter } from './modules/users/legal.routes.js';
 import { voiceInterviewRouter, voiceRouter } from './modules/voice/voice.routes.js';
 import { codingInterviewRouter } from './modules/coding/coding.routes.js';
 import {
@@ -126,6 +127,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/auth', authRouter('candidate', c));
   v1.use('/users', userConsentsRouter(c));
   v1.use('/users', usersRouter(c));
+  v1.use('/legal', legalRouter(env));
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
   v1.use('/interviews', voiceInterviewRouter(c));

@@ -55,8 +55,10 @@ export function AuthProvider<U>({ manager, loadUser, children }: AuthProviderPro
 
   useEffect(() => {
     let active = true;
-    const unsubscribe = manager.subscribe((session) => {
+    const unsubscribe = manager.subscribe((session, reason) => {
       if (!session && active) {
+        // Signing out in another tab is still the person's own choice (not an expiry).
+        if (reason === 'remote-sign-out') setSignedOutByUser(true);
         setUserState(null);
         setStatus('signedOut');
       }

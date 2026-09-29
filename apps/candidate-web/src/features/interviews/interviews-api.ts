@@ -44,7 +44,10 @@ function interviewsApi(api: ApiClient) {
       }
       return api.post<JobTargetSummary>('/jobs/upload', form);
     },
+    listJobTargets: () => api.get<JobTargetSummary[]>('/jobs'),
     getJobTarget: (id: string) => api.get<JobTargetSummary>(`/jobs/${encodeURIComponent(id)}`),
+    /** Deletes a job description and its stored file (past interviews keep its title). */
+    deleteJobTarget: (id: string) => api.delete<void>(`/jobs/${encodeURIComponent(id)}`),
     /** Replaces the company and role of an existing job target (omitted fields are cleared). */
     updateJobTarget: (id: string, body: UpdateJobTargetBody) =>
       api.patch<JobTargetSummary>(`/jobs/${encodeURIComponent(id)}`, body),
@@ -94,6 +97,7 @@ export function useInterviewsApi(): InterviewsApi {
 export const queryKeys = {
   resumes: ['resumes'] as const,
   resumeStatus: (id: string) => ['resumes', id, 'status'] as const,
+  jobTargets: ['jobs'] as const,
   jobTarget: (id: string) => ['jobs', id] as const,
   jobStatus: (id: string) => ['jobs', id, 'status'] as const,
   library: (kind: string, q: string) => ['library', kind, q] as const,
@@ -105,6 +109,12 @@ export const queryKeys = {
 export function useResumes() {
   const api = useInterviewsApi();
   return useQuery({ queryKey: queryKeys.resumes, queryFn: api.listResumes });
+}
+
+/** The candidate's saved job descriptions (newest first). */
+export function useJobTargets() {
+  const api = useInterviewsApi();
+  return useQuery({ queryKey: queryKeys.jobTargets, queryFn: api.listJobTargets });
 }
 
 /** Polls a resume's extraction until it is READY or FAILED. */

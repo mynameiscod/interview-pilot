@@ -1,5 +1,23 @@
 import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  ActiveSession,
+  AdminSignInResponse,
+  CandidateDetail,
+  CandidatePage,
+  CandidateSearchQuery,
+  DataExportBundle,
+  DeleteAccountBody,
+  DeleteAccountResponse,
+  LegalInfo,
+  MfaCodeBody,
+  MfaEnrollment,
+  MfaRecoveryCodes,
+  MfaSessionResponse,
+  MfaStatus,
+  MfaVerifyBody,
+  PasswordLoginBody,
+  ReauthOtpRequestBody,
+  SuspendCandidateBody,
   IntegrationSummary,
   IntegrationTestResult,
   TestIntegrationBody,
@@ -336,7 +354,73 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
       response: null,
       errors: [401, 403],
     });
+    route('get', `${prefix}/sessions`, {
+      tag,
+      summary: 'Signed-in devices for this app',
+      auth: 'bearer',
+      response: z.array(ActiveSession),
+      errors: [401, 403],
+    });
+    route('delete', `${prefix}/sessions/{id}`, {
+      tag,
+      summary: 'Sign one device out (it can no longer refresh)',
+      auth: 'bearer',
+      response: null,
+      errors: [401, 403, 404],
+    });
   }
+  route('post', '/admin/auth/password/login', {
+    tag: 'Admin auth',
+    summary: 'Email and password; answers a session or a second-factor challenge',
+    body: PasswordLoginBody,
+    response: AdminSignInResponse,
+    errors: [400, 401, 403, 429],
+  });
+  route('post', '/admin/auth/mfa/verify', {
+    tag: 'Admin auth',
+    summary: 'Second sign-in step: authenticator or recovery code (sets the refresh cookie)',
+    body: MfaVerifyBody,
+    response: MfaSessionResponse,
+    errors: [400, 401, 403, 429],
+  });
+  route('get', '/admin/auth/mfa', {
+    tag: 'Admin auth',
+    summary: 'Two-factor status for the signed-in admin',
+    auth: 'bearer',
+    response: MfaStatus,
+    errors: [401, 403],
+  });
+  route('post', '/admin/auth/mfa/enroll', {
+    tag: 'Admin auth',
+    summary: 'Start setting up an authenticator app (secret and otpauth URI)',
+    auth: 'bearer',
+    response: MfaEnrollment,
+    errors: [401, 403, 409, 429],
+  });
+  route('post', '/admin/auth/mfa/enroll/confirm', {
+    tag: 'Admin auth',
+    summary: 'Confirm set-up with a code; returns recovery codes (shown once)',
+    auth: 'bearer',
+    body: MfaCodeBody,
+    response: MfaRecoveryCodes,
+    errors: [400, 401, 403, 429],
+  });
+  route('post', '/admin/auth/mfa/recovery-codes', {
+    tag: 'Admin auth',
+    summary: 'Replace the recovery codes (needs a current code)',
+    auth: 'bearer',
+    body: MfaCodeBody,
+    response: MfaRecoveryCodes,
+    errors: [400, 401, 403, 409, 429],
+  });
+  route('post', '/admin/auth/mfa/disable', {
+    tag: 'Admin auth',
+    summary: 'Turn two-factor off (not allowed when required for the role)',
+    auth: 'bearer',
+    body: MfaCodeBody,
+    response: null,
+    errors: [400, 401, 403, 429],
+  });
   route('post', '/auth/link/otp/request', {
     tag: 'Candidate auth',
     summary: 'Send a code to an email/mobile to link to the signed-in account',
@@ -379,6 +463,37 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: MeResponse,
     errors: [400, 401, 403],
   });
+  route('get', '/legal', {
+    tag: 'Users',
+    summary: 'Public details for the legal pages (grievance officer, retention periods)',
+    response: LegalInfo,
+    errors: [],
+  });
+  route('get', '/users/me/export', {
+    tag: 'Users',
+    summary: 'Download a copy of my data (DPDP right of access)',
+    auth: 'bearer',
+    response: DataExportBundle,
+    errors: [401, 403, 429],
+  });
+  route('post', '/users/me/reauth/otp', {
+    tag: 'Users',
+    summary: 'Send a re-verification code to my own email or mobile',
+    auth: 'bearer',
+    body: ReauthOtpRequestBody,
+    response: OtpRequestResponse,
+    status: 202,
+    errors: [400, 401, 403, 429, 503],
+  });
+  route('delete', '/users/me', {
+    tag: 'Users',
+    summary: 'Delete my account: locked now, erased after the grace period (sign-in cancels)',
+    auth: 'bearer',
+    body: DeleteAccountBody,
+    response: DeleteAccountResponse,
+    status: 202,
+    errors: [400, 401, 403, 409, 429],
+  });
 
   // ---- Admin -------------------------------------------------------------------
   route('get', '/admin/me', {
@@ -417,6 +532,37 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Remove all admin roles and end admin sessions (admin_users.manage)',
     auth: 'bearer',
     body: RevokeAdminAccessBody,
+    response: null,
+    errors: [400, 401, 403, 404, 409],
+  });
+  route('get', '/admin/candidates', {
+    tag: 'Admin',
+    summary: 'Search candidates by email, mobile or name (candidates.read)',
+    auth: 'bearer',
+    query: CandidateSearchQuery,
+    response: CandidatePage,
+    errors: [400, 401, 403],
+  });
+  route('get', '/admin/candidates/{id}', {
+    tag: 'Admin',
+    summary: 'A candidate: profile, credits, interviews, purchases, consents (candidates.read)',
+    auth: 'bearer',
+    response: CandidateDetail,
+    errors: [401, 403, 404],
+  });
+  route('post', '/admin/candidates/{id}/suspend', {
+    tag: 'Admin',
+    summary: 'Suspend a candidate and end their sessions (candidates.manage)',
+    auth: 'bearer',
+    body: SuspendCandidateBody,
+    response: null,
+    errors: [400, 401, 403, 404, 409],
+  });
+  route('post', '/admin/candidates/{id}/reinstate', {
+    tag: 'Admin',
+    summary: 'Lift a suspension (candidates.manage)',
+    auth: 'bearer',
+    body: SuspendCandidateBody,
     response: null,
     errors: [400, 401, 403, 404, 409],
   });
@@ -605,6 +751,11 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Set the company and role of a job target (omitted fields are cleared)',
     body: UpdateJobTargetBody,
     response: JobTargetSummary,
+  });
+  candidate('delete', '/jobs/{id}', {
+    tag: 'Job targets',
+    summary: 'Delete a job description and its file (kept as a title for past interviews)',
+    response: null,
   });
   candidate('get', '/jobs/{id}/status', {
     tag: 'Job targets',

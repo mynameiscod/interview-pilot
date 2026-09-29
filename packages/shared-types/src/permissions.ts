@@ -21,6 +21,8 @@ export const Permission = z.enum([
   /** Download the audit log as CSV (SUPER_ADMIN only; each export is audited). */
   'audit.export',
   'candidates.read',
+  /** Suspend and reinstate candidate accounts. */
+  'candidates.manage',
   // AI provider layer (Phase 2)
   'ai.read',
   'ai.manage',
@@ -61,6 +63,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'admin_users.read',
     'audit.read',
     'candidates.read',
+    'candidates.manage',
     'ai.read',
     'ai_usage.read',
     'prompts.read',

@@ -38,6 +38,14 @@ export function errorMessage(t: TFunction, err: unknown): string {
       return t('errors.identityInUse');
     case 'ACCOUNT_SUSPENDED':
       return t('errors.accountSuspended');
+    case 'ACCOUNT_DELETION_PENDING':
+      return t('errors.deletionPending');
+    case 'QUOTA_EXCEEDED':
+      return t('errors.quotaExceeded');
+    case 'MFA_INVALID':
+      return t('errors.mfaInvalid');
+    case 'MFA_EXPIRED':
+      return t('errors.mfaExpired');
     case 'VALIDATION_FAILED':
       return t('errors.validation');
     case 'UNAUTHENTICATED':

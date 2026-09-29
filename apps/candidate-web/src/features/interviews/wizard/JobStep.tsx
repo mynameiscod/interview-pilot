@@ -6,6 +6,7 @@ import { ExtractionStatus } from '../components/ExtractionStatus';
 import { FileDrop } from '../components/FileDrop';
 import { useInterviewsApi, useJobStatus } from '../interviews-api';
 import { inputErrorMessage } from '../messages';
+import { SavedJobs } from './SavedJobs';
 import { StepActions } from './StepActions';
 import type { JdTab, StepProps } from './wizard-state';
 
@@ -271,6 +272,8 @@ export function JobStep({ state, update, onBack, onNext }: StepProps) {
           {error}
         </div>
       )}
+
+      <SavedJobs update={update} />
 
       <StepActions
         onBack={onBack}

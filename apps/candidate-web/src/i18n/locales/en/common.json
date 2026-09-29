@@ -26,7 +26,8 @@
     "pricing": "Pricing",
     "buyCredits": "Buy credits",
     "purchases": "Purchases",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "privacy": "Privacy & data"
   },
   "landing": {
     "hero": {
@@ -134,7 +135,8 @@
     "changeDestination": "Use a different email or number",
     "emailUnavailableTitle": "Sign-in is temporarily unavailable",
     "emailUnavailableBody": "We cannot send sign-in codes by email right now. Please try again later.",
-    "emailUnavailableGoogle": "You can still sign in with Google below."
+    "emailUnavailableGoogle": "You can still sign in with Google below.",
+    "agreement": "By continuing, you agree to our <terms>Terms of Use</terms> and confirm you have read our <privacy>Privacy Notice</privacy>."
   },
   "errors": {
     "generic": "Something went wrong. Please try again.",
@@ -156,7 +158,9 @@
     "invalidMobile": "Enter a valid mobile number.",
     "notConfigured": "This service is not set up yet. Please try again later.",
     "invalidCredentials": "The email or password is incorrect.",
-    "accountLocked": "Too many attempts. Please wait 15 minutes and try again."
+    "accountLocked": "Too many attempts. Please wait 15 minutes and try again.",
+    "deletionPending": "This account is scheduled for deletion. Sign in on the candidate site to cancel it.",
+    "quotaExceeded": "You have reached today's limit. Please try again tomorrow."
   },
   "onboarding": {
     "title": "Tell us a little about you",
@@ -253,10 +257,25 @@
     "security": "Security",
     "signOutEverywhereHint": "Ends your session on every phone and computer, including this one.",
     "signOutEverywhere": "Sign out of all devices",
-    "confirmSignOutEverywhere": "Yes, sign out everywhere"
+    "confirmSignOutEverywhere": "Yes, sign out everywhere",
+    "devicesTitle": "Signed-in devices",
+    "devicesHint": "Sign out a phone or computer you no longer use.",
+    "thisDevice": "This device",
+    "unknownDevice": "Unknown browser",
+    "deviceMeta": "Signed in {{signedIn}} · last active {{active}}",
+    "signOutDevice": "Sign out",
+    "signOutDeviceNamed": "Sign out {{name}}",
+    "devicesError": "We could not load your devices.",
+    "deviceSignedOut": "That device has been signed out.",
+    "privacyLink": "Download your data or delete your account"
   },
   "footer": {
-    "copyright": "© {{year}} CodeBegun"
+    "copyright": "© {{year}} CodeBegun",
+    "legalNavigation": "Legal",
+    "terms": "Terms of Use",
+    "privacy": "Privacy Notice",
+    "grievance": "Grievance redressal",
+    "scoring": "How AI scoring works"
   },
   "notFound": {
     "title": "Page not found",
@@ -433,7 +452,21 @@
       "pageUnreadableTitle": "We could not read this page",
       "pasteInstead": "You can copy the job description from the page and paste it here instead.",
       "pasteInsteadButton": "Paste the text instead",
-      "skip": "Skip — I don't have one"
+      "skip": "Skip — I don't have one",
+      "savedTitle_one": "Your saved job description ({{count}})",
+      "savedTitle_other": "Your saved job descriptions ({{count}})",
+      "savedHint": "Delete the ones you no longer need. Past interviews keep only their title.",
+      "addedOn": "added {{date}}",
+      "delete": "Delete",
+      "deleteNamed": "Delete {{name}}",
+      "confirmDelete": "Yes, delete",
+      "deleted": "Job description deleted.",
+      "sources": {
+        "PASTE": "Pasted text",
+        "UPLOAD": "Uploaded file",
+        "URL": "Link",
+        "ROLE_ONLY": "Role only"
+      }
     },
     "target": {
       "introWithJd": "Tell us the company and role if you know them. We will also read them from the job description.",
@@ -1337,7 +1370,32 @@
     "accepted": "Agreed",
     "declined": "Declined",
     "entryMeta": "{{date}} · version {{version}}",
-    "interview": "Interview"
+    "interview": "Interview",
+    "pageTitle": "Privacy and your data",
+    "pageIntro": "Download a copy of your data, review your consent choices or delete your account. These are your rights under India's Digital Personal Data Protection Act, 2023.",
+    "exportTitle": "Download your data",
+    "exportHint": "One JSON file with your profile, sign-in methods, consents, resumes and job descriptions (with the text we read from them), interviews, transcripts, reports, purchases and credits. Recording links in the file work for a few minutes only.",
+    "exportButton": "Download my data",
+    "exporting": "Preparing your file…",
+    "exportDone": "Your download has started.",
+    "deleteTitle": "Delete your account",
+    "deleteHint_one": "Your account is locked straight away and permanently erased after {{count}} day. Signing in again before then cancels the deletion. Purchase and credit records are kept without your name or contact details, because tax law requires it.",
+    "deleteHint_other": "Your account is locked straight away and permanently erased after {{count}} days. Signing in again before then cancels the deletion. Purchase and credit records are kept without your name or contact details, because tax law requires it.",
+    "deleteStart": "Delete my account",
+    "deleteWarning_one": "Are you sure? After {{count}} day this cannot be undone. Confirm it is you with a code, or type the word below.",
+    "deleteWarning_other": "Are you sure? After {{count}} days this cannot be undone. Confirm it is you with a code, or type the word below.",
+    "deleteSendEmailCode": "Email me a code",
+    "deleteSendMobileCode": "Text me a code",
+    "deleteKeep": "Keep my account",
+    "deleteTypedLabel": "Or type {{word}} to confirm",
+    "deleteTypedMismatch": "Type {{word}} exactly, in capital letters.",
+    "deleteConfirm": "Delete my account",
+    "deletedTitle": "Your account is scheduled for deletion",
+    "deletedBody": "It will be permanently erased on {{date}}. You have been signed out on every device.",
+    "deletedBodyNoDate": "It will be permanently erased soon. You have been signed out on every device.",
+    "deletedCancelHint": "Changed your mind? Just sign in again before then and your account will be kept.",
+    "legalTitle": "Our policies",
+    "legalHint": "How we use your data, the rules of the service and how AI scores your answers."
   },
   "coding": {
     "problemLabel": "Coding problem",
@@ -1554,5 +1612,25 @@
       "notFoundBody": "It may have expired or been revoked. Ask the candidate for a new link.",
       "loadError": "We could not open this proof"
     }
+  },
+  "legal": {
+    "draftTitle": "Draft — pending legal review.",
+    "draftBody": "This text may change before it is final.",
+    "lastUpdated": "Last updated: {{date}}",
+    "contents": "On this page",
+    "officerTitle": "Grievance Officer",
+    "officerName": "Name",
+    "officerEmail": "Email",
+    "officerAddress": "Postal address",
+    "officerNotConfigured": "The Grievance Officer's contact details will be published here soon.",
+    "notSet": "(to be announced)",
+    "otherPages": "Other legal pages",
+    "links": {
+      "terms": "Terms of Use",
+      "privacy": "Privacy Notice",
+      "grievance": "Grievance redressal",
+      "scoring": "How AI scoring works"
+    },
+    "loading": "Loading…"
   }
 }
