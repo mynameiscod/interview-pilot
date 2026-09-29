@@ -59,7 +59,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const appError = toAppError(err);
   if (err instanceof AiUnavailableError) {
     req.log.error({ feature: err.feature, attempts: err.attempts }, 'ai unavailable');
-  } else if (appError.status >= 500) {
+  } else if (appError.status >= 500 && appError.code !== 'MAINTENANCE') {
     req.log.error({ err }, 'unhandled error');
   } else {
     req.log.info({ code: appError.code, status: appError.status }, 'request rejected');

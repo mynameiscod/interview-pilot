@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import type { Container } from './container.js';
 import { AppError } from './lib/errors.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { maintenanceGuard } from './middleware/maintenance.js';
 import { originGuard } from './middleware/origin-guard.js';
 import { resolveRequestId } from './middleware/request-id.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
@@ -101,6 +102,14 @@ export function createApp(deps: AppDependencies): Express {
 
   const v1 = express.Router();
   v1.use(c.limiters.public);
+  // Maintenance mode refuses candidate writes (see MAINTENANCE_EXEMPT_PATHS for what stays open).
+  v1.use(
+    maintenanceGuard({
+      maintenance: () => c.settings.get('maintenance'),
+      tokens: c.tokens,
+      userState: c.userState,
+    }),
+  );
   v1.use('/auth', authRouter('candidate', c));
   v1.use('/users', userConsentsRouter(c));
   v1.use('/users', usersRouter(c));
