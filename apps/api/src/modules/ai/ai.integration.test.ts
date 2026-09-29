@@ -285,8 +285,9 @@ describe('routing, fallback and metering (real MongoDB + Redis)', () => {
     expect(result.attempts.map((a) => [a.model, a.detail])).toEqual([
       ['claude-opus-5-5', 'no_credentials'],
       ['claude-sonnet-5-5', 'no_credentials'],
-      ['gpt-5.6-terra', 'no_credentials'],
-      ['gemini-3.1-pro-preview', 'no_credentials'],
+      // The test registry only has Anthropic and mock adapters.
+      ['gpt-5.6-terra', 'adapter_unavailable'],
+      ['gemini-3.1-pro-preview', 'adapter_unavailable'],
       ['mock-llm', null],
     ]);
     const rows = await AiUsageModel.find().lean();

@@ -256,6 +256,18 @@ export const UpsertCompanyBody = z.object({
 });
 export type UpsertCompanyBody = z.infer<typeof UpsertCompanyBody>;
 
+/**
+ * Verify or unverify one company pattern. Saving a company never verifies
+ * its patterns; each is verified explicitly (audited). `note` must match the
+ * pattern at `index`, so a stale screen cannot verify a changed note.
+ */
+export const PatternVerificationBody = z.object({
+  index: z.number().int().min(0).max(29),
+  note: z.string().max(500),
+  reason: text(300).min(3),
+});
+export type PatternVerificationBody = z.infer<typeof PatternVerificationBody>;
+
 /** What candidates see when searching: no internal notes. */
 export const LibrarySearchItem = z.object({ id: z.string(), name: z.string(), slug: z.string() });
 export type LibrarySearchItem = z.infer<typeof LibrarySearchItem>;

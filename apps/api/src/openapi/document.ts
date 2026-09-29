@@ -112,6 +112,7 @@ import {
   LibraryReasonBody,
   LibrarySearchItem,
   LibrarySearchQuery,
+  PatternVerificationBody,
   PromoteBlueprintBody,
   ResumeSummary,
   RoleSummary,
@@ -788,15 +789,27 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: z.array(CompanySummary),
   });
   lib('post', '/admin/companies', {
-    summary: 'Create a company; patterns are verified by the saving admin (library.manage)',
+    summary: 'Create a company; new patterns start unverified (library.manage)',
     body: UpsertCompanyBody,
     response: CompanySummary,
     status: 201,
     errors: conflict,
   });
   lib('put', '/admin/companies/{id}', {
-    summary: 'Update a company (library.manage)',
+    summary: 'Update a company; new or edited patterns start unverified (library.manage)',
     body: UpsertCompanyBody,
+    response: CompanySummary,
+    errors: conflict,
+  });
+  lib('post', '/admin/companies/{id}/patterns/verify', {
+    summary: 'Verify one interview pattern so it can shape interviews (library.manage, audited)',
+    body: PatternVerificationBody,
+    response: CompanySummary,
+    errors: conflict,
+  });
+  lib('post', '/admin/companies/{id}/patterns/unverify', {
+    summary: 'Withdraw verification of one pattern (library.manage, audited)',
+    body: PatternVerificationBody,
     response: CompanySummary,
     errors: conflict,
   });
