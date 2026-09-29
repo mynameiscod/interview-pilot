@@ -1,4 +1,4 @@
-import type { ReportContent } from '@cbi/shared-types';
+import { DELIVERY_TARGETS, STAR_PARTS, type ReportContent } from '@cbi/shared-types';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,6 +128,30 @@ export function scriptRuns(text: string): { script: Script; text: string }[] {
   return runs;
 }
 
+const VERDICT_LABELS: Record<NonNullable<ReportContent['questions']>[number]['verdict'], string> = {
+  STRONG: 'Strong',
+  ADEQUATE: 'Adequate',
+  WEAK: 'Needs work',
+  UNASSESSED: 'Not assessed',
+};
+
+const STAR_LABELS = { situation: 'Situation', task: 'Task', action: 'Action', result: 'Result' };
+
+const DELIVERY_TIP_TEXT: Record<NonNullable<ReportContent['delivery']>['tips'][number], string> = {
+  PACE_FAST: `Slow down a little: aim for ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max} words per minute and pause briefly after key points.`,
+  PACE_SLOW: `Pick up the pace a little: aim for ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max} words per minute by outlining your answer before you start.`,
+  FILLERS: 'Replace filler words with a short silent pause; it sounds more confident.',
+  PAUSES:
+    'Long pauses are fine for thinking; say "let me think for a moment" so the silence is clearly yours.',
+  HEDGING: 'State what you did plainly ("I led", "I decided") instead of "I think" or "maybe".',
+};
+
+/** Long text cut at a word boundary for the compact PDF. */
+const clip = (t: string, max: number) =>
+  t.length <= max
+    ? t
+    : `${t.slice(0, t.lastIndexOf(' ', max) > 0 ? t.lastIndexOf(' ', max) : max)}...`;
+
 const date = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '-');
 
 export interface RenderOptions {
@@ -238,6 +262,12 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
       12,
     );
     p(`Evidence confidence: ${overall.confidence.level.toLowerCase()}`);
+    if (content.benchmark) {
+      const b = content.benchmark;
+      p(
+        `Better than ${b.percentile}% of ${b.sampleSize} candidates practising for ${b.roleTitle ?? `${b.family?.toLowerCase()} roles`} (last ${b.windowDays} days).`,
+      );
+    }
     p(content.summary);
 
     h2('Dimensions');
@@ -270,6 +300,52 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
       write(label, 'bold', 10);
       items.forEach((i) => bullet(`${i.action} (${i.why})`));
       doc.moveDown(0.2);
+    }
+
+    if (content.questions?.length) {
+      h2('Answer by answer');
+      for (const q of content.questions) {
+        write(`Q${q.seq}. ${clip(q.question, 220)}`, 'bold', 10);
+        p(`Verdict: ${VERDICT_LABELS[q.verdict]}`, 9);
+        if (q.star) {
+          const covered = STAR_PARTS.filter((part) => q.star![part]).map((x) => STAR_LABELS[x]);
+          const missing = STAR_PARTS.filter((part) => !q.star![part]).map((x) => STAR_LABELS[x]);
+          p(
+            `Structure (STAR): ${covered.join(', ') || 'none'}${missing.length ? ` - missing ${missing.join(', ')}` : ''}`,
+            9,
+          );
+        }
+        q.whatWorked.slice(0, 2).forEach((w) => bullet(`Worked: ${w}`));
+        q.missing.slice(0, 2).forEach((m) => bullet(`${q.fallback ? 'Cover' : 'Missing'}: ${m}`));
+        if (q.improvedAnswer) {
+          write(
+            `Example answer (built from your own answer): ${clip(q.improvedAnswer, 700)}`,
+            'italic',
+            9,
+          );
+        }
+        doc.moveDown(0.4);
+      }
+      if (content.structure) {
+        const st = content.structure;
+        p(
+          `Structure: ${st.complete} of ${st.behaviouralAnswers} behavioural answers covered situation, task, action and result.${st.weakest ? ` Most often missing: ${STAR_LABELS[st.weakest].toLowerCase()}.` : ''}`,
+        );
+      }
+    }
+
+    if (content.delivery) {
+      const d = content.delivery.summary;
+      h2('Delivery (spoken answers)');
+      p(
+        `Pace: ${d.wpm ?? '-'} words per minute (target ${DELIVERY_TARGETS.wpm.min}-${DELIVERY_TARGETS.wpm.max})   Filler words: ${d.fillerCount} (${d.fillerRate} per 100 words)${d.longPauses !== null ? `   Long pauses: ${d.longPauses}` : ''}   Hedging phrases: ${d.hedgeCount}`,
+      );
+      content.delivery.tips.forEach((tip) => bullet(DELIVERY_TIP_TEXT[tip]));
+      write(
+        'Delivery is coaching only and never affects your scores: pace and filler words vary with accent, language and speech differences.',
+        'italic',
+        8,
+      ).fontSize(10);
     }
 
     if (content.previous) {

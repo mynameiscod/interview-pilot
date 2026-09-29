@@ -213,6 +213,8 @@ export interface InterviewReportRecord {
   visibility: { candidate: boolean };
   /** Role family key for history and comparison (the matched library role or the detected title). */
   roleKey: string | null;
+  /** `family:<RoleFamily>`, the wider group used for the peer benchmark when a role has few reports. */
+  roleFamily?: string | null;
   overall: number | null;
   generatedAt: Date;
   createdAt: Date;
@@ -241,6 +243,7 @@ const reportSchema = new Schema<InterviewReportRecord>(
       default: () => ({ candidate: true }),
     },
     roleKey: { type: String, default: null },
+    roleFamily: { type: String, default: null },
     overall: { type: Number, default: null },
     generatedAt: { type: Date, required: true },
   },
@@ -253,6 +256,9 @@ const reportSchema = new Schema<InterviewReportRecord>(
 reportSchema.index({ sessionId: 1, revision: 1 }, { unique: true });
 reportSchema.index({ userId: 1, generatedAt: -1 });
 reportSchema.index({ userId: 1, roleKey: 1, generatedAt: -1 });
+// Peer benchmarks: recent original reports for a role or role family (aggregate counts only).
+reportSchema.index({ roleKey: 1, revision: 1, generatedAt: -1 });
+reportSchema.index({ roleFamily: 1, revision: 1, generatedAt: -1 });
 // The PDF is produced after the report and may be regenerated; the content never changes.
 immutable(reportSchema, 'interviewReports', ['pdf', 'visibility']);
 

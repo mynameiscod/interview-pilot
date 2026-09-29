@@ -10,6 +10,7 @@ import {
   mongoose,
 } from '@cbi/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { COACHING_FIXTURES } from './coaching.js';
 import { EVAL_FIXTURES } from './fixtures.js';
 import { runEvalSuite } from './runner.js';
 
@@ -58,11 +59,18 @@ describe('AI regression runner (structure mode, mock model)', () => {
       logger,
       redis,
     });
-    const report = await runEvalSuite({ ai, logger }, EVAL_FIXTURES, { mode: 'structure' });
-    expect(report.summary.fixtures).toBe(EVAL_FIXTURES.length);
+    const report = await runEvalSuite({ ai, logger }, EVAL_FIXTURES, {
+      mode: 'structure',
+      coaching: COACHING_FIXTURES,
+    });
+    expect(report.summary.fixtures).toBe(EVAL_FIXTURES.length + COACHING_FIXTURES.length);
     // The mock names questions that do not exist, so extraction yields no items: structure still holds.
-    for (const f of report.fixtures) {
+    for (const f of report.fixtures.slice(0, EVAL_FIXTURES.length)) {
       expect(f.checks.find((c) => c.name === 'scores in range')!.passed, f.id).toBe(true);
+    }
+    // The coaching prompt is seeded and routed: the mock's output validates.
+    for (const f of report.fixtures.slice(EVAL_FIXTURES.length)) {
+      expect(f.checks.find((c) => c.name === 'models answered')!.passed, f.id).toBe(true);
     }
     expect(report.passed).toBe(true);
   });

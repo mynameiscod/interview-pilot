@@ -10,11 +10,13 @@ import {
   type Redis,
 } from '@cbi/db';
 import {
+  deliveryMetrics,
   deviceCheckPassed,
   isSpokenMode,
   RtEvent,
   VOICE_LIMITS,
   type DegradedEvent,
+  type DeliveryMetrics,
   type DeviceCheckBody,
   type ModeChangedEvent,
   type SwitchModeBody,
@@ -76,6 +78,8 @@ export interface StoredTranscript {
   language: string | null;
   confidence: number | null;
   model: string;
+  /** Pace, fillers, pauses and hedging (coaching only; absent in transcripts stored before it). */
+  delivery?: DeliveryMetrics;
 }
 
 /**
@@ -330,16 +334,25 @@ export function createVoiceService(deps: Deps) {
         }
         throw err;
       }
+      const text = result.result.text.slice(0, 6000);
+      const audioSec = result.usage.audioSec ?? durationSec;
       const stored: StoredTranscript = {
         transcriptId: randomUUID(),
         userId,
         sessionId,
         questionId: fields.questionId,
-        text: result.result.text.slice(0, 6000),
-        durationSec: result.usage.audioSec ?? durationSec,
+        text,
+        durationSec: audioSec,
         language: result.result.language,
         confidence: result.result.confidence,
         model: result.model.modelId,
+        // Only the metrics are kept, never the word timings themselves.
+        delivery: deliveryMetrics({
+          text,
+          durationSec: audioSec,
+          words: result.result.words ?? null,
+          language: result.result.language ?? language(s),
+        }),
       };
       await transcripts.put(stored);
       return {

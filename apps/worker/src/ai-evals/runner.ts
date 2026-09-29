@@ -12,6 +12,7 @@ import {
   type AiStepDeps,
   type ExtractedEvidence,
 } from '../evaluation/ai-steps.js';
+import { checkCoaching, runCoachingFixture, type CoachingFixture } from './coaching.js';
 import {
   EVAL_BLUEPRINT,
   EVAL_CATEGORY_WEIGHTS,
@@ -278,7 +279,13 @@ export function scoreSpread(runs: readonly FixtureRun[]): number {
 export async function runEvalSuite(
   deps: AiStepDeps,
   fixtures: readonly EvalFixture[],
-  opts: { mode: EvalMode; repeat?: number; now?: () => Date } = { mode: 'full' },
+  opts: {
+    mode: EvalMode;
+    repeat?: number;
+    now?: () => Date;
+    /** Report coaching fixtures (example answers and STAR), run after the scoring fixtures. */
+    coaching?: readonly CoachingFixture[];
+  } = { mode: 'full' },
 ): Promise<EvalReport> {
   const repeat = Math.max(1, opts.repeat ?? 1);
   const startedAt = (opts.now?.() ?? new Date()).toISOString();
@@ -313,6 +320,28 @@ export async function runEvalSuite(
       spread,
       durationMs: Date.now() - started,
       ...(fixture.label ? { label: fixture.label } : {}),
+    });
+  }
+  for (const fixture of opts.coaching ?? []) {
+    const started = Date.now();
+    const checks: CheckResult[] = [];
+    for (let i = 0; i < repeat; i++) {
+      const run = await runCoachingFixture(deps, fixture);
+      checks.push(
+        ...checkCoaching(fixture, run, opts.mode).map((c) => ({
+          ...c,
+          name: repeat > 1 ? `[run ${i + 1}] ${c.name}` : c.name,
+        })),
+      );
+    }
+    results.push({
+      id: fixture.id,
+      description: fixture.description,
+      passed: checks.every((c) => c.passed),
+      checks,
+      runs: [],
+      spread: 0,
+      durationMs: Date.now() - started,
     });
   }
   const allChecks = results.flatMap((r) => r.checks);

@@ -264,6 +264,15 @@ describe('evaluation pipeline', () => {
     expect(content.coverage.find((c) => c.skill === 'API design')!.assessed).toBe(true);
     expect(content.plan.next24h.length).toBeGreaterThan(0);
     expect(content.previous).toBeNull();
+    // Coaching: a card per answered question from the (mock) model, cached on each turn.
+    expect(content.questions).toHaveLength(10);
+    expect(content.questions!.every((q) => !q.fallback && q.answer !== null)).toBe(true);
+    const coached = await InterviewTurnModel.find({ sessionId: id }).lean();
+    expect(coached.every((t) => t.coaching?.feedback && t.coaching.language === 'en')).toBe(true);
+    // Typed answers have no delivery section; too few peers means no benchmark.
+    expect(content.delivery).toBeNull();
+    expect(content.benchmark).toBeNull();
+    expect(report!.roleFamily).toBe('family:ENGINEERING');
     expect(report!.pdf.status).toBe('READY');
     const pdf = objects.get(report!.pdf.storageKey!)!;
     expect(pdf.body.subarray(0, 5).toString('latin1')).toBe('%PDF-');
@@ -557,6 +566,82 @@ describe('evaluation pipeline', () => {
     expect(mail.sent).toHaveLength(1);
   });
 
+  it('adds delivery for spoken answers and a benchmark once enough peers practised', async () => {
+    const { id, userId } = await finishedInterview();
+    const turns = await InterviewTurnModel.find({ sessionId: id }).sort({ seq: 1 }).lean();
+    const delivery = {
+      durationSec: 60,
+      wordCount: 170,
+      wpm: 170,
+      fillerCount: 8,
+      fillerRate: 4.7,
+      topFillers: [{ text: 'um', count: 8 }],
+      longPauses: 1,
+      longestPauseSec: 2.4,
+      hedgeCount: 0,
+      topHedges: [],
+      timestamps: true,
+    };
+    for (const t of turns.slice(0, 2)) {
+      await InterviewTurnModel.updateOne(
+        { _id: t._id },
+        {
+          $set: {
+            'answer.source': 'VOICE',
+            'answer.voice': {
+              durationSec: 60,
+              language: 'en',
+              confidence: 0.9,
+              model: 'mock-stt',
+              delivery,
+            },
+          },
+        },
+      );
+    }
+    const session = (await InterviewSessionModel.findById(id).lean())!;
+    const roleKey = `role:${session.analysis!.matchedRole!.id}`;
+    const peer = (overall: number, extra: object = {}) => ({
+      sessionId: new mongoose.Types.ObjectId(),
+      userId: new mongoose.Types.ObjectId(),
+      revision: 0,
+      scoreRevision: 0,
+      content: { schemaVersion: 1 },
+      roleKey,
+      roleFamily: 'family:ENGINEERING',
+      overall,
+      generatedAt: new Date(),
+      ...extra,
+    });
+    // 30 other candidates with scores 0..87; plus rows that must not count.
+    await InterviewReportModel.insertMany([
+      ...Array.from({ length: 30 }, (_, i) => peer(i * 3)),
+      // The candidate's own earlier attempt (also shown as the previous attempt).
+      peer(99, { userId, content: { header: { endedAt: null }, dimensions: [] } }),
+      peer(99, { generatedAt: new Date(Date.now() - 200 * 86_400_000) }), // outside 180 days
+      peer(99, { revision: 1 }), // a reviewed revision
+      peer(99, { overall: null }),
+    ]);
+    await beginEvaluation(id);
+    await runAll(id, 1);
+    const content = ReportContent.parse(
+      (await InterviewReportModel.findOne({ sessionId: id, revision: 0 }).lean())!.content,
+    );
+    expect(content.delivery!.answers.map((a) => a.seq)).toEqual([1, 2]);
+    expect(content.delivery!.summary).toMatchObject({ answers: 2, wpm: 170, fillerCount: 16 });
+    expect(content.delivery!.tips).toEqual(['PACE_FAST', 'FILLERS']);
+    expect(content.questions!.slice(0, 2).every((q) => q.spoken)).toBe(true);
+    const others = Array.from({ length: 30 }, (_, i) => i * 3);
+    expect(content.benchmark).toMatchObject({
+      basis: 'ROLE',
+      sampleSize: 30,
+      windowDays: 180,
+      percentile: Math.round(
+        (others.filter((o) => o < content.overall.score!).length * 100) / others.length,
+      ),
+    });
+  });
+
   it('still produces a report when every AI feature is unavailable', async () => {
     await AiRouteModel.updateMany({}, { $set: { active: false } });
     ai.invalidateLocal();
@@ -574,6 +659,15 @@ describe('evaluation pipeline', () => {
     const report = await InterviewReportModel.findOne({ sessionId: id }).lean();
     expect(report!.content.overall.band).toBe('NOT_YET');
     expect(report!.content.plan.next24h.length).toBeGreaterThan(0);
+    // Coaching falls back to the live assessment; no example answer is invented.
+    expect(
+      report!.content.questions!.every(
+        (q) => q.fallback && q.verdict === 'WEAK' && q.improvedAnswer === null,
+      ),
+    ).toBe(true);
+    expect(
+      (await InterviewTurnModel.findOne({ sessionId: id }).lean())!.coaching ?? null,
+    ).toBeNull();
     expect((await InterviewSessionModel.findById(id).lean())!.state).toBe('REPORT_READY');
   });
 

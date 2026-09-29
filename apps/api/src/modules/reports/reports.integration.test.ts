@@ -108,6 +108,8 @@ async function finished(
     endedAt?: string;
     roleKey?: string;
     pdf?: boolean;
+    /** Spoken-answer pace and filler rate (a Delivery section). */
+    delivery?: { wpm: number; fillerRate: number };
   } = {},
 ) {
   const session = await InterviewSessionModel.create({
@@ -135,11 +137,31 @@ async function finished(
       userId,
       revision: 0,
       scoreRevision: 0,
-      content: content(
-        opts.overall ?? 70,
-        opts.scores ?? { 'api-design': 80, 'system-design': 60 },
-        opts.endedAt ?? '2026-09-24T10:25:00.000Z',
-      ),
+      content: {
+        ...content(
+          opts.overall ?? 70,
+          opts.scores ?? { 'api-design': 80, 'system-design': 60 },
+          opts.endedAt ?? '2026-09-24T10:25:00.000Z',
+        ),
+        delivery: opts.delivery
+          ? {
+              summary: {
+                answers: 3,
+                durationSec: 180,
+                wordCount: 450,
+                wpm: opts.delivery.wpm,
+                fillerCount: 10,
+                fillerRate: opts.delivery.fillerRate,
+                topFillers: [],
+                longPauses: null,
+                hedgeCount: 0,
+                topHedges: [],
+              },
+              tips: [],
+              answers: [],
+            }
+          : null,
+      },
       pdf: opts.pdf
         ? { status: 'READY', storageKey: key, generatedAt: new Date() }
         : { status: 'PENDING', storageKey: null, generatedAt: null },
@@ -201,11 +223,13 @@ describe('reports', () => {
       overall: 55,
       scores: { 'api-design': 50, 'system-design': 60 },
       endedAt: '2026-09-20T10:00:00.000Z',
+      delivery: { wpm: 182, fillerRate: 5.2 },
     });
     const second = await finished(asha.userId, {
       overall: 72,
       scores: { 'api-design': 80, 'system-design': null },
       endedAt: '2026-09-24T10:00:00.000Z',
+      delivery: { wpm: 150, fillerRate: 2.1 },
     });
     const other = await finished(asha.userId, {
       roleKey: 'role:qa',
@@ -230,6 +254,12 @@ describe('reports', () => {
       { key: 'api-design', name: 'api design', scores: [50, 80], delta: 30 },
       { key: 'system-design', name: 'system design', scores: [60, null], delta: null },
     ]);
+    // Delivery changes (coaching only) when both attempts were spoken.
+    expect(compared.attempts.map((a) => a.delivery)).toEqual([
+      { wpm: 182, fillerRate: 5.2 },
+      { wpm: 150, fillerRate: 2.1 },
+    ]);
+    expect(compared.delivery).toEqual({ wpm: -32, fillerRate: -3.1 });
 
     await asha
       .call('get', '/reports/compare')

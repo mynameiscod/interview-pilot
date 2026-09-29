@@ -4,10 +4,11 @@
  *   --mode=full|structure   full (default): check every expectation against the
  *                           configured models; structure: only check that each
  *                           step returns valid output (works with the mock).
- *   --suite=regression|calibration|all
+ *   --suite=regression|calibration|coaching|all
  *                           regression (default): behaviour fixtures;
  *                           calibration: human-labelled answers (reports
- *                           agreement with the labels); all: both
+ *                           agreement with the labels); coaching: report
+ *                           coaching (example answers, STAR); all: every suite
  *   --only=id1,id2          run selected fixtures
  *   --repeat=N              run each fixture N times and check score stability
  *   --out=path.json         write the full report as JSON
@@ -26,6 +27,7 @@ import { buildAiRuntime } from '@cbi/ai-runtime';
 import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo } from '@cbi/db';
 import { calibrationFixtures } from './calibration.js';
+import { COACHING_FIXTURES, type CoachingFixture } from './coaching.js';
 import { EVAL_FIXTURES, type EvalFixture } from './fixtures.js';
 import { formatReport, runEvalSuite, type EvalMode } from './runner.js';
 import { seedableDatabase, seedEvalDatabase } from './seed.js';
@@ -49,15 +51,22 @@ async function main() {
     ?.split(',')
     .map((s) => s.trim());
   const suite = arg('suite') ?? 'regression';
-  const suites: Record<string, EvalFixture[]> = {
-    regression: EVAL_FIXTURES,
-    calibration: calibrationFixtures(),
-    all: [...EVAL_FIXTURES, ...calibrationFixtures()],
+  const suites: Record<string, { scoring: EvalFixture[]; coaching: CoachingFixture[] }> = {
+    regression: { scoring: EVAL_FIXTURES, coaching: [] },
+    calibration: { scoring: calibrationFixtures(), coaching: [] },
+    coaching: { scoring: [], coaching: COACHING_FIXTURES },
+    all: {
+      scoring: [...EVAL_FIXTURES, ...calibrationFixtures()],
+      coaching: COACHING_FIXTURES,
+    },
   };
-  if (!suites[suite]) throw new Error('--suite must be regression, calibration or all');
-  const selected = suites[suite];
-  const fixtures = only ? selected.filter((f) => only.includes(f.id)) : selected;
-  if (fixtures.length === 0) throw new Error(`no fixtures match ${only?.join(',')}`);
+  if (!suites[suite]) throw new Error('--suite must be regression, calibration, coaching or all');
+  const pick = <T extends { id: string }>(list: T[]) =>
+    only ? list.filter((f) => only.includes(f.id)) : list;
+  const fixtures = pick(suites[suite].scoring);
+  const coaching = pick(suites[suite].coaching);
+  if (fixtures.length + coaching.length === 0)
+    throw new Error(`no fixtures match ${only?.join(',')}`);
 
   const redis = createRedis(env.REDIS_URL, logger);
   await Promise.all([
@@ -76,6 +85,7 @@ async function main() {
     const report = await runEvalSuite({ ai, logger }, fixtures, {
       mode,
       repeat: Number(arg('repeat') ?? 1),
+      coaching,
     });
     process.stdout.write(`${formatReport(report)}\n`);
     const out = arg('out');

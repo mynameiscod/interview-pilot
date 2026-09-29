@@ -110,13 +110,32 @@ export function createReportsService({ storage, jobs, audit }: Deps) {
           new Date(a.content.header.endedAt ?? a.generatedAt).getTime() -
           new Date(b.content.header.endedAt ?? b.generatedAt).getTime(),
       );
+      const delivery = ordered.map((r) =>
+        r.content.delivery
+          ? {
+              wpm: r.content.delivery.summary.wpm,
+              fillerRate: r.content.delivery.summary.fillerRate,
+            }
+          : null,
+      );
+      const first = delivery[0];
+      const last = delivery.at(-1);
       return {
-        attempts: ordered.map((r) => ({
+        attempts: ordered.map((r, i) => ({
           sessionId: String(r.sessionId),
           endedAt: r.content.header.endedAt,
           overall: r.content.overall.score,
           confidence: r.content.overall.confidence.level,
+          delivery: delivery[i] ?? null,
         })),
+        // Coaching only: pace and filler changes, when the first and last attempts were spoken.
+        delivery:
+          first && last
+            ? {
+                wpm: first.wpm !== null && last.wpm !== null ? last.wpm - first.wpm : null,
+                fillerRate: Math.round((last.fillerRate - first.fillerRate) * 10) / 10,
+              }
+            : null,
         dimensions: compareAttempts(
           ordered.map((r) => ({
             dimensions: r.content.dimensions.map((d) => ({

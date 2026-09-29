@@ -1,23 +1,27 @@
 import type { ReportSummary } from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
 import { SharePanel } from '../proof/SharePanel';
+import { BenchmarkCard } from './components/BenchmarkCard';
 import { CodingResults } from './components/CodingResults';
+import { DeliverySection } from './components/DeliverySection';
 import { DimensionBars } from './components/DimensionBars';
 import { FeedbackCard } from './components/FeedbackCard';
 import { OverallReadiness } from './components/OverallReadiness';
 import { PlanTabs } from './components/PlanTabs';
+import { QuestionFeedbackList, StructureCard } from './components/QuestionFeedbackList';
 import {
   NextSteps,
   ReportTranscript,
   RoundsAndCoverage,
   StrengthsAndGaps,
 } from './components/ReportSections';
+import { ReportTabs, type ReportTab } from './components/ReportTabs';
 import { SessionObservations } from './components/SessionObservations';
 import { FEEDBACK_ANCHOR, useReport } from './reports-api';
 
@@ -54,23 +58,80 @@ function ReportHeader({ report }: { report: ReportSummary }) {
   );
 }
 
+type Section = 'summary' | 'questions' | 'delivery' | 'plan';
+
+/**
+ * The report in sections (Summary, Questions, Delivery, Plan) as tabs, then
+ * what is shared by all of them: next steps, sharing, recording, observations,
+ * the transcript and feedback. Questions and Delivery appear only when the
+ * report has them (older reports and typed interviews do not).
+ */
 function ReportView({ report }: { report: ReportSummary }) {
   const { t } = useTranslation();
   const { content } = report;
+  const [section, setSection] = useState<Section>('summary');
+  const tabs: ReportTab<Section>[] = [
+    {
+      key: 'summary',
+      label: t('report.tabs.summary'),
+      icon: 'bi-speedometer2',
+      panel: (
+        <>
+          <OverallReadiness overall={content.overall} />
+          {content.benchmark && <BenchmarkCard benchmark={content.benchmark} />}
+          <section
+            className="p-4 border cb-border rounded-3 bg-white"
+            aria-labelledby="summary-title"
+          >
+            <h2 id="summary-title" className="h5">
+              {t('report.summaryTitle')}
+            </h2>
+            <p className="mb-0">{content.summary}</p>
+          </section>
+          <DimensionBars dimensions={content.dimensions} />
+          <StrengthsAndGaps content={content} />
+          {content.coding && content.coding.length > 0 && <CodingResults items={content.coding} />}
+          <RoundsAndCoverage content={content} />
+        </>
+      ),
+    },
+  ];
+  if (content.questions?.length) {
+    tabs.push({
+      key: 'questions',
+      label: t('report.tabs.questions'),
+      icon: 'bi-chat-square-text',
+      panel: (
+        <>
+          {content.structure && <StructureCard structure={content.structure} />}
+          <QuestionFeedbackList questions={content.questions} />
+        </>
+      ),
+    });
+  }
+  if (content.delivery) {
+    tabs.push({
+      key: 'delivery',
+      label: t('report.tabs.delivery'),
+      icon: 'bi-mic',
+      panel: <DeliverySection delivery={content.delivery} />,
+    });
+  }
+  tabs.push({
+    key: 'plan',
+    label: t('report.tabs.plan'),
+    icon: 'bi-list-check',
+    panel: <PlanTabs plan={content.plan} />,
+  });
+
   return (
     <div className="d-flex flex-column gap-4">
-      <OverallReadiness overall={content.overall} />
-      <section className="p-4 border cb-border rounded-3 bg-white" aria-labelledby="summary-title">
-        <h2 id="summary-title" className="h5">
-          {t('report.summaryTitle')}
-        </h2>
-        <p className="mb-0">{content.summary}</p>
-      </section>
-      <DimensionBars dimensions={content.dimensions} />
-      <StrengthsAndGaps content={content} />
-      {content.coding && content.coding.length > 0 && <CodingResults items={content.coding} />}
-      <RoundsAndCoverage content={content} />
-      <PlanTabs plan={content.plan} />
+      <ReportTabs
+        tabs={tabs}
+        selected={section}
+        onSelect={setSection}
+        label={t('report.tabs.label')}
+      />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />
       <SharePanel sessionId={report.sessionId} />
       <RecordingCard sessionId={report.sessionId} />

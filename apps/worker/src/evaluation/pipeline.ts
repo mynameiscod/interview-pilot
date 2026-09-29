@@ -35,14 +35,18 @@ import {
 import {
   bullets,
   extractEvidenceWithAi,
+  questionFeedbackWithAi,
   recommendationsWithAi,
   scoreDimensionWithAi,
 } from './ai-steps.js';
+import { peerBenchmark, roleFamilyKey } from './benchmark.js';
 import { mapWithConcurrency } from './concurrency.js';
-import { outputLanguage } from './language.js';
+import { outputLanguage, type OutputLanguage } from './language.js';
 import { reportReadyEmail, submittedEmail } from './notify-messages.js';
 import { renderReportPdf } from './pdf.js';
+import { COACHING_CONCURRENCY, coachingKey, questionFeedback } from './question-feedback.js';
 import { buildReportContent, fallbackRecommendations } from './report-content.js';
+import { isBehavioural } from './star.js';
 import type { JudgeAdapter } from '@cbi/provider-adapters';
 import {
   answeredWithCode,
@@ -346,6 +350,98 @@ async function recommendations(deps: EvaluationDeps, s: Session) {
   );
 }
 
+type TurnRow = Awaited<ReturnType<typeof context>>['turns'][number];
+
+/** Turns that get a coaching card: answered in words (coding answers have their own section). */
+const coachable = (turns: readonly TurnRow[]) =>
+  turns.filter((t) => !t.question.coding && Boolean(t.answer?.text.trim()));
+
+/**
+ * 5b. Per-question coaching (AI): verdict, what worked, what was missing, an
+ * example answer from the candidate's own content and STAR for behavioural
+ * questions. Cached on each turn, so a retry or re-run only asks for what is
+ * missing. Coaching only: nothing here feeds a score. Answers the model could
+ * not coach get a deterministic card when the report is built.
+ */
+async function coachAnswers(deps: EvaluationDeps, s: Session) {
+  const { blueprint, turns } = await context(s);
+  const language = outputLanguage(s.language, answerTexts(turns));
+  const categories = new Map(blueprint.competencies.map((c) => [c.key, c.category]));
+  const evidence = await InterviewEvidenceModel.find(
+    { sessionId: s._id, run: s.processing!.run },
+    { questionId: 1, claim: 1, strength: 1 },
+  ).lean();
+  await mapWithConcurrency(coachable(turns), COACHING_CONCURRENCY, async (t) => {
+    const answer = t.answer!.text;
+    const key = coachingKey(language, t.question.text, answer);
+    if (t.coaching?.key === key && t.coaching.feedback) return;
+    const result = await questionFeedbackWithAi(
+      deps,
+      {
+        language,
+        role: roleOf(blueprint),
+        roundType: t.roundType,
+        behavioural: isBehavioural(t.roundType, categories.get(t.question.competencyKey ?? '')),
+        competency: t.question.competencyName,
+        expectedEvidence: t.question.expectedEvidence,
+        question: t.question.text,
+        answer,
+        spoken: t.answer!.source === 'VOICE',
+        evidence: evidence.filter((e) => e.questionId === t.questionId),
+      },
+      ctxOf(s),
+    );
+    if (!result) return;
+    await InterviewTurnModel.updateOne(
+      { _id: t._id },
+      {
+        $set: {
+          coaching: {
+            key,
+            language,
+            feedback: result.data,
+            promptVersion: result.promptVersion,
+            at: deps.now?.() ?? new Date(),
+          },
+        },
+      },
+    );
+  });
+}
+
+/** Report cards for every coached turn, from the cached feedback or the deterministic fallback. */
+function coachingCards(
+  turns: readonly TurnRow[],
+  blueprint: BlueprintContent,
+  language: OutputLanguage,
+  showAnswer: boolean,
+) {
+  const categories = new Map(blueprint.competencies.map((c) => [c.key, c.category]));
+  return coachable(turns).map((t) => {
+    const answer = t.answer!.text;
+    const cached =
+      t.coaching?.key === coachingKey(language, t.question.text, answer)
+        ? (t.coaching.feedback ?? null)
+        : null;
+    return questionFeedback(
+      {
+        seq: t.seq,
+        questionId: t.questionId,
+        roundType: t.roundType,
+        question: t.question,
+        answer,
+        spoken: t.answer!.source === 'VOICE',
+        turnEval: t.turnEval,
+      },
+      cached,
+      {
+        behavioural: isBehavioural(t.roundType, categories.get(t.question.competencyKey ?? '')),
+        showAnswer,
+      },
+    );
+  });
+}
+
 /** A key that groups attempts at the same role for history and comparison. */
 function roleKeyOf(s: Session): string | null {
   if (s.analysis?.matchedRole) return `role:${s.analysis.matchedRole.id}`;
@@ -362,7 +458,7 @@ async function candidateSeesReport(s: Session) {
 /** 6. Report revision 0, then the session becomes REPORT_READY. */
 async function buildReport(deps: EvaluationDeps, s: Session) {
   if (!(await InterviewReportModel.exists({ sessionId: s._id, revision: 0 }))) {
-    const [{ template, turns }, score] = await Promise.all([
+    const [{ template, turns, blueprint }, score] = await Promise.all([
       context(s),
       InterviewScoreModel.findOne({ sessionId: s._id, revision: 0 }).lean(),
     ]);
@@ -399,10 +495,32 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       : null;
 
     const codingItems = codingReport(await loadCoding(s._id), turns);
+    const now = deps.now?.() ?? new Date();
+    const family = s.analysis?.detectedRole.family ?? null;
+    const benchmark = await peerBenchmark({
+      overall: score.overall,
+      userId: s.userId,
+      roleKey,
+      roleTitle: s.analysis?.matchedRole?.title ?? s.analysis?.detectedRole.title ?? template.name,
+      family,
+      now,
+    });
 
     const content: ReportContent = buildReportContent({
       integrity,
       coding: codingItems,
+      questions: coachingCards(
+        turns,
+        blueprint,
+        outputLanguage(s.language, answerTexts(turns)),
+        template.reportPolicy.showTranscript,
+      ),
+      delivery: turns.flatMap((t) =>
+        t.answer?.source === 'VOICE' && t.answer.voice?.delivery
+          ? [{ questionId: t.questionId, seq: t.seq, metrics: t.answer.voice.delivery }]
+          : [],
+      ),
+      benchmark,
       header: {
         title: s.analysis?.detectedRole.title ?? template.name,
         companyName: target?.companyName ?? target?.structured?.companyName ?? null,
@@ -464,8 +582,9 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       // A campaign decides whether its candidates see their own report.
       visibility: { candidate: await candidateSeesReport(s) },
       roleKey,
+      roleFamily: family ? roleFamilyKey(family) : null,
       overall: score.overall,
-      generatedAt: deps.now?.() ?? new Date(),
+      generatedAt: now,
     }).catch((err: { code?: number }) => {
       if (err.code !== 11000) throw err;
     });
@@ -528,6 +647,7 @@ const HANDLERS: Record<ProcessingStage, (deps: EvaluationDeps, s: Session) => Pr
   SCORE_DIMENSIONS: scoreDimensions,
   AGGREGATE: aggregateScores,
   RECOMMENDATIONS: recommendations,
+  COACHING: coachAnswers,
   BUILD_REPORT: buildReport,
   RENDER_PDF: renderPdf,
   NOTIFY: notify,

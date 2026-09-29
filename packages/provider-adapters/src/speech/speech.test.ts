@@ -41,7 +41,21 @@ describe('Deepgram STT', () => {
         metadata: { duration: 6.5 },
         results: {
           channels: [
-            { alternatives: [{ transcript: ' I led the migration. ', confidence: 0.93 }] },
+            {
+              alternatives: [
+                {
+                  transcript: ' I led the migration. ',
+                  confidence: 0.93,
+                  words: [
+                    { word: 'i', punctuated_word: 'I', start: 0.2, end: 0.3 },
+                    { word: 'led', start: 0.4, end: 0.6 },
+                    { word: 'the', start: 3.1, end: 3.2 },
+                    { word: 'broken', start: 4 },
+                    { word: 'migration', punctuated_word: 'migration.', start: 3.3, end: 3.9 },
+                  ],
+                },
+              ],
+            },
           ],
         },
       }),
@@ -58,10 +72,17 @@ describe('Deepgram STT', () => {
       confidence: 0.93,
       durationSec: 6.5,
       servedModel: null,
+      // Word timestamps for delivery coaching; malformed entries are dropped.
+      words: [
+        { word: 'I', start: 0.2, end: 0.3 },
+        { word: 'led', start: 0.4, end: 0.6 },
+        { word: 'the', start: 3.1, end: 3.2 },
+        { word: 'migration.', start: 3.3, end: 3.9 },
+      ],
     });
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe(
-      'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&language=hi',
+      'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&filler_words=true&language=hi',
     );
     expect(init.headers).toMatchObject({
       Authorization: 'Token secret-key',
@@ -84,7 +105,7 @@ describe('Deepgram STT', () => {
       credentials,
       signal,
     });
-    expect(out).toMatchObject({ text: '', language: 'te', durationSec: null });
+    expect(out).toMatchObject({ text: '', language: 'te', durationSec: null, words: null });
     expect(String(fetchImpl.mock.calls[0]![0])).toContain('detect_language=true');
     const bad = await adapter
       .transcribe({ model: target('nova-3'), request: stt(), credentials, signal })
@@ -127,6 +148,41 @@ describe('OpenAI speech', () => {
     expect(form.get('model')).toBe('gpt-4o-mini-transcribe');
     expect(form.get('language')).toBe('te');
     expect((form.get('file') as File).name).toBe('answer.webm');
+    // gpt-4o transcribe models do not return word timestamps.
+    expect(form.get('response_format')).toBe('json');
+    expect(form.get('timestamp_granularities[]')).toBeNull();
+    expect(out.words).toBeNull();
+  });
+
+  it('asks whisper for word timestamps and maps the language name to a code', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      json(200, {
+        text: 'Um, I fixed it',
+        language: 'hindi',
+        duration: 4.2,
+        words: [
+          { word: 'Um', start: 0, end: 0.3 },
+          { word: 'I', start: 2.6, end: 2.7 },
+        ],
+      }),
+    );
+    const out = await createOpenAiSttAdapter({ fetchImpl }).transcribe({
+      model: target('whisper-1'),
+      request: stt(null),
+      credentials,
+      signal,
+    });
+    const form = fetchImpl.mock.calls[0]![1].body as FormData;
+    expect(form.get('response_format')).toBe('verbose_json');
+    expect(form.get('timestamp_granularities[]')).toBe('word');
+    expect(out).toMatchObject({
+      language: 'hi',
+      durationSec: 4.2,
+      words: [
+        { word: 'Um', start: 0, end: 0.3 },
+        { word: 'I', start: 2.6, end: 2.7 },
+      ],
+    });
   });
 
   it('synthesizes MP3 with the configured voice and interviewer style', async () => {
