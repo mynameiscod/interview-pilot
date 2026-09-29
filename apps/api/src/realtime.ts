@@ -94,6 +94,8 @@ export async function createRealtime(opts: {
         const payload = JoinPayload.parse(raw);
         const room = roomOf(payload.sessionId);
         const previous = data.sessionId;
+        // Only the owner may listen to the room: check before joining it.
+        await c.live.assertOwner(data.userId, payload.sessionId);
         // Join the room before reading the snapshot: a question saved after the read is then
         // still delivered as an event (clients de-duplicate by seq), so nothing falls in between.
         await socket.join(room);

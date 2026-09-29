@@ -115,6 +115,7 @@ import {
   PromoteBlueprintBody,
   ResumeSummary,
   RoleSummary,
+  StartInterviewBody,
   TemplateSummary,
   UpdateInterviewSetupBody,
   UpdateJobTargetBody,
@@ -639,9 +640,10 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
   candidate('post', '/interviews/{id}/start', {
     tag: 'Interviews',
     summary:
-      'Start the interview (READY or READY_TO_START → ACTIVE), reserving one credit. The first question arrives in the realtime room',
+      'Start the interview (READY or READY_TO_START → ACTIVE), reserving one credit. The first question arrives in the realtime room. The optional UI locale settles an `auto` interview language when the profile does not',
+    body: StartInterviewBody,
     response: InterviewSummary,
-    errors: [401, 402, 404, 409],
+    errors: [400, 401, 402, 404, 409],
   });
   candidate('post', '/interviews/{id}/end', {
     tag: 'Interviews',

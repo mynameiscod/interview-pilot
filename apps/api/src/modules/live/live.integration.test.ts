@@ -11,6 +11,7 @@ import {
   mongoose,
   RoleBlueprintModel,
   RoleModel,
+  UserProfileModel,
 } from '@cbi/db';
 import {
   RT_NAMESPACE,
@@ -21,7 +22,7 @@ import {
 } from '@cbi/shared-types';
 import { io as connect, type Socket } from 'socket.io-client';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRealtime } from '../../realtime.js';
 import { buildTestApp, TEST_ORIGIN } from '../../test-support/harness.js';
 import { signInWithEmail, useIntegrationServices } from '../../test-support/integration.js';
@@ -51,6 +52,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const s of sockets.splice(0)) s.disconnect();
   await realtime.close();
 });
@@ -174,6 +176,30 @@ describe('starting an interview', () => {
     expect(await CreditLedgerModel.countDocuments({ type: 'INTERVIEW_RESERVE' })).toBe(1);
   });
 
+  it('resolves an auto language from the profile, then the UI locale, before English', async () => {
+    const c = await candidate();
+    const id = await readyInterview(c.userId);
+    await c.call('post', `/interviews/${id}/start`).send({ uiLocale: 'te' }).expect(200);
+    expect(await session(id)).toMatchObject({ language: 'auto', resolvedLanguage: 'te' });
+    const socket = socketFor(c.accessToken);
+    const q1 = await currentQuestion(socket, await joined(socket, id));
+    expect((await InterviewTurnModel.findOne({ questionId: q1.questionId }).lean())!.language).toBe(
+      'te',
+    );
+    await c.call('post', `/interviews/${id}/end`).expect(200);
+
+    // A profile language wins over the UI locale.
+    await UserProfileModel.updateOne(
+      { userId: c.userId },
+      { $set: { preferredInterviewLanguage: 'hi' } },
+      { upsert: true },
+    );
+    const second = await readyInterview(c.userId);
+    await c.call('post', `/interviews/${second}/start`).send({ uiLocale: 'te' }).expect(200);
+    expect(await session(second)).toMatchObject({ resolvedLanguage: 'hi' });
+    await c.call('post', `/interviews/${second}/start`).send({ uiLocale: 'fr' }).expect(400);
+  });
+
   it('needs a credit and allows one live interview at a time', async () => {
     const c = await candidate();
     const first = await readyInterview(c.userId);
@@ -207,12 +233,7 @@ describe('realtime room', () => {
     await c.call('post', `/interviews/${id}/start`).expect(200);
     const socket = socketFor(c.accessToken);
     const snapshot = await joined(socket, id);
-    expect(snapshot).toMatchObject({
-      sessionId: id,
-      state: 'ACTIVE',
-      roundIdx: 0,
-      clockRunning: true,
-    });
+    expect(snapshot).toMatchObject({ sessionId: id, state: 'ACTIVE', roundIdx: 0 });
     expect(snapshot.rounds.map((r) => r.type)).toEqual([
       'INTRO',
       'TECHNICAL',
@@ -222,6 +243,11 @@ describe('realtime room', () => {
     ]);
     const q1 = await currentQuestion(socket, snapshot);
     expect(q1).toMatchObject({ seq: 1, roundType: 'INTRO', isFollowUp: false });
+    // The clock runs once the question is on screen.
+    expect((await session(id))!.clock).toMatchObject({
+      held: false,
+      runningSince: expect.any(Date),
+    });
 
     const next = nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
     const answer = {
@@ -253,6 +279,103 @@ describe('realtime room', () => {
     expect(JSON.stringify(live)).not.toMatch(/sufficiency|turnEval|evidence/);
   });
 
+  it('acknowledges a saved answer at once and holds the clock until the next question', async () => {
+    const c = await candidate();
+    const id = await readyInterview(c.userId);
+    await c.call('post', `/interviews/${id}/start`).expect(200);
+    const socket = socketFor(c.accessToken);
+    const q1 = await currentQuestion(socket, await joined(socket, id));
+    const next = nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
+    const answer = {
+      sessionId: id,
+      questionId: q1.questionId,
+      text: 'I build payment APIs in Node.js.',
+      clientMsgId: 'msg-00000001',
+    };
+    expect(await emit(socket, RtEvent.ANSWER_TEXT, answer)).toEqual({ ok: true, duplicate: false });
+    // Saved when acknowledged; a resend while the next question is prepared is not "busy".
+    const saved = (await InterviewTurnModel.findOne({ questionId: q1.questionId }).lean())!;
+    expect(saved.answer).toMatchObject({ clientMsgId: 'msg-00000001' });
+    expect(await emit(socket, RtEvent.ANSWER_TEXT, answer)).toEqual({ ok: true, duplicate: true });
+
+    const q2 = await next;
+    const s = (await session(id))!;
+    // The time spent assessing and preparing q2 was not counted: the clock restarted
+    // after the answer, and the time used is at most what had passed when it arrived.
+    expect(s.clock!.held).toBe(false);
+    expect(s.clock!.runningSince!.getTime()).toBeGreaterThanOrEqual(
+      saved.answer!.answeredAt.getTime(),
+    );
+    expect(s.clock!.activeMs).toBeLessThanOrEqual(
+      saved.answer!.answeredAt.getTime() - s.startedAt!.getTime(),
+    );
+    const turn2 = (await InterviewTurnModel.findOne({ questionId: q2.questionId }).lean())!;
+    expect(s.clock!.runningSince!.getTime()).toBeLessThanOrEqual(turn2.askedAt.getTime() + 1000);
+  });
+
+  it('records an answer it could not assess as unassessed and keeps going', async () => {
+    const c = await candidate();
+    const id = await readyInterview(c.userId);
+    await c.call('post', `/interviews/${id}/start`).expect(200);
+    const socket = socketFor(c.accessToken);
+    const q1 = await currentQuestion(socket, await joined(socket, id));
+    // The assessment prompt is unavailable (the model call cannot run).
+    const prompts = t.container.ai.prompts;
+    const getActive = prompts.getActive.bind(prompts);
+    vi.spyOn(prompts, 'getActive').mockImplementation((...args: Parameters<typeof getActive>) =>
+      args[0] === 'interview.assessTurn' ? Promise.resolve(null) : getActive(...args),
+    );
+    const next = nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
+    expect(
+      await emit(socket, RtEvent.ANSWER_TEXT, {
+        sessionId: id,
+        questionId: q1.questionId,
+        text: 'I build payment APIs in Node.js.',
+        clientMsgId: 'msg-00000001',
+      }),
+    ).toEqual({ ok: true, duplicate: false });
+    expect((await next).seq).toBe(2);
+    const turn = (await InterviewTurnModel.findOne({ questionId: q1.questionId }).lean())!;
+    // No verdict is invented: not ADEQUATE, but explicitly unassessed.
+    expect(turn.turnEval).toMatchObject({
+      sufficiency: 'UNASSESSED',
+      fallback: true,
+      evidence: [],
+    });
+    expect((await session(id))!.planner!.answeredCount).toBe(1);
+  });
+
+  it('accepts an answer from the owner while reconnecting and resumes the interview', async () => {
+    const c = await candidate();
+    const id = await readyInterview(c.userId);
+    await c.call('post', `/interviews/${id}/start`).expect(200);
+    const socket = socketFor(c.accessToken);
+    const q1 = await currentQuestion(socket, await joined(socket, id));
+    // The server decided the connection was lost (missed heartbeats) though the socket lives on.
+    const current = (await session(id))!;
+    expect(
+      await applySessionEvent({
+        sessionId: id,
+        event: { type: 'DISCONNECTED' },
+        expectedVersion: current.stateVersion,
+      }),
+    ).toMatchObject({ ok: true, session: { state: 'RECONNECTING' } });
+
+    const next = nextEvent<LiveQuestion>(socket, RtEvent.QUESTION);
+    expect(
+      await emit(socket, RtEvent.ANSWER_TEXT, {
+        sessionId: id,
+        questionId: q1.questionId,
+        text: 'Answered while the server thought I was away.',
+        clientMsgId: 'msg-00000001',
+      }),
+    ).toEqual({ ok: true, duplicate: false });
+    expect((await next).seq).toBe(2);
+    const s = (await session(id))!;
+    expect(s.state).toBe('ACTIVE');
+    expect(s.stateHistory.map((h) => h.to).slice(-2)).toEqual(['RECONNECTING', 'ACTIVE']);
+  });
+
   it('keeps other candidates out of the room', async () => {
     const asha = await candidate();
     const ravi = await candidate('ravi@example.com');
@@ -260,10 +383,16 @@ describe('realtime room', () => {
     await asha.call('post', `/interviews/${id}/start`).expect(200);
     const socket = socketFor(ravi.accessToken);
     await new Promise<void>((r) => socket.once('connect', () => r()));
+    const overheard: unknown[] = [];
+    socket.onAny((event: string) => overheard.push(event));
     expect(await emit(socket, RtEvent.JOIN, { sessionId: id, lastSeq: 0 })).toMatchObject({
       ok: false,
       code: 'NOT_FOUND',
     });
+    // The refused socket never joined the room, not even briefly.
+    const own = socketFor(asha.accessToken);
+    await currentQuestion(own, await joined(own, id));
+    expect(overheard).toEqual([]);
     expect(
       await emit(socket, RtEvent.ANSWER_TEXT, {
         sessionId: id,

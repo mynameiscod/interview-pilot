@@ -1,6 +1,7 @@
 import {
   CreateInterviewBody,
   InterviewListQuery,
+  StartInterviewBody,
   UpdateInterviewSetupBody,
 } from '@cbi/shared-types';
 import { Router } from 'express';
@@ -40,7 +41,8 @@ export function interviewsRouter(c: Container): Router {
     res.json({ data: await svc.updateSetup(user(req), id(req.params.id), body) });
   });
   router.post('/:id/start', async (req, res) => {
-    const session = await c.live.start(user(req), id(req.params.id), clientContext(req));
+    const body = StartInterviewBody.parse(req.body ?? {});
+    const session = await c.live.start(user(req), id(req.params.id), clientContext(req), body);
     res.json({ data: await svc.get(user(req), String(session._id)) });
   });
   router.post('/:id/end', async (req, res) => {
