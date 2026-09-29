@@ -14,6 +14,7 @@ import {
   type JdExtractJobData,
   type ReportPdfJobData,
   type ResumeExtractJobData,
+  type ResumeTailorJobData,
 } from '@cbi/shared-types';
 import { Queue, type JobsOptions } from 'bullmq';
 
@@ -23,6 +24,8 @@ export interface JobQueues {
   extractJobTarget(jobTargetId: string): Promise<void>;
   /** `attempt` (the session's stateVersion) makes each re-analysis a distinct job. */
   analyzeInterview(sessionId: string, attempt: number): Promise<void>;
+  /** AI tailoring suggestions for a resumeTailorings record (analysis queue). */
+  tailorResume(tailoringId: string): Promise<void>;
   /**
    * Starts the evaluation pipeline for a PROCESSING session (once), or a new
    * run with `rerun`. Returns the run number, or null when nothing started.
@@ -71,6 +74,14 @@ export function createBullJobQueues(connection: Redis): JobQueues {
       const data: InterviewAnalyzeJobData = { sessionId };
       await analysis.add(AnalysisJob.INTERVIEW_ANALYZE, data, {
         jobId: jobId(AnalysisJob.INTERVIEW_ANALYZE, sessionId, attempt),
+      });
+    },
+    async tailorResume(tailoringId) {
+      const data: ResumeTailorJobData = { tailoringId };
+      await analysis.add(AnalysisJob.RESUME_TAILOR, data, {
+        jobId: jobId(AnalysisJob.RESUME_TAILOR, tailoringId),
+        // A billed AI call: one retry is enough; the record fails as INTERNAL after it.
+        attempts: 2,
       });
     },
     async evaluateInterview(sessionId, opts = {}) {

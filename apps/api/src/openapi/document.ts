@@ -142,7 +142,10 @@ import {
   LibrarySearchQuery,
   PatternVerificationBody,
   PromoteBlueprintBody,
+  ResumeMatchReport,
   ResumeSummary,
+  ResumeTailoringSummary,
+  ResumeToolsBody,
   RoleSummary,
   StartInterviewBody,
   TemplateSummary,
@@ -801,6 +804,28 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Discard my corrections and go back to the AI-read version',
     response: JobTargetSummary,
     errors: [400, 401, 404, 409, 429],
+  });
+  candidate('post', '/resume-tools/match', {
+    tag: 'Resume tools',
+    summary:
+      'Resume ↔ job description match score (0-100, deterministic, itemised reasons); free and rate-limited',
+    body: ResumeToolsBody,
+    response: ResumeMatchReport,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('post', '/resume-tools/tailorings', {
+    tag: 'Resume tools',
+    summary:
+      'Ask for AI tailoring suggestions (202 queued; 200 reuses unchanged inputs). Poll GET /resume-tools/tailorings/{id}',
+    body: ResumeToolsBody,
+    response: ResumeTailoringSummary,
+    status: 202,
+    errors: [400, 401, 404, 409, 429, 503],
+  });
+  candidate('get', '/resume-tools/tailorings/{id}', {
+    tag: 'Resume tools',
+    summary: 'Tailoring suggestions (PENDING until the worker finishes)',
+    response: ResumeTailoringSummary,
   });
   route('get', '/companies', {
     tag: 'Library',

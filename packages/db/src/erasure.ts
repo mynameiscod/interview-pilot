@@ -9,7 +9,7 @@ import {
   InterviewReportModel,
   InterviewScoreModel,
 } from './models/evaluation.js';
-import { JobTargetModel, ResumeModel } from './models/inputs.js';
+import { JobTargetModel, ResumeModel, ResumeTailoringModel } from './models/inputs.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import { InterviewTurnModel } from './models/interview-turn.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
@@ -125,6 +125,7 @@ export async function eraseAccount(
   const documents: Record<string, number> = {
     resumes: await hardDelete(ResumeModel, { userId: uid }),
     jobTargets: await hardDelete(JobTargetModel, { userId: uid }),
+    resumeTailorings: await hardDelete(ResumeTailoringModel, { userId: uid }),
     interviewTurns: await hardDelete(InterviewTurnModel, { userId: uid }),
     interviewEvidence: await hardDelete(InterviewEvidenceModel, { userId: uid }),
     interviewScores: await hardDelete(InterviewScoreModel, { userId: uid }),

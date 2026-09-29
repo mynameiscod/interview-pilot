@@ -45,6 +45,8 @@ export const AiFeature = z.enum([
   'evaluation.extractEvidence',
   'evaluation.scoreDimension',
   'report.recommendations',
+  /** Resume tailoring suggestions for one job description (resume tools). */
+  'resume.tailor',
   'stt.live',
   'tts.live',
   'ocr.document',
@@ -64,6 +66,7 @@ export const AI_FEATURE_CAPABILITY: Readonly<Record<AiFeature, AiCapability>> = 
   'evaluation.extractEvidence': 'LLM',
   'evaluation.scoreDimension': 'LLM',
   'report.recommendations': 'LLM',
+  'resume.tailor': 'LLM',
   'stt.live': 'STT',
   'tts.live': 'TTS',
   'ocr.document': 'OCR',
@@ -137,6 +140,7 @@ export const DEFAULT_ROUTE_EFFORT: Readonly<Partial<Record<AiFeature, AiEffort>>
   'evaluation.extractEvidence': 'high',
   'evaluation.scoreDimension': 'high',
   'report.recommendations': 'medium',
+  'resume.tailor': 'medium',
 };
 
 /**

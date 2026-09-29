@@ -370,6 +370,8 @@ const apiObjectSchema = baseEnvSchema.extend({
   INPUT_DAILY_LIMIT_JOBS: z.coerce.number().int().min(1).max(1000).default(40),
   /** Resume uploads a candidate may make per rolling 24 hours. */
   INPUT_DAILY_LIMIT_RESUMES: z.coerce.number().int().min(1).max(1000).default(20),
+  /** Resume tailoring requests (one billed AI call each) per candidate per rolling 24 hours. */
+  RESUME_TAILOR_DAILY_LIMIT: z.coerce.number().int().min(1).max(200).default(10),
 
   // --- Legal pages (served publicly by GET /legal) --------------------------
   /** Grievance Officer (DPDP Act s.8(10)) shown on the legal pages; never hard-coded. */

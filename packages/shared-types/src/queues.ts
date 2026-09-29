@@ -32,6 +32,8 @@ export type DocumentJob = (typeof DocumentJob)[keyof typeof DocumentJob];
 /** Jobs on the ANALYSIS queue. */
 export const AnalysisJob = {
   INTERVIEW_ANALYZE: 'interview.analyze',
+  /** AI tailoring suggestions for one resume and job description (resume tools). */
+  RESUME_TAILOR: 'resume.tailor',
 } as const;
 export type AnalysisJob = (typeof AnalysisJob)[keyof typeof AnalysisJob];
 
@@ -64,6 +66,9 @@ export interface ResumeExtractJobData {
 }
 export interface JdExtractJobData {
   jobTargetId: string;
+}
+export interface ResumeTailorJobData {
+  tailoringId: string;
 }
 export interface InterviewAnalyzeJobData {
   sessionId: string;

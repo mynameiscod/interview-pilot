@@ -48,6 +48,7 @@ export type RecordedJob =
   | { kind: 'resume'; id: string }
   | { kind: 'jobTarget'; id: string }
   | { kind: 'analyze'; id: string; attempt: number }
+  | { kind: 'tailor'; id: string }
   | { kind: 'evaluate'; id: string; rerun: boolean }
   | { kind: 'reportPdf'; id: string; revision: number }
   | { kind: 'campaignPackage'; id: string };
@@ -64,6 +65,7 @@ export function createRecordingJobQueues() {
     extractResume: (id) => record({ kind: 'resume', id }),
     extractJobTarget: (id) => record({ kind: 'jobTarget', id }),
     analyzeInterview: (id, attempt) => record({ kind: 'analyze', id, attempt }),
+    tailorResume: (id) => record({ kind: 'tailor', id }),
     evaluateInterview: async (id, opts = {}) => {
       await record({ kind: 'evaluate', id, rerun: Boolean(opts.rerun) });
       return 1;

@@ -331,6 +331,23 @@ export async function runEvalSuite(
   };
 }
 
+/** Adds results from another suite (e.g. tailoring) to a report and recomputes its totals. */
+export function withExtraResults(report: EvalReport, extra: readonly FixtureResult[]): EvalReport {
+  const fixtures = [...report.fixtures, ...extra];
+  const allChecks = fixtures.flatMap((r) => r.checks);
+  return {
+    ...report,
+    passed: fixtures.every((r) => r.passed),
+    fixtures,
+    summary: {
+      fixtures: fixtures.length,
+      failed: fixtures.filter((r) => !r.passed).length,
+      checks: allChecks.length,
+      failedChecks: allChecks.filter((c) => !c.passed).length,
+    },
+  };
+}
+
 /** How closely scores agree with the human labels (first labelled dimension of each run). */
 export function calibrationSummary(results: readonly FixtureResult[]): CalibrationSummary | null {
   const pairs = results.flatMap((r) =>

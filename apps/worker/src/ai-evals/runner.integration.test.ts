@@ -12,6 +12,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EVAL_FIXTURES } from './fixtures.js';
 import { runEvalSuite } from './runner.js';
+import { runTailoringSuite } from './tailoring-eval.js';
+import { TAILORING_FIXTURES } from './tailoring-fixtures.js';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const REDIS_URL = process.env.REDIS_URL;
@@ -65,5 +67,21 @@ describe('AI regression runner (structure mode, mock model)', () => {
       expect(f.checks.find((c) => c.name === 'scores in range')!.passed, f.id).toBe(true);
     }
     expect(report.passed).toBe(true);
+  });
+
+  it('runs the tailoring fixtures through the seeded resume.tailor prompt', async () => {
+    const ai = buildAiRuntime({
+      env: {
+        APP_ENV: 'test',
+        AI_MOCK_MODE: true,
+        AI_SECRETS_MASTER_KEY: Buffer.alloc(32, 7).toString('base64'),
+        AI_SECRETS_KEY_ID: 'k1',
+        AI_CONFIG_CACHE_TTL_SEC: 1,
+      },
+      logger,
+      redis,
+    });
+    const results = await runTailoringSuite({ ai, logger }, TAILORING_FIXTURES, 'structure');
+    for (const r of results) expect(r.passed, `${r.id}: ${JSON.stringify(r.checks)}`).toBe(true);
   });
 });

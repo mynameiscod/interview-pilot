@@ -16,6 +16,7 @@ import {
   type EvaluationStageJobData,
   type ReportPdfJobData,
   type InterviewAnalyzeJobData,
+  type ResumeTailorJobData,
   type JdExtractJobData,
   type ResumeExtractJobData,
 } from '@cbi/shared-types';
@@ -35,6 +36,7 @@ import {
   type CampaignExportDeps,
 } from './processors/campaign-export.js';
 import { processInterviewAnalyze, type AnalysisProcessorDeps } from './processors/analysis.js';
+import { processResumeTailor } from './resume-tools/tailoring.js';
 import {
   processJdExtract,
   processResumeExtract,
@@ -340,6 +342,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
       new Worker(
         QueueName.ANALYSIS,
         async (job, token) => {
+          if (job.name === AnalysisJob.RESUME_TAILOR) {
+            await processResumeTailor(
+              deps,
+              (job.data as ResumeTailorJobData).tailoringId,
+              isFinalAttempt(job),
+            );
+            return;
+          }
           if (job.name !== AnalysisJob.INTERVIEW_ANALYZE) {
             throw new Error(`Unknown analysis job: ${job.name}`);
           }

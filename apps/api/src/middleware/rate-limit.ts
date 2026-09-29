@@ -23,7 +23,9 @@ export type RateLimiterName =
   | 'coding'
   | 'analytics'
   | 'jobCreate'
-  | 'dataExport';
+  | 'dataExport'
+  | 'resumeMatch'
+  | 'resumeTailor';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -67,6 +69,10 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   jobCreate: { windowMs: 10 * 60_000, limit: 30, failOpen: false },
   /** Data exports: each reads everything the person has; a few per hour is plenty. */
   dataExport: { windowMs: 60 * 60_000, limit: 5, failOpen: false },
+  /** Resume match scores: free and computed in-process, but each reads both documents. */
+  resumeMatch: { windowMs: 10 * 60_000, limit: 60, failOpen: false },
+  /** Tailoring suggestions: one billed AI call each (plus a daily quota in the service). */
+  resumeTailor: { windowMs: 60 * 60_000, limit: 10, failOpen: false },
 };
 
 /**
@@ -92,6 +98,8 @@ const PER_USER = new Set<RateLimiterName>([
   'coding',
   'jobCreate',
   'dataExport',
+  'resumeMatch',
+  'resumeTailor',
 ]);
 
 /** @param redis null → in-process memory counters (single-process tests only). */
@@ -141,5 +149,7 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     analytics: make('analytics'),
     jobCreate: make('jobCreate'),
     dataExport: make('dataExport'),
+    resumeMatch: make('resumeMatch'),
+    resumeTailor: make('resumeTailor'),
   };
 }

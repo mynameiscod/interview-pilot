@@ -4,10 +4,12 @@
  *   --mode=full|structure   full (default): check every expectation against the
  *                           configured models; structure: only check that each
  *                           step returns valid output (works with the mock).
- *   --suite=regression|calibration|all
+ *   --suite=regression|calibration|tailoring|all
  *                           regression (default): behaviour fixtures;
  *                           calibration: human-labelled answers (reports
- *                           agreement with the labels); all: both
+ *                           agreement with the labels); tailoring: resume
+ *                           tailoring must not invent employers or metrics;
+ *                           all: every suite
  *   --only=id1,id2          run selected fixtures
  *   --repeat=N              run each fixture N times and check score stability
  *   --out=path.json         write the full report as JSON
@@ -27,8 +29,10 @@ import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo } from '@cbi/db';
 import { calibrationFixtures } from './calibration.js';
 import { EVAL_FIXTURES, type EvalFixture } from './fixtures.js';
-import { formatReport, runEvalSuite, type EvalMode } from './runner.js';
+import { formatReport, runEvalSuite, withExtraResults, type EvalMode } from './runner.js';
 import { seedableDatabase, seedEvalDatabase } from './seed.js';
+import { runTailoringSuite } from './tailoring-eval.js';
+import { TAILORING_FIXTURES } from './tailoring-fixtures.js';
 
 function arg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -52,12 +56,22 @@ async function main() {
   const suites: Record<string, EvalFixture[]> = {
     regression: EVAL_FIXTURES,
     calibration: calibrationFixtures(),
+    tailoring: [],
     all: [...EVAL_FIXTURES, ...calibrationFixtures()],
   };
-  if (!suites[suite]) throw new Error('--suite must be regression, calibration or all');
+  if (!suites[suite]) {
+    throw new Error('--suite must be regression, calibration, tailoring or all');
+  }
   const selected = suites[suite];
   const fixtures = only ? selected.filter((f) => only.includes(f.id)) : selected;
-  if (fixtures.length === 0) throw new Error(`no fixtures match ${only?.join(',')}`);
+  // Resume tailoring fixtures (no-fabrication checks) run with `tailoring` and `all`.
+  const tailoring =
+    suite === 'tailoring' || suite === 'all'
+      ? TAILORING_FIXTURES.filter((f) => !only || only.includes(f.id))
+      : [];
+  if (fixtures.length === 0 && tailoring.length === 0) {
+    throw new Error(`no fixtures match ${only?.join(',')}`);
+  }
 
   const redis = createRedis(env.REDIS_URL, logger);
   await Promise.all([
@@ -73,10 +87,13 @@ async function main() {
       const keyed = await seedEvalDatabase(ai);
       process.stdout.write(`seeded eval database; keys for: ${keyed.join(', ') || 'none'}\n`);
     }
-    const report = await runEvalSuite({ ai, logger }, fixtures, {
-      mode,
-      repeat: Number(arg('repeat') ?? 1),
-    });
+    const report = withExtraResults(
+      await runEvalSuite({ ai, logger }, fixtures, {
+        mode,
+        repeat: Number(arg('repeat') ?? 1),
+      }),
+      await runTailoringSuite({ ai, logger }, tailoring, mode),
+    );
     process.stdout.write(`${formatReport(report)}\n`);
     const out = arg('out');
     if (out) await writeFile(out, JSON.stringify(report, null, 2));

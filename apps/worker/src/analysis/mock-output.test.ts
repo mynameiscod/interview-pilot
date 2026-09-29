@@ -3,6 +3,7 @@ import {
   BlueprintContent,
   BlueprintDraftAi,
   JdStructured,
+  ResumeTailoringAi,
   ResumeStructured,
   RoleAnalysisAi,
 } from '@cbi/shared-types';
@@ -16,6 +17,7 @@ describe('mock provider output for Phase 3 features', () => {
     ['jd.structure', JdStructured],
     ['role.analyze', RoleAnalysisAi],
     ['blueprint.generate', BlueprintDraftAi],
+    ['resume.tailor', ResumeTailoringAi],
   ] as const)('%s sample validates', (_feature, schema) => {
     const result = schema.safeParse(sampleFromJsonSchema(toJsonSchema(schema)));
     expect(result.error?.issues ?? []).toEqual([]);

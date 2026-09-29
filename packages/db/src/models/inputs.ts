@@ -6,6 +6,8 @@ import {
   JobTargetSource,
   ResumeFormat,
   ResumeSource,
+  TailoringStatus,
+  type TailoringSuggestions,
   type DocumentLayout,
   type JdStructured,
   type ResumeStructured,
@@ -18,6 +20,7 @@ import type {
   JobTargetSource as JobTargetSourceT,
   ResumeFormat as ResumeFormatT,
   ResumeSource as ResumeSourceT,
+  TailoringStatus as TailoringStatusT,
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
@@ -157,3 +160,48 @@ const jobTargetSchema = new Schema<JobTargetRecord>(
 jobTargetSchema.index({ userId: 1, createdAt: -1 });
 
 export const JobTargetModel = model<JobTargetRecord>('JobTarget', jobTargetSchema);
+
+// ---- Resume tailoring suggestions ------------------------------------------------------
+
+export interface ResumeTailoringRecord {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  resumeId: Types.ObjectId;
+  jobTargetId: Types.ObjectId;
+  /**
+   * Identifies the exact inputs (both documents and their edited revisions):
+   * asking again for unchanged inputs returns this record instead of a new AI call.
+   */
+  inputKey: string;
+  status: TailoringStatusT;
+  suggestions: TailoringSuggestions | null;
+  failureCode: 'INPUT_NOT_READY' | 'INTERNAL' | null;
+  promptVersion: number | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const tailoringSchema = new Schema<ResumeTailoringRecord>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    resumeId: { type: Schema.Types.ObjectId, ref: 'Resume', required: true },
+    jobTargetId: { type: Schema.Types.ObjectId, ref: 'JobTarget', required: true },
+    inputKey: { type: String, required: true },
+    status: { type: String, enum: TailoringStatus.options, required: true, default: 'PENDING' },
+    suggestions: { type: Schema.Types.Mixed, default: null },
+    failureCode: { type: String, enum: ['INPUT_NOT_READY', 'INTERNAL', null], default: null },
+    promptVersion: { type: Number, default: null },
+    completedAt: { type: Date, default: null },
+  },
+  { timestamps: true, collection: 'resumeTailorings' },
+);
+tailoringSchema.index({ userId: 1, inputKey: 1, createdAt: -1 });
+tailoringSchema.index({ userId: 1, createdAt: -1 });
+// Suggestions are cheap to regenerate and hold resume content: kept for 30 days.
+tailoringSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+
+export const ResumeTailoringModel = model<ResumeTailoringRecord>(
+  'ResumeTailoring',
+  tailoringSchema,
+);

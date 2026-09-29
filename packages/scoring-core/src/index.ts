@@ -1,4 +1,5 @@
 import type { CompetencyCategory, ConfidenceLevel, ReadinessBand } from '@cbi/shared-types';
+export * from './ats.js';
 
 /**
  * Deterministic scoring (design §8, stages 5–6). Pure functions only: the
