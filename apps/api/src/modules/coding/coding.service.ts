@@ -29,10 +29,9 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
+import { ANSWERABLE_STATES, LiveError } from '../live/live.service.js';
 
 type Session = InterviewSessionRecord;
-
-const LIVE = new Set(['ACTIVE', 'ROUND_TRANSITION']);
 
 export const publicProblem = (p: ProblemRecord): PublicProblem => ({
   id: String(p._id),
@@ -133,8 +132,9 @@ export function createCodingService(deps: Deps) {
     };
   }
 
+  /** The editor is open while the question can be answered (the states the answer path accepts). */
   function assertOpen(s: Session, turn: InterviewTurnRecord, a: CodingAttemptRecord) {
-    if (!LIVE.has(s.state))
+    if (!ANSWERABLE_STATES.has(s.state))
       throw new AppError(409, 'INVALID_STATE', 'The interview is not active.');
     if (turn.answer || a.submission) {
       throw new AppError(409, 'INVALID_STATE', 'This solution was already submitted.');
@@ -175,6 +175,47 @@ export function createCodingService(deps: Deps) {
       { waitMs: CODING_LIMITS.judgeWaitMs },
     );
     return toRunResult(judged, tests, now());
+  }
+
+  /**
+   * Answers the coding question with a saved submission. The answer is
+   * acknowledged once saved (its assessment and the next question follow in
+   * the background), and a retry for the same question is a no-op. When it
+   * fails, the submission stays saved and submitting again answers it.
+   */
+  async function answerSubmission(
+    userId: string,
+    sessionId: string,
+    questionId: string,
+    submission: NonNullable<CodingAttemptRecord['submission']>,
+  ) {
+    try {
+      await deps.answer(
+        userId,
+        {
+          sessionId,
+          questionId,
+          text: submissionAnswerText({
+            language: submission.language,
+            code: submission.code,
+            result: submission.result,
+          }),
+          clientMsgId: `coding-${questionId}`.slice(0, 64),
+        },
+        { coding: true },
+      );
+    } catch (err) {
+      if (!(err instanceof LiveError)) throw err;
+      logger.warn({ err, sessionId }, 'code submit: answering the question failed');
+      if (err.code === 'BUSY') {
+        throw new AppError(
+          503,
+          'SERVICE_UNAVAILABLE',
+          'Your solution is saved. Please submit again to continue.',
+        );
+      }
+      throw new AppError(409, 'INVALID_STATE', err.message);
+    }
   }
 
   return {
@@ -259,7 +300,12 @@ export function createCodingService(deps: Deps) {
       const { s, turn, problem } = await context(userId, sessionId, questionId);
       assertLanguage(problem, body);
       const a = await attemptFor(s, turn, problem);
-      if (a.submission) return workspace(problem, a); // double click / retry
+      if (a.submission) {
+        // Double click or retry. If answering failed after the submission was saved, the
+        // question is still open: answer it now (idempotent per question).
+        if (!turn.answer) await answerSubmission(userId, sessionId, questionId, a.submission);
+        return workspace(problem, a);
+      }
       assertOpen(s, turn, a);
       let result: CodeRunResult | null = null;
       try {
@@ -290,16 +336,7 @@ export function createCodingService(deps: Deps) {
       const final =
         submitted ?? (await CodingAttemptModel.findById(a._id).lean<CodingAttemptRecord>())!;
       if (submitted) {
-        await deps.answer(
-          userId,
-          {
-            sessionId,
-            questionId,
-            text: submissionAnswerText({ language: body.language, code: body.code, result }),
-            clientMsgId: `coding-${questionId}`.slice(0, 64),
-          },
-          { coding: true },
-        );
+        await answerSubmission(userId, sessionId, questionId, submitted.submission!);
         await audit.record(
           {
             actorType: 'USER',
