@@ -6,6 +6,7 @@ import {
   OrgWebhookModel,
   WebhookDeliveryModel,
   webhookBody,
+  webhookSecretContext,
   type OrgApiKeyRecord,
   type OrgWebhookRecord,
   type WebhookDeliveryRecord,
@@ -25,9 +26,6 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ApiKeyContext } from '../../types/express.js';
-
-/** Secret-box binding for a webhook's signing secret. */
-export const webhookSecretContext = (webhookId: string) => `orgWebhook:${webhookId}`;
 
 /** Most webhooks and live API keys an organisation may have. */
 export const MAX_WEBHOOKS = 10;

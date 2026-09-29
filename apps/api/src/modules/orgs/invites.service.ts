@@ -1,5 +1,6 @@
 import {
   CampaignInviteModel,
+  inviteTokenContext,
   mongoose,
   type CampaignInviteRecord,
   type CampaignRecord,
@@ -28,9 +29,6 @@ import { hashToken, newToken } from '../campaigns/campaigns.service.js';
  * invite email and in each reminder. The worker sends everything: new
  * invites are PENDING with `nextSendAt` now.
  */
-
-/** Secret-box binding for an invite's token. */
-export const inviteTokenContext = (inviteId: string) => `campaignInvite:${inviteId}`;
 
 export function inviteSummary(i: CampaignInviteRecord): CampaignInviteSummary {
   return {

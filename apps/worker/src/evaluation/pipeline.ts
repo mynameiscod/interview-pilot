@@ -1,6 +1,7 @@
 import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import {
+  campaignInterviewCompleted,
   CampaignModel,
   applySessionEvent,
   InterviewEvidenceModel,
@@ -504,8 +505,14 @@ export async function renderRevisionPdf(
   );
 }
 
-/** 8. "Your report is ready" email, when email is configured and the address is verified. */
+/**
+ * 8. "Your report is ready" email, when email is configured and the address
+ * is verified. For an organisation's campaign, the invite is also marked
+ * completed and `campaign.candidate_completed` queued for its webhooks (once
+ * per application, whatever retries happen).
+ */
 async function notify(deps: EvaluationDeps, s: Session) {
+  if (s.campaignId) await campaignInterviewCompleted(s._id);
   if (!deps.email || (deps.emailEnabled && !deps.emailEnabled())) {
     deps.logger.info({ sessionId: String(s._id) }, 'email disabled; report-ready notice skipped');
     return;

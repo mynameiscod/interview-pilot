@@ -8,6 +8,7 @@ import {
   ensureLibraryCatalog,
   IdentityCaptureModel,
   InterviewScoreModel,
+  inviteTokenContext,
   InterviewSessionModel,
   OrgApiKeyModel,
   OrgMemberModel,
@@ -18,6 +19,7 @@ import {
   UserProfileModel,
   verifyWebhookSignature,
   WebhookDeliveryModel,
+  webhookSecretContext,
   webhookSignatureHeader,
   type CampaignRecord,
 } from '@cbi/db';
@@ -43,8 +45,6 @@ import {
   useIntegrationServices,
 } from '../../test-support/integration.js';
 import { bootstrapAi } from '../ai/ai-bootstrap.js';
-import { inviteTokenContext } from './invites.service.js';
-import { webhookSecretContext } from './integrations.service.js';
 
 const { redis } = useIntegrationServices();
 

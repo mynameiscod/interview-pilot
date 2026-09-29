@@ -15,6 +15,7 @@ import {
   createJudge,
   createPaymentGateway,
   createStorage,
+  safePostJson,
 } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { createFfmpegRunner } from './processors/media-file.js';
@@ -124,6 +125,31 @@ async function main(): Promise<void> {
         logger,
         candidateUrl: env.PUBLIC_CANDIDATE_URL,
         judge: integrations.judge,
+      },
+    },
+    invites: {
+      intervalMs: env.WORKER_INVITE_MAIL_INTERVAL_MS,
+      deps: {
+        email: integrations.email,
+        emailEnabled: () => integrations.ready('email'),
+        secrets: ai.secrets,
+        candidateUrl: env.PUBLIC_CANDIDATE_URL,
+        logger,
+        batch: env.WORKER_INVITE_MAIL_BATCH,
+      },
+    },
+    webhooks: {
+      intervalMs: env.WORKER_WEBHOOK_INTERVAL_MS,
+      deps: {
+        secrets: ai.secrets,
+        logger,
+        // SSRF-guarded; plain http only for local receivers in development.
+        post: (url, body, headers) =>
+          safePostJson(url, body, {
+            headers,
+            timeoutMs: env.WEBHOOK_TIMEOUT_MS,
+            allowHttp: env.APP_ENV === 'development',
+          }),
       },
     },
     exports: {

@@ -29,6 +29,12 @@ import type {
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
+/** Secret-box binding of an invite's token (the API encrypts it, the worker decrypts it). */
+export const inviteTokenContext = (inviteId: string) => `campaignInvite:${inviteId}`;
+
+/** Secret-box binding of a webhook's signing secret. */
+export const webhookSecretContext = (webhookId: string) => `orgWebhook:${webhookId}`;
+
 function model<T>(name: string, schema: Schema<T>): Model<T> {
   return (mongoose.models[name] as Model<T> | undefined) ?? mongoose.model<T>(name, schema);
 }

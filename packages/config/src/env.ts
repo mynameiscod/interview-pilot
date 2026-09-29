@@ -523,6 +523,14 @@ export const workerEnvSchema = baseEnvSchema
       .default(60 * 60_000),
     /** Parallel evaluation stages (AI calls and PDF rendering). */
     WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+    /** How often organisations' campaign invites and reminders that are due are emailed. */
+    WORKER_INVITE_MAIL_INTERVAL_MS: z.coerce.number().int().min(10_000).default(60_000),
+    /** Invite and reminder emails sent per run (the rest wait for the next run). */
+    WORKER_INVITE_MAIL_BATCH: z.coerce.number().int().min(1).max(5000).default(200),
+    /** How often due webhook deliveries (and retries) are sent. */
+    WORKER_WEBHOOK_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
+    /** Longest a webhook receiver may take to answer before the attempt counts as failed. */
+    WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */
     EMAIL_PROVIDER: z.enum(['ses', 'smtp', 'disabled']).default('disabled'),
     ...emailFields,
