@@ -4,13 +4,20 @@ import { useTranslation } from 'react-i18next';
 import { track } from '../../../lib/analytics';
 import { ExtractionStatus } from '../components/ExtractionStatus';
 import { FileDrop } from '../components/FileDrop';
-import { useInterviewsApi, useJobStatus } from '../interviews-api';
+import { JdPreview } from '../../resume-tools/JdPreview';
+import { useInterviewsApi, useJobStatus, useJobTarget } from '../interviews-api';
 import { inputErrorMessage } from '../messages';
 import { SavedJobs } from './SavedJobs';
 import { StepActions } from './StepActions';
 import type { JdTab, StepProps } from './wizard-state';
 
 const TABS: JdTab[] = ['PASTE', 'UPLOAD', 'URL'];
+
+/** The read job description (skills, seniority, responsibilities) with Edit, once it is ready. */
+function SavedJdPreview({ id, ready }: { id: string; ready: boolean }) {
+  const target = useJobTarget(ready ? id : null);
+  return target.data ? <JdPreview target={target.data} /> : null;
+}
 /** Link failures where pasting the text is the practical way forward. */
 const PAGE_UNREADABLE: ExtractionErrorCode[] = ['URL_BLOCKED', 'FETCH_FAILED', 'NOT_READABLE'];
 
@@ -170,6 +177,7 @@ export function JobStep({ state, update, onBack, onNext }: StepProps) {
           <ExtractionStatus kind="jd" extraction={extraction}>
             <p className="mb-0 mt-2 small">{t('wizard.jd.failedNext')}</p>
           </ExtractionStatus>
+          <SavedJdPreview id={target.id} ready={extraction?.status === 'READY'} />
         </div>
       )}
     </div>
@@ -232,7 +240,10 @@ export function JobStep({ state, update, onBack, onNext }: StepProps) {
               </button>
             </div>
           ) : (
-            <ExtractionStatus kind="jd" extraction={extraction} />
+            <>
+              <ExtractionStatus kind="jd" extraction={extraction} />
+              <SavedJdPreview id={target.id} ready={extraction?.status === 'READY'} />
+            </>
           )}
         </div>
       )}

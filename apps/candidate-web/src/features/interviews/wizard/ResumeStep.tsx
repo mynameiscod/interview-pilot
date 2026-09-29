@@ -1,8 +1,10 @@
-import type { ResumeSummary } from '@cbi/shared-types';
+import { DOCUMENT_LIMITS, type ResumeSummary } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { track } from '../../../lib/analytics';
+import { ResumePreview } from '../../resume-tools/ResumePreview';
+import { useResumeToolsApi } from '../../resume-tools/resume-tools-api';
 import { ExtractionStatus } from '../components/ExtractionStatus';
 import { FileDrop } from '../components/FileDrop';
 import {
@@ -37,6 +39,8 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [pasted, setPasted] = useState('');
+  const tools = useResumeToolsApi();
 
   const list = resumes.data ?? [];
   const selected = list.find((r) => r.id === state.resumeId) ?? null;
@@ -49,26 +53,35 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
     if (done) void queryClient.invalidateQueries({ queryKey: queryKeys.resumes, exact: true });
   }, [done, queryClient]);
 
-  async function upload(file: File) {
+  async function add(create: () => Promise<ResumeSummary>, source: 'file' | 'paste') {
     setUploading(true);
     setError(null);
     setNotice(null);
     try {
-      const resume = await api.uploadResume(file);
+      const resume = await create();
       const known = list.some((r) => r.id === resume.id);
       queryClient.setQueryData<ResumeSummary[]>(queryKeys.resumes, (old = []) => [
         resume,
         ...old.filter((r) => r.id !== resume.id),
       ]);
       update({ resumeId: resume.id });
-      track('resume_uploaded', { duplicate: known });
+      track('resume_uploaded', { duplicate: known, source });
       setNotice(known ? t('wizard.resume.duplicate') : t('wizard.resume.uploaded'));
+      if (source === 'paste') setPasted('');
     } catch (err) {
       setError(inputErrorMessage(t, err));
     } finally {
       setUploading(false);
     }
   }
+  const upload = (file: File) => add(() => api.uploadResume(file), 'file');
+  const submitPasted = () => {
+    if (pasted.trim().length < DOCUMENT_LIMITS.minTextChars) {
+      setError(t('wizard.resume.pasteTooShort', { min: DOCUMENT_LIMITS.minTextChars }));
+      return;
+    }
+    void add(() => tools.createResumeFromText({ text: pasted.trim() }), 'paste');
+  };
 
   async function remove(resumeId: string) {
     setError(null);
@@ -146,6 +159,12 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
                       <label htmlFor={inputId} className="form-check-label text-break">
                         {resume.originalName}
                       </label>
+                      {resume.format === 'LINKEDIN' && (
+                        <span className="badge text-bg-light border cb-border fw-normal ms-2">
+                          <i className="bi bi-linkedin me-1" aria-hidden="true" />
+                          {t('wizard.resume.linkedIn')}
+                        </span>
+                      )}
                       <div id={`${inputId}-meta`} className="small cb-text-secondary">
                         {t('wizard.resume.uploadedOn', {
                           date: formatDate(i18n.resolvedLanguage, resume.createdAt),
@@ -197,6 +216,39 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
         busyLabel={t('inputs.uploading')}
         onFile={(file) => void upload(file)}
       />
+      <p className="small cb-text-secondary mt-2 mb-0">
+        <i className="bi bi-linkedin me-1" aria-hidden="true" />
+        {t('wizard.resume.linkedInPdfHint')}
+      </p>
+
+      <details className="mt-3">
+        <summary className="fw-semibold">{t('wizard.resume.pasteTitle')}</summary>
+        <div className="mt-2">
+          <label htmlFor={`${id}-paste`} className="form-label">
+            {t('wizard.resume.pasteLabel')}
+          </label>
+          <textarea
+            id={`${id}-paste`}
+            className="form-control"
+            rows={8}
+            maxLength={DOCUMENT_LIMITS.maxPasteChars}
+            value={pasted}
+            aria-describedby={`${id}-paste-hint`}
+            onChange={(e) => setPasted(e.target.value)}
+          />
+          <div id={`${id}-paste-hint`} className="form-text">
+            {t('wizard.resume.pasteHint')}
+          </div>
+          <button
+            type="button"
+            className="btn btn-outline-primary btn-sm mt-2"
+            disabled={uploading || !pasted.trim()}
+            onClick={submitPasted}
+          >
+            {t('wizard.resume.pasteUse')}
+          </button>
+        </div>
+      </details>
 
       {selected && (
         <section className="mt-3" aria-label={t('wizard.resume.statusLabel')}>
@@ -206,6 +258,7 @@ export function ResumeStep({ state, update, onBack, onNext }: StepProps) {
           <ExtractionStatus kind="resume" extraction={extraction}>
             <p className="mb-0 mt-2 small">{t('wizard.resume.failedNext')}</p>
           </ExtractionStatus>
+          {selected.extraction.status === 'READY' && <ResumePreview resume={selected} />}
         </section>
       )}
 

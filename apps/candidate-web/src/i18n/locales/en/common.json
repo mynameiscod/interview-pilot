@@ -27,7 +27,8 @@
     "buyCredits": "Buy credits",
     "purchases": "Purchases",
     "accountMenu": "Account menu",
-    "privacy": "Privacy & data"
+    "privacy": "Privacy & data",
+    "resumeCheck": "Resume check"
   },
   "landing": {
     "hero": {
@@ -360,7 +361,8 @@
       "TEXT_TRUNCATED": "This was very long, so only the first part will be used.",
       "OCR_NEEDED": "Parts of this look scanned, so some text may be missing. For the best result, upload a text-based PDF or DOCX.",
       "STRUCTURE_UNAVAILABLE": "We read the text but could not organise it in detail. Your interview will still use it."
-    }
+    },
+    "ocrUsed": "This looks like a scanned document, so an AI service read its text. Check the details below and correct anything it got wrong."
   },
   "wizard": {
     "title": "New interview",
@@ -424,7 +426,14 @@
       "chooseOrSkip": "Choose or upload a resume, or continue without one.",
       "failedChooseAnother": "This resume could not be read. Upload a different file or continue without a resume.",
       "listError": "We could not load your saved resumes. You can still upload one.",
-      "skip": "Continue without a resume"
+      "skip": "Continue without a resume",
+      "linkedIn": "LinkedIn",
+      "linkedInPdfHint": "Using LinkedIn? On your profile choose More → Save to PDF and upload that file. We read it here and never visit LinkedIn for you.",
+      "pasteTitle": "Or paste your resume or LinkedIn profile text",
+      "pasteLabel": "Resume or profile text",
+      "pasteHint": "Open your resume or your LinkedIn profile, select the text, copy it and paste it here. Include your experience, education and skills.",
+      "pasteUse": "Use this text",
+      "pasteTooShort": "Paste at least {{min}} characters, including your experience, education and skills."
     },
     "jd": {
       "intro": "Share the job you are applying for. This is optional, but it makes the interview much closer to the real one.",
@@ -1632,5 +1641,189 @@
       "scoring": "How AI scoring works"
     },
     "loading": "Loading…"
+  },
+  "resumeTools": {
+    "chips": {
+      "add": "Add",
+      "remove": "Remove {{value}}",
+      "hint": "Type a skill and press Enter. Separate several with commas."
+    },
+    "resume": {
+      "title": "What we read from your resume",
+      "hint": "Check this carefully. If something is wrong or missing, choose Edit: your corrections are used for the analysis, the match score and the suggestions.",
+      "source": {
+        "ai": "Read by AI",
+        "edited": "Edited by you",
+        "linkedin": "From your LinkedIn profile"
+      },
+      "present": "present",
+      "years_one": "{{count}} year of experience",
+      "years_other": "{{count}} years of experience",
+      "headline": "Headline",
+      "totalYears": "Total years of experience",
+      "skills": "Skills",
+      "experience": "Experience",
+      "education": "Education",
+      "projects": "Projects",
+      "none": "Nothing found.",
+      "notStructured": "We could not organise this resume into sections. Choose Edit to add your skills and experience yourself."
+    },
+    "edit": {
+      "edit": "Edit",
+      "save": "Save changes",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "revert": "Use the AI version",
+      "invalid": "Some fields are not valid. Check the dates (YYYY or YYYY-MM), the years and that every entry has a title.",
+      "resumeFormLabel": "Edit your resume details",
+      "jdFormLabel": "Edit the job description details",
+      "title": "Job title",
+      "organization": "Company or organisation",
+      "start": "Start (YYYY-MM)",
+      "end": "End (YYYY-MM)",
+      "current": "I work here now",
+      "highlights": "Highlights (one per line)",
+      "removeEntry": "Remove this entry",
+      "addExperience": "Add experience",
+      "qualification": "Degree or qualification",
+      "institution": "College or institution",
+      "year": "Year",
+      "addEducation": "Add education",
+      "projectName": "Project name",
+      "projectSummary": "What it does",
+      "technologies": "Technologies",
+      "addProject": "Add project",
+      "onePerLine": "One per line."
+    },
+    "jd": {
+      "title": "What we read from the job description",
+      "jobTitle": "Job title",
+      "seniority": "Seniority",
+      "seniorityUnknown": "Not stated",
+      "mustHave": "Must-have skills",
+      "niceToHave": "Nice-to-have skills",
+      "responsibilities": "Responsibilities",
+      "notStructured": "We could not organise this job description. Choose Edit to add the skills it asks for."
+    },
+    "match": {
+      "title": "Resume match",
+      "intro": "How well your resume matches this job description, scored the way applicant tracking systems screen resumes. It is free, uses no AI, and every point is explained.",
+      "needBoth": "Add a resume and a job description to see how well they match.",
+      "notReady": "Your resume or job description is still being read. The score appears when both are ready.",
+      "found": "Found",
+      "missing": "Missing",
+      "as": "(as “{{as}}”)",
+      "band": {
+        "STRONG": "Strong match",
+        "GOOD": "Good match",
+        "FAIR": "Fair match",
+        "WEAK": "Weak match"
+      },
+      "usedEdits": "Uses your corrections",
+      "components": {
+        "SKILLS": "Skills and keywords",
+        "EXPERIENCE": "Experience and seniority",
+        "SECTIONS": "Resume sections",
+        "FORMATTING": "Formatting"
+      },
+      "points": "{{score}} of {{max}}",
+      "mustHave": "Must-have skills",
+      "niceToHave": "Nice-to-have skills",
+      "noSkills": "The job description does not list skills we recognise.",
+      "experienceTitle": "Experience",
+      "fit": {
+        "MEETS": "You have {{years}} years; the role asks for {{required}} or more.",
+        "BELOW": "You have {{years}} years; the role asks for {{required}} or more.",
+        "ABOVE": "You have {{years}} years, more than this role usually asks for.",
+        "UNKNOWN": "We could not compare your experience with the role."
+      },
+      "sectionsTitle": "Sections",
+      "sections": {
+        "CONTACT": "Contact details",
+        "SUMMARY": "Summary",
+        "SKILLS": "Skills",
+        "EXPERIENCE_DATES": "Experience with dates",
+        "EDUCATION": "Education"
+      },
+      "formattingTitle": "Formatting risks",
+      "noFormattingRisks": "No formatting risks found.",
+      "risks": {
+        "TABLES": "Tables found: many screening systems read table cells out of order. Use plain lines instead.",
+        "COLUMNS": "Two columns found: text may be read in the wrong order. A single-column layout is safer.",
+        "IMAGE_ONLY": "The file is an image (scanned), so screening systems may not read any text. Upload a text-based PDF or DOCX.",
+        "TOO_LONG": "The resume is very long ({{words}} words). Two pages are usually enough.",
+        "TOO_SHORT": "The resume is very short. Add your experience, projects and skills."
+      },
+      "why": "Why this score",
+      "reasons": {
+        "MUST_HAVE_MATCHED": "Must-have skill found: {{skill}}.",
+        "MUST_HAVE_MISSING": "Must-have skill not found: {{skill}} (worth {{worth}} points).",
+        "NICE_TO_HAVE_MATCHED": "Nice-to-have skill found: {{skill}}.",
+        "NICE_TO_HAVE_MISSING": "Nice-to-have skill not found: {{skill}} (worth {{worth}} points).",
+        "SYNONYM_MATCHED": "{{skill}} counted because your resume says “{{as}}”.",
+        "NO_JD_SKILLS": "The job description lists no skills we recognise, so skills are not scored.",
+        "EXPERIENCE_MEETS": "Your {{years}} years meet the {{required}}+ years asked for.",
+        "EXPERIENCE_BELOW": "Your {{years}} years are {{gap}} short of the {{required}}+ years asked for.",
+        "EXPERIENCE_ABOVE": "Your {{years}} years are well above the {{max}} years this role asks for.",
+        "EXPERIENCE_UNKNOWN_resume": "We could not work out your years of experience, so this counts half.",
+        "EXPERIENCE_UNKNOWN_jd": "The job description does not say how much experience it wants, so this counts half.",
+        "SECTION_PRESENT": "{{section}} found.",
+        "SECTION_MISSING": "{{section}} missing.",
+        "LAYOUT_UNKNOWN": "We could not check the formatting of this file."
+      }
+    },
+    "tailor": {
+      "title": "Tailoring suggestions",
+      "honestyNote": "These are suggestions only. We never change your resume, and we only reword what your resume already says. Copy only what is true for you, and fill in or delete placeholders such as [X%].",
+      "ask": "Get suggestions for this job",
+      "asking": "Asking…",
+      "working": "Preparing suggestions. This usually takes under a minute.",
+      "failed": {
+        "INPUT_NOT_READY": "Your resume or job description is not ready. Try again when both have been read.",
+        "INTERNAL": "We could not prepare suggestions. Please try again later."
+      },
+      "fallback": "Our AI service is busy, so these suggestions were put together from your resume without it: a summary made of your own facts and the keywords you are missing.",
+      "guard": {
+        "METRIC_REPLACED_one": "{{count}} number that is not in your resume was replaced with a placeholder.",
+        "METRIC_REPLACED_other": "{{count}} numbers that are not in your resume were replaced with placeholders.",
+        "UNGROUNDED_BULLET_one": "{{count}} suggestion that did not match your resume was removed.",
+        "UNGROUNDED_BULLET_other": "{{count}} suggestions that did not match your resume were removed.",
+        "UNKNOWN_EMPLOYER_one": "{{count}} suggestion that named an employer or tool not in your resume was removed.",
+        "UNKNOWN_EMPLOYER_other": "{{count}} suggestions that named employers or tools not in your resume were removed."
+      },
+      "summary": "Professional summary",
+      "copy": "Copy",
+      "copied": "Copied",
+      "bullets": "Rewritten bullet points",
+      "original": "Your version",
+      "placeholders": "Fill in {{list}} only if you know the real value, otherwise remove it.",
+      "noBullets": "No rewrites to suggest.",
+      "missing": "Keywords the job asks for that your resume does not show",
+      "required": "Must-have",
+      "defaultGuidance": "Add this only if you have really used it. If not, it is worth learning before you apply.",
+      "noMissing": "Your resume already covers the skills this job lists.",
+      "exportTitle": "Tailored draft",
+      "exportHint": "A plain-text draft of your resume with these suggestions in place. Review every line, add your contact details and keep only what is true.",
+      "downloadText": "Download as text",
+      "downloadMarkdown": "Download as Markdown",
+      "copyMarkdown": "Copy as Markdown",
+      "draftNotice": "DRAFT: review every line before you use it. Keep only what is true and fill in or remove every placeholder.",
+      "certifications": "Certifications"
+    },
+    "check": {
+      "title": "Resume check",
+      "subtitle": "See how well a resume matches a job description, correct what we read, and get tailoring suggestions. No interview needed.",
+      "needInputs": "You need a resume and a job description that have been read. Add them in the new interview steps; you can stop before starting an interview.",
+      "addInputs": "Add a resume and job description",
+      "pick": "Choose what to compare",
+      "resume": "Resume",
+      "jd": "Job description",
+      "pastedJd": "Pasted job description ({{date}})"
+    },
+    "section": {
+      "needBoth": "Add a resume and a job description to see your resume match score and tailoring suggestions.",
+      "openCheck": "Open Resume check",
+      "editNote": "Corrections you make here update the match score at once and are used the next time this interview is analysed."
+    }
   }
 }

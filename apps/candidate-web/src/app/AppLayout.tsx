@@ -12,6 +12,7 @@ import './app-shell.scss';
 const NAV_ITEMS = [
   { to: '/app', key: 'nav.dashboard', icon: 'bi-house-door' },
   { to: '/app/history', key: 'nav.history', icon: 'bi-clock-history' },
+  { to: '/app/resume-check', key: 'nav.resumeCheck', icon: 'bi-file-earmark-check' },
   { to: '/app/purchases', key: 'nav.purchases', icon: 'bi-cart3' },
   { to: '/pricing', key: 'nav.buyCredits', icon: 'bi-database' },
   { to: '/app/profile', key: 'nav.profile', icon: 'bi-person' },

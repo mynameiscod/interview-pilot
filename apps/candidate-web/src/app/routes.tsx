@@ -67,6 +67,14 @@ export const routes: RouteObject[] = [
                 }),
               },
               {
+                // Resume match score and tailoring suggestions; no interview needed.
+                path: 'resume-check',
+                lazy: async () => ({
+                  Component: (await import('../features/resume-tools/ResumeCheckPage'))
+                    .ResumeCheckPage,
+                }),
+              },
+              {
                 path: 'interviews/:id/analysis',
                 lazy: async () => ({
                   Component: (await import('../features/interviews/AnalysisPage')).AnalysisPage,

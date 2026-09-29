@@ -41,15 +41,25 @@ export function ExtractionStatus({ kind, extraction, children }: Props) {
     );
   }
 
+  // A scan read by OCR gets its own note instead of the "looks scanned" warning.
+  const warnings = extraction.ocrUsed
+    ? extraction.warnings.filter((w) => w !== 'OCR_NEEDED')
+    : extraction.warnings;
   return (
     <div role="status" aria-live="polite">
       <p className="small mb-1 text-success-emphasis">
         <i className="bi bi-check-circle me-2" aria-hidden="true" />
         {t(`inputs.status.ready.${kind}`)}
       </p>
-      {extraction.warnings.length > 0 && (
+      {extraction.ocrUsed && (
+        <p className="alert alert-info py-2 small mb-1">
+          <i className="bi bi-eye me-2" aria-hidden="true" />
+          {t('inputs.ocrUsed')}
+        </p>
+      )}
+      {warnings.length > 0 && (
         <ul className="list-unstyled small mb-0">
-          {extraction.warnings.map((w) => (
+          {warnings.map((w) => (
             <li key={w} className="alert alert-warning py-2 mb-1">
               <i className="bi bi-exclamation-triangle me-2" aria-hidden="true" />
               <span className="visually-hidden">{t('inputs.warningLabel')}: </span>
