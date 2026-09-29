@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import en from '../i18n/locales/en/common.json';
 import { renderRoute } from '../test/render';
+import { englishSeoStrings } from '../seo/seo-strings';
 import { LANDING_FAQ } from './landing-content';
 
 describe('landing page', () => {
@@ -62,6 +63,17 @@ describe('landing page', () => {
 
     await userEvent.click(question);
     expect(details).not.toHaveAttribute('open');
+  });
+
+  it('shows exactly the FAQ that the prerendered FAQPage data describes', async () => {
+    await renderRoute('/');
+    await screen.findByRole('heading', { level: 1 });
+    const faq = screen.getByRole('region', { name: 'Frequently asked questions' });
+    const shown = [...faq.querySelectorAll('details')].map((d) => ({
+      question: d.querySelector('summary')!.textContent,
+      answer: d.querySelector('p')!.textContent,
+    }));
+    expect(shown).toEqual(englishSeoStrings().faq);
   });
 
   it('renders the new sections in Hindi', async () => {
