@@ -4,7 +4,9 @@ import {
   AnalysisJob,
   DocumentJob,
   EvaluationJob,
+  ExportJob,
   QueueName,
+  type CampaignPackageJobData,
   type EvaluationStageJobData,
   type ReportPdfJobData,
   type InterviewAnalyzeJobData,
@@ -20,6 +22,11 @@ import {
 import { createEvaluationQueue, ensureStageJob } from './evaluation/queue.js';
 import { sweepEvaluations } from './evaluation/sweep.js';
 import { writeHeartbeat } from './processors/heartbeat.js';
+import {
+  processCampaignPackage,
+  sweepCampaignExports,
+  type CampaignExportDeps,
+} from './processors/campaign-export.js';
 import { processInterviewAnalyze, type AnalysisProcessorDeps } from './processors/analysis.js';
 import {
   processJdExtract,
@@ -37,6 +44,7 @@ export const LIVE_SWEEP_JOB = 'live-sweep' as const;
 export const PAYMENT_RECONCILE_JOB = 'payment-reconcile' as const;
 export const MEDIA_SWEEP_JOB = 'media-sweep' as const;
 export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
+export const EXPORT_SWEEP_JOB = 'export-sweep' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -63,6 +71,8 @@ export interface WorkerRuntimeOptions {
   analyticsRollupIntervalMs?: number;
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
   evaluation?: { deps: EvaluationDeps; concurrency: number };
+  /** Campaign package exports and the sweep of expired files; omit to leave the queue unconsumed. */
+  exports?: { deps: CampaignExportDeps; concurrency: number; sweepIntervalMs: number };
 }
 
 export interface WorkerRuntime {
@@ -81,6 +91,7 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     ...(opts.documents ? [QueueName.DOCUMENTS] : []),
     ...(opts.analysis ? [QueueName.ANALYSIS] : []),
     ...(opts.evaluation ? [QueueName.EVALUATION] : []),
+    ...(opts.exports ? [QueueName.EXPORTS] : []),
   ];
   const evaluationQueue = opts.evaluation ? createEvaluationQueue(opts.queueConnection) : null;
 
@@ -136,6 +147,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.exports) {
+    await systemQueue.upsertJobScheduler(
+      EXPORT_SWEEP_JOB,
+      { every: opts.exports.sweepIntervalMs },
+      { name: EXPORT_SWEEP_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -186,6 +205,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             const today = istDay(new Date());
             const yesterday = istDay(new Date(Date.now() - 24 * 3600 * 1000));
             await rollupDays(yesterday, today);
+            return;
+          }
+          case EXPORT_SWEEP_JOB: {
+            if (!opts.exports) return;
+            await sweepCampaignExports({ storage: opts.exports.deps.storage, logger: opts.logger });
             return;
           }
           case PROVIDER_HEALTH_JOB: {
@@ -277,6 +301,27 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
         },
         // AI scoring and PDF rendering can take a while; keep the lock long enough.
         { connection: opts.queueConnection, concurrency, lockDuration: 180_000 },
+      ),
+    );
+  }
+
+  if (opts.exports) {
+    const { deps, concurrency } = opts.exports;
+    workers.push(
+      new Worker(
+        QueueName.EXPORTS,
+        async (job) => {
+          if (job.name !== ExportJob.CAMPAIGN_PACKAGE) {
+            throw new Error(`Unknown export job: ${job.name}`);
+          }
+          await processCampaignPackage(
+            deps,
+            (job.data as CampaignPackageJobData).exportId,
+            isFinalAttempt(job),
+          );
+        },
+        // A package streams hundreds of reports; keep the lock long enough between renewals.
+        { connection: opts.queueConnection, concurrency, lockDuration: 300_000 },
       ),
     );
   }
