@@ -315,7 +315,7 @@ describe('feature flags', () => {
     expect(await screen.findByText('reports.publicProof')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Turns on Candidate Proof: candidates can share a read-only link to their report.',
+        'Turns on Candidate Proof: candidates can share a read-only link to their report, and issue a readiness certificate with a public check page.',
       ),
     ).toBeInTheDocument();
     expect(
@@ -451,6 +451,48 @@ describe('settings', () => {
         taxRatePercent: 18,
       },
       reason: 'GST registration done',
+    });
+  });
+
+  it('saves the practice drill and certificate settings', async () => {
+    const { api } = await renderAt('/system/settings', ['SUPER_ADMIN'], {
+      'GET /admin/settings': () => ok(settings()),
+      'PUT /admin/settings/practice': (body) =>
+        ok({
+          key: 'practice',
+          value: (body as { value: unknown }).value,
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'admin-1',
+        }),
+    });
+    const practice = await screen.findByRole('region', { name: 'Practice and certificates' });
+    expect(within(practice).getByLabelText('Free drills per candidate per day')).toHaveValue('3');
+    const user = userEvent.setup();
+    const perDay = within(practice).getByLabelText('Free drills per candidate per day');
+    await user.clear(perDay);
+    await user.type(perDay, '25');
+    await user.type(within(practice).getByLabelText(REASON), 'More drills for the launch');
+    await user.click(within(practice).getByRole('button', { name: 'Save practice settings' }));
+    expect(within(practice).getByText('Enter a whole number from 0 to 20.')).toBeInTheDocument();
+    expect(countOf(api, 'PUT /admin/settings/practice')).toBe(0);
+    await user.clear(perDay);
+    await user.type(perDay, '5');
+    await user.selectOptions(
+      within(practice).getByLabelText('Lowest band for a certificate'),
+      'READY',
+    );
+    await user.click(within(practice).getByRole('button', { name: 'Save practice settings' }));
+    expect(
+      await within(practice).findByText('Practice and certificates saved.'),
+    ).toBeInTheDocument();
+    expect(bodyOf(api, 'PUT /admin/settings/practice')).toEqual({
+      value: {
+        drillsPerDay: 5,
+        drillQuestions: 3,
+        certificateMinBand: 'READY',
+        defaultWeeklyGoal: 3,
+      },
+      reason: 'More drills for the launch',
     });
   });
 

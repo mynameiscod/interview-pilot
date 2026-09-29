@@ -1840,7 +1840,7 @@
       "saved": "{{key}} was updated.",
       "empty": "No flags.",
       "notes": {
-        "publicProof": "Turns on Candidate Proof: candidates can share a read-only link to their report."
+        "publicProof": "Turns on Candidate Proof: candidates can share a read-only link to their report, and issue a readiness certificate with a public check page."
       }
     },
     "settings": {
@@ -1926,6 +1926,35 @@
           "gstin": "Enter a valid 15-character GSTIN, or leave it blank.",
           "sacCode": "Enter 4–8 digits, or leave it blank.",
           "taxRatePercent": "Enter a percentage from 0 to 28."
+        }
+      },
+      "practice": {
+        "title": "Practice and certificates",
+        "explain": "Practice drills are free up to the daily limit (India time) and never use credits. Certificates are offered for reports at or above the chosen readiness band (while Candidate Proof is on).",
+        "save": "Save practice settings",
+        "fields": {
+          "drillsPerDay": "Free drills per candidate per day",
+          "drillQuestions": "Questions per drill",
+          "certificateMinBand": "Lowest band for a certificate",
+          "defaultWeeklyGoal": "Default weekly goal (sessions)"
+        },
+        "hints": {
+          "drillsPerDay": "0–20. 0 turns drills off.",
+          "drillQuestions": "1–6. Each takes about 2½ minutes.",
+          "defaultWeeklyGoal": "1–14. Candidates can change their own."
+        },
+        "options": {
+          "certificateMinBand": {
+            "READY": "Interview-ready",
+            "READY_WITH_GAPS": "Ready with gaps",
+            "DEVELOPING": "Developing"
+          }
+        },
+        "errors": {
+          "drillsPerDay": "Enter a whole number from 0 to 20.",
+          "drillQuestions": "Enter a whole number from 1 to 6.",
+          "certificateMinBand": "Choose a band.",
+          "defaultWeeklyGoal": "Enter a whole number from 1 to 14."
         }
       }
     },

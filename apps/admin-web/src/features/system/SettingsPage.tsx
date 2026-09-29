@@ -4,6 +4,7 @@ import {
   FinanceSetting,
   KpiTargets,
   MaintenanceSetting,
+  PracticeSetting,
   UpdateSettingBody,
   type SettingEntry,
   type SettingKey,
@@ -26,7 +27,9 @@ type Values = Record<string, string | boolean>;
 
 type Field = {
   name: string;
-  kind: 'checkbox' | 'textarea' | 'text' | 'number' | 'percent';
+  kind: 'checkbox' | 'textarea' | 'text' | 'number' | 'percent' | 'count' | 'select';
+  /** `select` only: the allowed values (labels under `<setting>.options.<field>`). */
+  options?: readonly string[];
   /** Where the shared schema reports problems with this field. */
   path: string;
   /** Read-only display of the saved value. */
@@ -53,6 +56,13 @@ const textField = (name: string, maxLength: number): Field => ({
   path: name,
   maxLength,
   show: (v) => (typeof v[name] === 'string' && v[name] ? String(v[name]) : '—'),
+});
+/** A whole number (no unit). */
+const countField = (name: string): Field => ({
+  name,
+  kind: 'count',
+  path: name,
+  show: (v) => String(v[name] ?? '—'),
 });
 const percentField = (name: string): Field => ({
   name,
@@ -155,6 +165,35 @@ const SPECS: Spec[] = [
       taxRatePercent: numberInput(str(values.taxRatePercent)),
     }),
   },
+  {
+    // Practice drills (free per day, length), the certificate threshold and the default goal.
+    key: 'practice',
+    schema: PracticeSetting,
+    fields: [
+      countField('drillsPerDay'),
+      countField('drillQuestions'),
+      {
+        name: 'certificateMinBand',
+        kind: 'select',
+        path: 'certificateMinBand',
+        options: ['READY', 'READY_WITH_GAPS', 'DEVELOPING'],
+        show: (v) => String(v.certificateMinBand ?? ''),
+      },
+      countField('defaultWeeklyGoal'),
+    ],
+    toForm: (v) => ({
+      drillsPerDay: String(v.drillsPerDay ?? ''),
+      drillQuestions: String(v.drillQuestions ?? ''),
+      certificateMinBand: String(v.certificateMinBand ?? ''),
+      defaultWeeklyGoal: String(v.defaultWeeklyGoal ?? ''),
+    }),
+    toValue: (values) => ({
+      drillsPerDay: numberInput(str(values.drillsPerDay)),
+      drillQuestions: numberInput(str(values.drillQuestions)),
+      certificateMinBand: str(values.certificateMinBand),
+      defaultWeeklyGoal: numberInput(str(values.defaultWeeklyGoal)),
+    }),
+  },
 ];
 
 function currentValue(spec: Spec, entry: SettingEntry | undefined): Record<string, unknown> {
@@ -253,7 +292,9 @@ function SettingSection({ spec, entry }: { spec: Spec; entry: SettingEntry | und
               <dd className="col-sm-7">
                 {f.kind === 'checkbox'
                   ? t(`system.settings.${value[f.name] ? 'on' : 'off'}`)
-                  : f.show(value, i18n.language)}
+                  : f.kind === 'select'
+                    ? t(`${base}.options.${f.name}.${String(value[f.name])}`)
+                    : f.show(value, i18n.language)}
               </dd>
             </Fragment>
           ))}
@@ -302,7 +343,22 @@ function SettingSection({ spec, entry }: { spec: Spec; entry: SettingEntry | und
                   <label htmlFor={fieldId(f.name)} className="form-label small">
                     {label}
                   </label>
-                  {f.kind === 'textarea' ? (
+                  {f.kind === 'select' ? (
+                    <select
+                      id={fieldId(f.name)}
+                      className={`form-select form-select-sm ${invalid ? 'is-invalid' : ''}`}
+                      value={str(values[f.name])}
+                      onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                      aria-invalid={invalid || undefined}
+                      aria-describedby={describedBy}
+                    >
+                      {(f.options ?? []).map((o) => (
+                        <option key={o} value={o}>
+                          {t(`${base}.options.${f.name}.${o}`)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : f.kind === 'textarea' ? (
                     <textarea
                       id={fieldId(f.name)}
                       className={`form-control form-control-sm ${invalid ? 'is-invalid' : ''}`}
@@ -319,7 +375,9 @@ function SettingSection({ spec, entry }: { spec: Spec; entry: SettingEntry | und
                       <input
                         id={fieldId(f.name)}
                         type="text"
-                        inputMode={f.kind === 'text' ? undefined : 'decimal'}
+                        inputMode={
+                          f.kind === 'text' ? undefined : f.kind === 'count' ? 'numeric' : 'decimal'
+                        }
                         maxLength={f.maxLength}
                         className={`form-control ${invalid ? 'is-invalid' : ''}`}
                         value={str(values[f.name])}
