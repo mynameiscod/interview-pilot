@@ -10,7 +10,7 @@ import {
   VerifyPaymentBody,
   type MockCheckoutResult,
 } from '@cbi/shared-types';
-import express, { Router, type RequestHandler } from 'express';
+import express, { Router, type RequestHandler, type Response } from 'express';
 import type { Container } from '../../container.js';
 import { AppError } from '../../lib/errors.js';
 import { clientContext } from '../../lib/request-context.js';
@@ -20,6 +20,16 @@ const noStore: RequestHandler = (_req, res, next) => {
   res.set('Cache-Control', 'no-store');
   next();
 };
+
+/** A receipt download (the file name has only letters, digits and dashes). */
+function sendPdf(res: Response, file: { body: Buffer; fileName: string }) {
+  res
+    .set('Content-Type', 'application/pdf')
+    .set('Content-Disposition', `attachment; filename="${file.fileName}"`)
+    .set('Cache-Control', 'no-store')
+    .set('X-Content-Type-Options', 'nosniff')
+    .send(file.body);
+}
 
 /** `GET /plans`: the public pricing catalogue. */
 export function plansRouter(c: Container): Router {
@@ -85,6 +95,10 @@ export function paymentsRouter(c: Container): Router {
     res.json({
       data: await c.payments.get(requireAuth(req).userId, String(req.params.purchaseId)),
     });
+  });
+
+  router.get('/purchases/:purchaseId/receipt', async (req, res) => {
+    sendPdf(res, await c.payments.receipt(requireAuth(req).userId, String(req.params.purchaseId)));
   });
 
   return router;
@@ -190,12 +204,22 @@ export function paymentsAdminRouter(c: Container): Router {
       .json({ data: await c.payments.getPurchase(String(req.params.id)) });
   });
 
+  router.get('/purchases/:id/receipt', read, async (req, res) => {
+    sendPdf(res, await c.payments.adminReceipt(String(req.params.id)));
+  });
+
+  router.get('/purchases/:id/refund-preview', read, async (req, res) => {
+    res
+      .set('Cache-Control', 'no-store')
+      .json({ data: await c.payments.refundPreview(String(req.params.id)) });
+  });
+
   router.post('/purchases/:id/refund', manage, async (req, res) => {
-    const { reason } = RefundBody.parse(req.body);
+    const body = RefundBody.parse(req.body);
     res.json({
       data: await c.payments.refund(
         String(req.params.id),
-        reason,
+        body,
         requireAuth(req).userId,
         clientContext(req),
       ),

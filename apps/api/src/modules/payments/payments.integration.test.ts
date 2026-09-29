@@ -3,18 +3,23 @@ import {
   CouponModel,
   CreditLedgerModel,
   ensureCommerceCatalog,
+  mongoose,
   PurchaseModel,
+  reserveCredit,
   UserModel,
   UserProfileModel,
   WebhookEventModel,
 } from '@cbi/db';
 import {
+  AdminCreditAccount,
   AdminPurchase,
+  AdminRefundResult,
   CheckoutOrder,
   PlanSummary,
   PublicPlan,
   PurchaseSummary,
   Quote,
+  RefundPreview,
   type AdminRole,
 } from '@cbi/shared-types';
 import request from 'supertest';
@@ -426,6 +431,183 @@ describe('admin payments', () => {
     expect(byEmail.body.data).toHaveLength(1);
   });
 
+  it('sends one refund to the gateway when admins refund at the same time', async () => {
+    const c = await candidate();
+    const created = await order(c);
+    const { checkout } = t.payments.pay(created.provider!.orderId);
+    await c.call('post', '/payments/verify').send(checkout).expect(200);
+    const finance = await adminAs(['FINANCE_ADMIN']);
+    const responses = await Promise.all(
+      [1, 2, 3].map(() =>
+        finance
+          .call('post', `/purchases/${created.purchaseId}/refund`)
+          .send({ reason: 'Customer request' }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+    expect(t.payments.refunds.size).toBe(1);
+    expect(await AuditLogModel.countDocuments({ action: 'payments.refund' })).toBe(1);
+    expect(await purchaseCredits(c.userId)).toBe(1);
+  });
+
+  it('releases the refund claim when the gateway refuses, so it can be retried', async () => {
+    const c = await candidate();
+    const created = await order(c);
+    const { checkout } = t.payments.pay(created.provider!.orderId);
+    await c.call('post', '/payments/verify').send(checkout).expect(200);
+    const finance = await adminAs(['FINANCE_ADMIN']);
+    const gateway = t.payments.gateway;
+    const real = gateway.refund.bind(gateway);
+    gateway.refund = () => Promise.reject(new Error('gateway down'));
+    await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Customer request' })
+      .expect(503);
+    gateway.refund = real;
+    const detail = await finance.call('get', `/purchases/${created.purchaseId}`).expect(200);
+    expect(detail.body.data.payment.status).toBe('CAPTURED');
+    await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Customer request' })
+      .expect(200);
+    expect(await AuditLogModel.countDocuments({ action: 'payments.refund.request_failed' })).toBe(
+      1,
+    );
+  });
+
+  it('shows used credits, needs confirmation for them and refunds partially', async () => {
+    const c = await candidate();
+    const created = await order(c); // SPRINT: ₹199, 3 credits
+    const { checkout } = t.payments.pay(created.provider!.orderId);
+    await c.call('post', '/payments/verify').send(checkout).expect(200);
+    // An interview holds one purchased credit (earliest-expiring lot first).
+    await reserveCredit(c.userId, new mongoose.Types.ObjectId());
+    const finance = await adminAs(['FINANCE_ADMIN']);
+
+    const preview = RefundPreview.parse(
+      (await finance.call('get', `/purchases/${created.purchaseId}/refund-preview`).expect(200))
+        .body.data,
+    );
+    expect(preview).toMatchObject({
+      refundable: true,
+      capturedMinor: 19_900,
+      refundableMinor: 19_900,
+      creditsGranted: 3,
+      creditsUsed: 1,
+      creditsUnused: 2,
+      suggestedMinor: 13_266,
+    });
+
+    // Credits were used: an explicit acknowledgement is required.
+    const refused = await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Partial', amountMinor: preview.suggestedMinor })
+      .expect(400);
+    expect(refused.body.error.details).toMatchObject({ field: 'acknowledgeUsedCredits' });
+    await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Too much', amountMinor: 20_000, acknowledgeUsedCredits: true })
+      .expect(400);
+
+    const res = await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({
+        reason: 'Unused credits back',
+        amountMinor: preview.suggestedMinor,
+        acknowledgeUsedCredits: true,
+      })
+      .expect(200);
+    expect(AdminRefundResult.parse(res.body.data)).toMatchObject({
+      refundStatus: 'processed',
+      creditsWithdrawn: 2,
+      purchase: {
+        status: 'PAID',
+        refundedMinor: 13_266,
+        payment: { status: 'CAPTURED' },
+      },
+    });
+    const after = RefundPreview.parse(
+      (await finance.call('get', `/purchases/${created.purchaseId}/refund-preview`)).body.data,
+    );
+    expect(after).toMatchObject({ refundableMinor: 6_634, creditsUnused: 0, creditsWithdrawn: 2 });
+    // The candidate sees the partial refund too.
+    const mine = await c.call('get', `/payments/purchases/${created.purchaseId}`).expect(200);
+    expect(mine.body.data).toMatchObject({ status: 'PAID', refundedMinor: 13_266 });
+  });
+
+  it('flags a refund the gateway reports as failed and audits it', async () => {
+    const c = await candidate();
+    const created = await order(c);
+    const { checkout, payment } = t.payments.pay(created.provider!.orderId);
+    await c.call('post', '/payments/verify').send(checkout).expect(200);
+    const gateway = t.payments.gateway;
+    const real = gateway.refund.bind(gateway);
+    gateway.refund = async (paymentId, amountMinor) => ({
+      id: 'rfnd_pending1',
+      paymentId,
+      amountMinor,
+      status: 'pending',
+    });
+    const finance = await adminAs(['FINANCE_ADMIN']);
+    const res = await finance
+      .call('post', `/purchases/${created.purchaseId}/refund`)
+      .send({ reason: 'Customer request' })
+      .expect(200);
+    gateway.refund = real;
+    expect(res.body.data).toMatchObject({
+      refundStatus: 'pending',
+      purchase: { payment: { status: 'REFUND_PENDING' } },
+    });
+
+    const failed = t.payments.webhook('refund.failed', {
+      refund: { id: 'rfnd_pending1', paymentId: payment.id, amountMinor: 19_900, status: 'failed' },
+    });
+    expect((await deliver(failed).expect(200)).body.data.result).toBe('REFUND_FAILED');
+    const list = z
+      .array(AdminPurchase)
+      .parse((await finance.call('get', '/purchases').expect(200)).body.data);
+    expect(list[0]).toMatchObject({
+      refundFailed: true,
+      status: 'PAID',
+      payment: { status: 'CAPTURED', refunds: [{ id: 'rfnd_pending1', status: 'failed' }] },
+    });
+    expect(
+      await AuditLogModel.countDocuments({
+        action: 'payments.refund.failed',
+        actorType: 'SYSTEM',
+        resourceId: created.purchaseId,
+      }),
+    ).toBe(1);
+  });
+
+  it('downloads receipts for paid purchases only, to their owner and admins', async () => {
+    const c = await candidate();
+    const created = await order(c);
+    await c.call('get', `/payments/purchases/${created.purchaseId}/receipt`).expect(409);
+    const { checkout } = t.payments.pay(created.provider!.orderId);
+    const paid = await c.call('post', '/payments/verify').send(checkout).expect(200);
+    expect(PurchaseSummary.parse(paid.body.data)).toMatchObject({
+      receiptAvailable: true,
+      invoiceNumber: expect.stringMatching(/^CPI\/\d{2}-\d{2}\/000001$/),
+    });
+    const res = await c
+      .call('get', `/payments/purchases/${created.purchaseId}/receipt`)
+      .buffer(true)
+      .parse((r, done) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (chunk: Buffer) => chunks.push(chunk));
+        r.on('end', () => done(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toMatch(/receipt-CPI-\d{2}-\d{2}-000001\.pdf/);
+    expect((res.body as Buffer).subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    const other = await candidate('ravi@example.com');
+    await other.call('get', `/payments/purchases/${created.purchaseId}/receipt`).expect(404);
+    const support = await adminAs(['SUPPORT_ADMIN']);
+    await support.call('get', `/purchases/${created.purchaseId}/receipt`).expect(200);
+  });
+
   it('reconciles a purchase whose browser and webhook never reported back', async () => {
     const c = await candidate();
     const created = await order(c);
@@ -440,5 +622,84 @@ describe('admin payments', () => {
       .call('post', `/purchases/${created.purchaseId}/reconcile`)
       .expect(200);
     expect(again.body.data.outcome).toBe('UNCHANGED');
+  });
+});
+
+describe('coupon limits under concurrency', () => {
+  it('lets only maxUses orders take a coupon at the same time', async () => {
+    await CouponModel.create({ code: 'LAST1', type: 'PERCENT', value: 10, maxUses: 1 });
+    const buyers = [];
+    for (const email of ['a@example.com', 'b@example.com', 'c@example.com']) {
+      buyers.push(await candidate(email));
+    }
+    const responses = await Promise.all(
+      buyers.map((b) =>
+        b.call('post', '/payments/orders').send({ planCode: 'SPRINT', couponCode: 'LAST1' }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 400, 400]);
+    const refused = responses.filter((r) => r.status === 400);
+    expect(refused.map((r) => r.body.error.details.rejection)).toEqual(['USED_UP', 'USED_UP']);
+    expect((await CouponModel.findOne({ code: 'LAST1' }).lean())!.usedCount).toBe(1);
+  });
+
+  it('holds the per-user limit across parallel unpaid orders', async () => {
+    await CouponModel.create({ code: 'ONCE', type: 'PERCENT', value: 10 });
+    const c = await candidate();
+    const responses = await Promise.all(
+      [1, 2, 3].map(() =>
+        c.call('post', '/payments/orders').send({ planCode: 'SPRINT', couponCode: 'ONCE' }),
+      ),
+    );
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 400, 400]);
+    // The quote now explains why.
+    const quote = await c
+      .call('post', '/payments/quote')
+      .send({ planCode: 'SPRINT', couponCode: 'ONCE' })
+      .expect(200);
+    expect(quote.body.data.coupon.rejection).toBe('ALREADY_USED');
+  });
+});
+
+describe('admin credit adjustments', () => {
+  it('grants and deducts with a reason, audited, for finance only', async () => {
+    const c = await candidate();
+    const before = await balance(c);
+    const support = await adminAs(['SUPPORT_ADMIN']);
+    const lookup = await support.call('get', '/credits/account?user=ASHA@example.com').expect(200);
+    expect(AdminCreditAccount.parse(lookup.body.data)).toMatchObject({
+      userId: c.userId,
+      userEmail: 'asha@example.com',
+    });
+    await support
+      .call('post', '/credits/adjustments')
+      .send({ userId: c.userId, delta: 2, reason: 'Goodwill' })
+      .expect(403);
+    await support.call('get', '/credits/account?user=nobody@example.com').expect(404);
+
+    const finance = await adminAs(['FINANCE_ADMIN']);
+    await finance
+      .call('post', '/credits/adjustments')
+      .send({ userId: c.userId, delta: 2 })
+      .expect(400);
+    const granted = await finance
+      .call('post', '/credits/adjustments')
+      .send({ userId: c.userId, delta: 2, reason: 'Goodwill', expiresInDays: 30 })
+      .expect(200);
+    expect(granted.body.data.balance.available).toBe(before + 2);
+    expect(await balance(c)).toBe(before + 2);
+    await finance
+      .call('post', '/credits/adjustments')
+      .send({ userId: c.userId, delta: -1, reason: 'Duplicate grant' })
+      .expect(200);
+    expect(await balance(c)).toBe(before + 1);
+    await finance
+      .call('post', '/credits/adjustments')
+      .send({ userId: c.userId, delta: -50, reason: 'Too many' })
+      .expect(409)
+      .expect((r) => expect(r.body.error.code).toBe('INSUFFICIENT_CREDITS'));
+    expect(await AuditLogModel.countDocuments({ action: /^credits\./ })).toBe(2);
+    const ledger = (await c.call('get', '/credits/ledger').expect(200)).body.data;
+    expect(ledger.filter((e: { type: string }) => e.type === 'ADMIN_ADJUSTMENT')).toHaveLength(2);
   });
 });

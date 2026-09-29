@@ -1,8 +1,10 @@
-import { CreditLedgerModel, getCreditBalance } from '@cbi/db';
-import { CreditLedgerQuery, type CreditLedgerEntry } from '@cbi/shared-types';
+import { CreditLedgerModel, getCreditBalance, type CreditLedgerRecord } from '@cbi/db';
+import { AdminCreditLookupQuery, CreditAdjustmentBody, CreditLedgerQuery } from '@cbi/shared-types';
 import { Router } from 'express';
 import type { Container } from '../../container.js';
-import { authenticate, requireAuth } from '../../middleware/authenticate.js';
+import { clientContext } from '../../lib/request-context.js';
+import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
+import { ledgerEntry } from './credits-admin.service.js';
 
 /** `/credits`: the signed-in candidate's balance and ledger. */
 export function creditsRouter(c: Container): Router {
@@ -21,17 +23,27 @@ export function creditsRouter(c: Container): Router {
     const rows = await CreditLedgerModel.find({ userId: requireAuth(req).userId })
       .sort({ createdAt: -1, _id: -1 })
       .limit(limit)
-      .lean();
-    const data: CreditLedgerEntry[] = rows.map((r) => ({
-      id: String(r._id),
-      type: r.type,
-      amount: r.amount,
-      refType: r.refType,
-      refId: r.refId,
-      reason: r.reason,
-      createdAt: r.createdAt.toISOString(),
-    }));
-    res.json({ data });
+      .lean<CreditLedgerRecord[]>();
+    res.json({ data: rows.map(ledgerEntry) });
+  });
+
+  return router;
+}
+
+/** Admin credit accounts and manual adjustments (mounted inside the admin router). */
+export function creditsAdminRouter(c: Container): Router {
+  const router = Router();
+
+  router.get('/credits/account', requirePermission('payments.read'), async (req, res) => {
+    const { user } = AdminCreditLookupQuery.parse(req.query);
+    res.set('Cache-Control', 'no-store').json({ data: await c.creditsAdmin.lookup(user) });
+  });
+
+  router.post('/credits/adjustments', requirePermission('credits.adjust'), async (req, res) => {
+    const body = CreditAdjustmentBody.parse(req.body);
+    res.json({
+      data: await c.creditsAdmin.adjust(body, requireAuth(req).userId, clientContext(req)),
+    });
   });
 
   return router;
