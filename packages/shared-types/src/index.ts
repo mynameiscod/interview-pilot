@@ -18,6 +18,7 @@ export * from './media.js';
 export * from './payments.js';
 export * from './permissions.js';
 export * from './privacy.js';
+export * from './progress.js';
 export * from './queues.js';
 export * from './review.js';
 export * from './users.js';

@@ -70,6 +70,9 @@ export const ErrorCode = z.enum([
   'ACCOUNT_DELETION_PENDING',
   /** Too many inputs created recently; try again later. */
   'QUOTA_EXCEEDED',
+  // Progress and practice drills
+  /** Today's free practice drills are used up (India time); the next ones are free tomorrow. */
+  'DRILL_LIMIT_REACHED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

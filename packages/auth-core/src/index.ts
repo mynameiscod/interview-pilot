@@ -3,3 +3,4 @@ export * from './identity.js';
 export * from './secrets.js';
 export * from './password.js';
 export * from './totp.js';
+export * from './email-links.js';

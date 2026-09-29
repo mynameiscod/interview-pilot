@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { KpiTargets } from './analytics.js';
+import { ReadinessBand } from './evaluation.js';
 
 /**
  * Operations (Phase 11): feature flags, system settings, health and the
@@ -12,8 +13,12 @@ export const FlagKey = z.string().regex(/^[a-z][a-zA-Z0-9]*(\.[a-z][a-zA-Z0-9]*)
 
 /** Flags the code knows about; seeded (off) at start. */
 export const KNOWN_FLAGS = {
-  /** Candidates can share a public proof of a report (Candidate Proof). */
-  'reports.publicProof': 'Candidates can share a read-only proof of their report by link',
+  /**
+   * Candidates can share a public proof of a report (Candidate Proof) and, with
+   * a qualifying report, a readiness certificate with a public verification page.
+   */
+  'reports.publicProof':
+    'Candidates can share a read-only proof of their report by link, and readiness certificates',
 } as const;
 export type KnownFlag = keyof typeof KNOWN_FLAGS;
 
@@ -81,21 +86,45 @@ export const BillingSetting = z.object({
 });
 export type BillingSetting = z.infer<typeof BillingSetting>;
 
+/**
+ * Practice drills, goals and readiness certificates (progress hub). Drills
+ * are free up to `drillsPerDay` per India-time day and then refused until
+ * the next day; they never touch the credit ledger.
+ */
+export const PracticeSetting = z.object({
+  /** Free drills per candidate per day (India time). 0 turns drills off. */
+  drillsPerDay: z.number().int().min(0).max(20),
+  /** Questions in one drill. */
+  drillQuestions: z.number().int().min(1).max(6),
+  /** Lowest overall band that can be issued a readiness certificate. */
+  certificateMinBand: ReadinessBand.exclude(['NOT_YET', 'INSUFFICIENT_EVIDENCE']),
+  /** Sessions per week a new candidate's goal starts at (they can change it). */
+  defaultWeeklyGoal: z.number().int().min(1).max(14),
+});
+export type PracticeSetting = z.infer<typeof PracticeSetting>;
+
 /** Every setting, its schema and default. */
 export const SystemSettings = z.object({
   maintenance: MaintenanceSetting,
   finance: FinanceSetting,
   targets: KpiTargets,
   billing: BillingSetting,
+  practice: PracticeSetting,
 });
 export type SystemSettings = z.infer<typeof SystemSettings>;
 export type SettingKey = keyof SystemSettings;
-export const SettingKey = z.enum(['maintenance', 'finance', 'targets', 'billing']);
+export const SettingKey = z.enum(['maintenance', 'finance', 'targets', 'billing', 'practice']);
 
 export const DEFAULT_SETTINGS: SystemSettings = {
   maintenance: { enabled: false, message: '' },
   finance: { usdToInr: 84, gatewayFeeRate: 0.02 },
   billing: { legalName: '', address: '', gstin: null, sacCode: null, taxRatePercent: 18 },
+  practice: {
+    drillsPerDay: 3,
+    drillQuestions: 3,
+    certificateMinBand: 'READY_WITH_GAPS',
+    defaultWeeklyGoal: 3,
+  },
   // Placeholders until the business sets them (the brief's targets were not received).
   targets: { completionRate: 0.7, freeToPaidRate: 0.05, grossMargin: 0.6, maxFailureRate: 0.03 },
 };
