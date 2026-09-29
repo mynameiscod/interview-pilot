@@ -319,6 +319,21 @@ const apiObjectSchema = baseEnvSchema.extend({
   INPUT_DAILY_LIMIT_JOBS: z.coerce.number().int().min(1).max(1000).default(40),
   /** Resume uploads a candidate may make per rolling 24 hours. */
   INPUT_DAILY_LIMIT_RESUMES: z.coerce.number().int().min(1).max(1000).default(20),
+
+  // --- Legal pages (served publicly by GET /legal) --------------------------
+  /** Grievance Officer (DPDP Act s.8(10)) shown on the legal pages; never hard-coded. */
+  GRIEVANCE_OFFICER_NAME: optionalString,
+  GRIEVANCE_OFFICER_EMAIL: optionalString.pipe(z.email().optional()),
+  GRIEVANCE_OFFICER_ADDRESS: optionalString,
+  /** Shows "Draft — pending legal review" on the legal pages until legal sign-off. */
+  LEGAL_DRAFT_BANNER: booleanString.default(true),
+  /** Date shown as "last updated" on the legal pages (YYYY-MM-DD). */
+  LEGAL_LAST_UPDATED: optionalString.pipe(
+    z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD')
+      .optional(),
+  ),
   /** Leave unset to scope cookies to the API host only (recommended). */
   COOKIE_DOMAIN: optionalString,
 

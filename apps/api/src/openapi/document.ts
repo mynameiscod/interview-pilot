@@ -8,6 +8,7 @@ import {
   DataExportBundle,
   DeleteAccountBody,
   DeleteAccountResponse,
+  LegalInfo,
   MfaCodeBody,
   MfaEnrollment,
   MfaRecoveryCodes,
@@ -449,6 +450,12 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: UpdateProfileBody,
     response: MeResponse,
     errors: [400, 401, 403],
+  });
+  route('get', '/legal', {
+    tag: 'Users',
+    summary: 'Public details for the legal pages (grievance officer, retention periods)',
+    response: LegalInfo,
+    errors: [],
   });
   route('get', '/users/me/export', {
     tag: 'Users',

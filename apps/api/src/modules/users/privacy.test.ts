@@ -1,5 +1,8 @@
 import { mongoose } from '@cbi/db';
+import { LegalInfo } from '@cbi/shared-types';
+import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { buildTestApp } from '../../test-support/harness.js';
 import { parseCandidateSearch } from '../admin/candidates.service.js';
 import { exportable } from './privacy.service.js';
 import { profileUpdate } from './users.routes.js';
@@ -42,6 +45,40 @@ describe('profile updates', () => {
     });
     expect(update.$set).toMatchObject({ productUpdatesOptIn: false, experienceLevel: 'FRESHER' });
     expect(update.$unset).toEqual({ currentRole: '' });
+  });
+});
+
+describe('GET /legal', () => {
+  it('serves the grievance officer and retention periods from configuration', async () => {
+    const { app } = await buildTestApp({
+      env: {
+        GRIEVANCE_OFFICER_NAME: 'Grievance Officer',
+        GRIEVANCE_OFFICER_EMAIL: 'grievance@example.com',
+        LEGAL_DRAFT_BANNER: 'false',
+        ACCOUNT_DELETION_GRACE_DAYS: '10',
+      },
+    });
+    const res = await request(app).get('/api/v1/legal').expect(200);
+    expect(LegalInfo.parse(res.body.data)).toEqual({
+      grievanceOfficer: {
+        name: 'Grievance Officer',
+        email: 'grievance@example.com',
+        address: null,
+      },
+      draft: false,
+      lastUpdated: null,
+      recordingRetentionDays: 90,
+      deletionGraceDays: 10,
+    });
+  });
+
+  it('defaults to the draft banner with no officer configured', async () => {
+    const { app } = await buildTestApp();
+    const res = await request(app).get('/api/v1/legal').expect(200);
+    expect(res.body.data).toMatchObject({
+      draft: true,
+      grievanceOfficer: { name: null, email: null, address: null },
+    });
   });
 });
 

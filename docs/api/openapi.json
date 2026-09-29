@@ -10383,6 +10383,86 @@
         }
       }
     },
+    "/api/v1/legal": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Public details for the legal pages (grievance officer, retention periods)",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "grievanceOfficer": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "email": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "address": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "email",
+                            "address"
+                          ]
+                        },
+                        "draft": {
+                          "type": "boolean"
+                        },
+                        "lastUpdated": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "recordingRetentionDays": {
+                          "type": "integer"
+                        },
+                        "deletionGraceDays": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "grievanceOfficer",
+                        "draft",
+                        "lastUpdated",
+                        "recordingRetentionDays",
+                        "deletionGraceDays"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/me/export": {
       "get": {
         "tags": [

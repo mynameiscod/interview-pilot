@@ -74,6 +74,27 @@ export const DataExportBundle = z.object({
 });
 export type DataExportBundle = z.infer<typeof DataExportBundle>;
 
+// ---- Legal pages (public) ---------------------------------------------------
+
+/**
+ * `GET /legal`: operator details and figures the legal pages quote. They
+ * come from server configuration so the pages never hard-code a person and
+ * always state the retention periods actually in force.
+ */
+export const LegalInfo = z.object({
+  grievanceOfficer: z.object({
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    address: z.string().nullable(),
+  }),
+  /** Show the "Draft — pending legal review" banner. */
+  draft: z.boolean(),
+  lastUpdated: z.string().nullable(),
+  recordingRetentionDays: z.number().int(),
+  deletionGraceDays: z.number().int(),
+});
+export type LegalInfo = z.infer<typeof LegalInfo>;
+
 // ---- Signed-in devices (refresh-token families) ----------------------------
 
 export const ActiveSession = z.object({
