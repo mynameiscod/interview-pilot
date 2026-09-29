@@ -33,6 +33,13 @@ describe('admin permission matrix', () => {
     expect(hasPermission(['FINANCE_ADMIN'], 'ai.read')).toBe(false);
   });
 
+  it('lets only finance (and super) adjust credits by hand', () => {
+    expect(hasPermission(['FINANCE_ADMIN'], 'credits.adjust')).toBe(true);
+    for (const role of ['OPERATIONS_ADMIN', 'CONTENT_ADMIN', 'SUPPORT_ADMIN'] as const) {
+      expect(hasPermission([role], 'credits.adjust')).toBe(false);
+    }
+  });
+
   it('lets content admins manage prompts', () => {
     expect(hasPermission(['CONTENT_ADMIN'], 'prompts.manage')).toBe(true);
     expect(hasPermission(['OPERATIONS_ADMIN'], 'prompts.manage')).toBe(false);

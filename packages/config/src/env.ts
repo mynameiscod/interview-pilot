@@ -291,6 +291,12 @@ const apiObjectSchema = baseEnvSchema.extend({
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
   REQUEST_BODY_LIMIT: z.string().default('1mb'),
   API_DOCS_ENABLED: booleanString.default(false),
+  /**
+   * Optional TrueType/OpenType font for purchase receipts (e.g. a Noto Sans
+   * build covering Devanagari and Telugu). Without it, names outside Latin-1
+   * are left off receipts.
+   */
+  RECEIPT_FONT_PATH: optionalString,
   PUBLIC_CANDIDATE_URL: z.url(),
   PUBLIC_ADMIN_URL: z.url(),
 

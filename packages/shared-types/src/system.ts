@@ -58,19 +58,44 @@ export const FinanceSetting = z.object({
 });
 export type FinanceSetting = z.infer<typeof FinanceSetting>;
 
+/** GSTIN: state code, PAN, entity number, `Z`, check character. */
+export const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+/**
+ * The seller shown on purchase receipts. With a GSTIN the receipt is a tax
+ * invoice (prices are GST-inclusive); without one it is a plain receipt.
+ */
+export const BillingSetting = z.object({
+  /** Blank prints the product name. */
+  legalName: z.string().trim().max(120),
+  address: z.string().trim().max(300),
+  gstin: z.string().trim().regex(GSTIN_PATTERN).nullable(),
+  /** Services Accounting Code printed on tax invoices (e.g. 999293). */
+  sacCode: z
+    .string()
+    .trim()
+    .regex(/^\d{4,8}$/)
+    .nullable(),
+  /** GST rate included in prices, in percent (used only with a GSTIN). */
+  taxRatePercent: z.number().min(0).max(28),
+});
+export type BillingSetting = z.infer<typeof BillingSetting>;
+
 /** Every setting, its schema and default. */
 export const SystemSettings = z.object({
   maintenance: MaintenanceSetting,
   finance: FinanceSetting,
   targets: KpiTargets,
+  billing: BillingSetting,
 });
 export type SystemSettings = z.infer<typeof SystemSettings>;
 export type SettingKey = keyof SystemSettings;
-export const SettingKey = z.enum(['maintenance', 'finance', 'targets']);
+export const SettingKey = z.enum(['maintenance', 'finance', 'targets', 'billing']);
 
 export const DEFAULT_SETTINGS: SystemSettings = {
   maintenance: { enabled: false, message: '' },
   finance: { usdToInr: 84, gatewayFeeRate: 0.02 },
+  billing: { legalName: '', address: '', gstin: null, sacCode: null, taxRatePercent: 18 },
   // Placeholders until the business sets them (the brief's targets were not received).
   targets: { completionRate: 0.7, freeToPaidRate: 0.05, grossMargin: 0.6, maxFailureRate: 0.03 },
 };
