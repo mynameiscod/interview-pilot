@@ -18,6 +18,8 @@ export const Permission = z.enum([
   'admin_users.read',
   'admin_users.manage',
   'audit.read',
+  /** Download the audit log as CSV (SUPER_ADMIN only; each export is audited). */
+  'audit.export',
   'candidates.read',
   // AI provider layer (Phase 2)
   'ai.read',

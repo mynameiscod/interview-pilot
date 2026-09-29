@@ -202,6 +202,18 @@ const judgeShape = {
   JUDGE0_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(20),
 };
 
+// --- Audit log retention ----------------------------------------------------------------------
+/**
+ * Days audit log entries are kept before MongoDB's TTL monitor deletes them
+ * (default 730 = two years; 30–3650). The API applies it to the audit log's
+ * TTL index at startup (collMod when it changed), so a new value takes effect
+ * on the next deploy. Lowering it deletes older entries within about a minute.
+ */
+export const AuditLogRetentionDays = z.coerce.number().int().min(30).max(3650).default(730);
+const auditLogShape = {
+  AUDIT_LOG_RETENTION_DAYS: AuditLogRetentionDays,
+};
+
 type JudgeEnv = {
   APP_ENV: AppEnv;
   JUDGE_PROVIDER: 'codebegun' | 'judge0' | 'mock' | 'none';
@@ -287,6 +299,7 @@ const apiObjectSchema = baseEnvSchema.extend({
   ...storageShape,
   ...paymentShape,
   ...judgeShape,
+  ...auditLogShape,
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
   /** Number of trusted reverse-proxy hops (NGINX = 1). Needed for correct client IPs. */

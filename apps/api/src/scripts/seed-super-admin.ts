@@ -25,10 +25,17 @@ import {
   UserModel,
   UserProfileModel,
 } from '@cbi/db';
-import { createLogger } from '@cbi/config';
+import { AuditLogRetentionDays, createLogger } from '@cbi/config';
 import { z } from 'zod';
 
-const env = z.object({ APP_ENV: AppEnv, MONGODB_URI: z.string().min(1) }).parse(process.env);
+const env = z
+  .object({
+    APP_ENV: AppEnv,
+    MONGODB_URI: z.string().min(1),
+    // Same retention as the API, so seeding never resets a configured value.
+    AUDIT_LOG_RETENTION_DAYS: AuditLogRetentionDays,
+  })
+  .parse(process.env);
 const logger = createLogger({ service: 'seed-super-admin', level: 'info', env: env.APP_ENV });
 
 const { values } = parseArgs({
@@ -57,7 +64,7 @@ if (values['password-stdin']) {
 
 await connectMongo({ uri: env.MONGODB_URI, autoIndex: false, logger });
 try {
-  await ensureIndexes();
+  await ensureIndexes({ auditLogRetentionDays: env.AUDIT_LOG_RETENTION_DAYS });
   const identity = await AuthIdentityModel.findOne({ provider: 'EMAIL', subject: email });
   let user = identity
     ? await UserModel.findById(identity.userId)

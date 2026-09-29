@@ -12,6 +12,7 @@ import {
   rollupDays,
   UserModel,
 } from '@cbi/db';
+import type { Logger } from '@cbi/config';
 import type {
   CostQuery,
   CostReport,
@@ -67,11 +68,112 @@ async function dailyTotals(from: string, to: string) {
   return { byDay, sum, computedAt };
 }
 
+/** Funnel steps after `registered` and `onboarded`, each a lookup into the cohort's records. */
+const FUNNEL_LOOKUPS = [
+  { step: 'created_interview', from: () => InterviewSessionModel, match: {} },
+  {
+    step: 'started_interview',
+    from: () => InterviewSessionModel,
+    match: { startedAt: { $ne: null } },
+  },
+  {
+    step: 'completed_interview',
+    from: () => InterviewSessionModel,
+    match: { state: { $in: ['PROCESSING', 'REPORT_READY'] } },
+  },
+  { step: 'viewed_report', from: () => AnalyticsEventModel, match: { name: 'report_viewed' } },
+  { step: 'paid', from: () => PurchaseModel, match: { 'statusHistory.status': 'PAID' } },
+] as const;
+
+export type FunnelStep = 'registered' | 'onboarded' | (typeof FUNNEL_LOOKUPS)[number]['step'];
+export const FUNNEL_STEPS: readonly FunnelStep[] = [
+  'registered',
+  'onboarded',
+  ...FUNNEL_LOOKUPS.map((l) => l.step),
+];
+
+/**
+ * The funnel over the cohort of candidates who registered in [start, end), as
+ * one aggregation on `users`: each later step is a `$lookup` that stops at the
+ * first matching record (`$limit: 1`), so no id lists leave the database and
+ * each user is counted at most once per step. The `$match` filters are the
+ * same query-language filters the steps have always used.
+ */
+export function funnelPipeline(start: Date, end: Date, collections: Record<string, string>) {
+  const flag = (step: string) => `has_${step}`;
+  return [
+    { $match: { adminRoles: { $size: 0 }, createdAt: { $gte: start, $lt: end } } },
+    { $project: { _id: 1, onboardingCompletedAt: 1 } },
+    ...FUNNEL_LOOKUPS.map((l) => ({
+      $lookup: {
+        from: collections[l.step]!,
+        localField: '_id',
+        foreignField: 'userId',
+        pipeline: [{ $match: l.match }, { $limit: 1 }, { $project: { _id: 1 } }],
+        as: flag(l.step),
+      },
+    })),
+    {
+      $group: {
+        _id: null,
+        registered: { $sum: 1 },
+        // Truthy like the old filter: a date counts, null or missing does not.
+        onboarded: { $sum: { $cond: [{ $ifNull: ['$onboardingCompletedAt', false] }, 1, 0] } },
+        ...Object.fromEntries(
+          FUNNEL_LOOKUPS.map((l) => [l.step, { $sum: { $size: `$${flag(l.step)}` } }]),
+        ),
+      },
+    },
+  ];
+}
+
+/** Runs the funnel aggregation; an empty cohort gives zeros. */
+async function funnelCounts(start: Date, end: Date) {
+  const collections = Object.fromEntries(
+    FUNNEL_LOOKUPS.map((l) => [l.step, l.from().collection.collectionName]),
+  );
+  const [row] = await UserModel.aggregate<Record<FunnelStep, number>>(
+    funnelPipeline(start, end, collections),
+  );
+  return FUNNEL_STEPS.map((step) => ({ step, users: row?.[step] ?? 0 }));
+}
+
+/**
+ * Distinct users with an analytics event or an interview created or started in
+ * [start, end), counted inside MongoDB (`$unionWith` + `$group`).
+ */
+export function activeUsersPipeline(start: Date, end: Date, sessionsCollection: string) {
+  const within = { $gte: start, $lt: end };
+  return [
+    { $match: { at: within, userId: { $ne: null } } },
+    { $project: { _id: 0, userId: 1 } },
+    {
+      $unionWith: {
+        coll: sessionsCollection,
+        pipeline: [
+          { $match: { $or: [{ createdAt: within }, { startedAt: within }] } },
+          { $project: { _id: 0, userId: 1 } },
+        ],
+      },
+    },
+    { $group: { _id: '$userId' } },
+    { $count: 'users' },
+  ];
+}
+
+async function activeUserCount(start: Date, end: Date) {
+  const [row] = await AnalyticsEventModel.aggregate<{ users: number }>(
+    activeUsersPipeline(start, end, InterviewSessionModel.collection.collectionName),
+  );
+  return row?.users ?? 0;
+}
+
 const ratio = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 10_000) / 10_000 : null);
 
 export function createAnalyticsService(deps: {
   audit: AuditService;
   settings: SettingsService;
+  logger?: Logger;
   now?: () => Date;
 }) {
   const now = deps.now ?? (() => new Date());
@@ -126,6 +228,34 @@ export function createAnalyticsService(deps: {
       return { accepted: docs.length };
     },
 
+    /**
+     * Server-side `report_viewed`: called when the owner fetches their report.
+     * Kept to one event per user and India-time day (the funnel needs only
+     * "has viewed"). A failure is logged, never shown to the candidate.
+     */
+    async recordReportView(userId: string) {
+      const at = now();
+      const userOid = new mongoose.Types.ObjectId(userId);
+      try {
+        await AnalyticsEventModel.updateOne(
+          { name: 'report_viewed', userId: userOid, at: { $gte: istDayBounds(istDay(at)).start } },
+          {
+            // name and userId come from the filter's equality fields.
+            $setOnInsert: {
+              anonId: 'server',
+              path: '/app/reports/:id',
+              props: {},
+              at,
+              receivedAt: at,
+            },
+          },
+          { upsert: true },
+        );
+      } catch (err) {
+        deps.logger?.warn({ err }, 'report_viewed event not recorded');
+      }
+    },
+
     async dashboard(q: DateRangeQuery): Promise<Dashboard> {
       const r = range(q, now());
       const [{ byDay, sum, computedAt }, targets, activeSessions] = await Promise.all([
@@ -134,45 +264,15 @@ export function createAnalyticsService(deps: {
         InterviewSessionModel.countDocuments({ live: true }),
       ]);
       const m = await money(sum);
-      const within = { $gte: r.start, $lt: r.end };
 
-      // Distinct users over the whole range (daily counts cannot be added up).
-      const [eventUsers, sessionUsers] = await Promise.all([
-        AnalyticsEventModel.distinct('userId', { at: within, userId: { $ne: null } }),
-        InterviewSessionModel.distinct('userId', {
-          $or: [{ createdAt: within }, { startedAt: within }],
-        }),
+      // Distinct users over the whole range (daily counts cannot be added up),
+      // and the funnel over the cohort of candidates who registered in it.
+      const [activeUsers, funnel] = await Promise.all([
+        activeUserCount(r.start, r.end),
+        funnelCounts(r.start, r.end),
       ]);
-      const activeUsers = new Set([...eventUsers, ...sessionUsers].map(String)).size;
-
-      // Funnel over the cohort of candidates who registered in the range.
-      const cohort = await UserModel.find(
-        { adminRoles: { $size: 0 }, createdAt: within },
-        { _id: 1, onboardingCompletedAt: 1 },
-      ).lean();
-      const ids = cohort.map((u) => u._id);
-      const [created, started, completed, viewed, paid] = await Promise.all([
-        InterviewSessionModel.distinct('userId', { userId: { $in: ids } }),
-        InterviewSessionModel.distinct('userId', {
-          userId: { $in: ids },
-          startedAt: { $ne: null },
-        }),
-        InterviewSessionModel.distinct('userId', {
-          userId: { $in: ids },
-          state: { $in: ['PROCESSING', 'REPORT_READY'] },
-        }),
-        AnalyticsEventModel.distinct('userId', { userId: { $in: ids }, name: 'report_viewed' }),
-        PurchaseModel.distinct('userId', { userId: { $in: ids }, 'statusHistory.status': 'PAID' }),
-      ]);
-      const funnel = [
-        { step: 'registered', users: cohort.length },
-        { step: 'onboarded', users: cohort.filter((u) => u.onboardingCompletedAt).length },
-        { step: 'created_interview', users: created.length },
-        { step: 'started_interview', users: started.length },
-        { step: 'completed_interview', users: completed.length },
-        { step: 'viewed_report', users: viewed.length },
-        { step: 'paid', users: paid.length },
-      ];
+      const cohortSize = funnel[0]!.users;
+      const paidUsers = funnel.find((f) => f.step === 'paid')!.users;
 
       const health = await ProviderHealthModel.aggregate<{
         _id: { provider: string; model: string };
@@ -205,7 +305,7 @@ export function createAnalyticsService(deps: {
           interviewsFailed: sum.interviews_failed ?? 0,
           completionRate: ratio(sum.interviews_completed ?? 0, started_),
           failureRate: ratio(sum.interviews_failed ?? 0, started_),
-          freeToPaidRate: ratio(paid.length, cohort.length),
+          freeToPaidRate: ratio(paidUsers, cohortSize),
           revenueMinor: m.revenueMinor,
           refundsMinor: m.refundsMinor,
           aiCostMinor: m.aiCostMinor,

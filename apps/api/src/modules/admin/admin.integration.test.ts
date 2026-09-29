@@ -252,4 +252,106 @@ describe('audit log', () => {
     expect(raw).not.toMatch(/\b\d{6}\b(?![0-9a-f])/);
     await root.as('get', '/audit-logs?before=bogus').expect(400);
   });
+
+  it('filters by time range, actor and resource', async () => {
+    const rootId = await seedAdmin('root@codebegun.com', ['SUPER_ADMIN']);
+    const root = await adminSession('root@codebegun.com');
+    const other = await seedAdmin('other@codebegun.com', ['SUPPORT_ADMIN']);
+    const entry = (at: string, actorId: string, action: string, resourceId: string) => ({
+      at: new Date(at),
+      actorType: 'ADMIN' as const,
+      actorId,
+      action,
+      resourceType: 'x',
+      resourceId,
+      outcome: 'SUCCESS' as const,
+    });
+    await AuditLogModel.create([
+      entry('2026-01-10T10:00:00Z', other, 'a.old', 'r-1'),
+      entry('2026-02-10T10:00:00Z', other, 'a.mid', 'r-2'),
+      entry('2026-03-10T10:00:00Z', rootId, 'a.new', 'r-2'),
+    ]);
+    const actions = async (qs: string) =>
+      AuditLogPage.parse(
+        (await root.as('get', `/audit-logs?${qs}`).expect(200)).body.data,
+      ).items.map((i) => i.action);
+    expect(await actions('from=2026-02-01T00:00:00Z&to=2026-03-01T00:00:00Z')).toEqual(['a.mid']);
+    // `from` is inclusive, `to` exclusive.
+    expect(await actions('from=2026-02-10T10:00:00Z&to=2026-03-10T10:00:00Z')).toEqual(['a.mid']);
+    expect(await actions(`actorId=${other}`)).toEqual(['a.mid', 'a.old']);
+    expect(await actions('resourceId=r-2&to=2026-12-31T00:00:00%2B05:30')).toEqual([
+      'a.new',
+      'a.mid',
+    ]);
+    await root
+      .as('get', '/audit-logs?from=2026-03-01T00:00:00Z&to=2026-02-01T00:00:00Z')
+      .expect(400);
+    await root.as('get', '/audit-logs?from=yesterday').expect(400);
+    await root.as('get', '/audit-logs?actorId=bogus').expect(400);
+  });
+
+  it('exports matching entries as CSV for super admins only, and audits the export', async () => {
+    await seedAdmin('root@codebegun.com', ['SUPER_ADMIN']);
+    await seedAdmin('ops@codebegun.com', ['OPERATIONS_ADMIN']);
+    const root = await adminSession('root@codebegun.com');
+    const ops = await adminSession('ops@codebegun.com');
+    await AuditLogModel.create([
+      {
+        at: new Date('2026-02-10T10:00:00Z'),
+        actorType: 'ANONYMOUS',
+        action: 'campaign.joined',
+        resourceType: 'campaign',
+        resourceId: '=HYPERLINK("https://example.test")',
+        outcome: 'SUCCESS',
+        details: { note: 'a, "quoted" value' },
+      },
+      {
+        at: new Date('2025-02-10T10:00:00Z'),
+        actorType: 'SYSTEM',
+        action: 'too.old',
+        outcome: 'SUCCESS',
+      },
+    ]);
+
+    await ops.as('get', '/audit-logs/export.csv').expect(403);
+    expect(await AuditLogModel.countDocuments({ action: 'audit.exported' })).toBe(0);
+
+    const res = await root
+      .as('get', '/audit-logs/export.csv?from=2026-01-01T00:00:00Z&to=2026-03-01T00:00:00Z')
+      .buffer(true)
+      .parse((r, cb) => {
+        let text = '';
+        r.setEncoding('utf8');
+        r.on('data', (chunk: string) => (text += chunk));
+        r.on('end', () => cb(null, text));
+      })
+      .expect(200);
+    expect(res.headers['content-type']).toMatch(/^text\/csv/);
+    expect(res.headers['content-disposition']).toMatch(
+      /^attachment; filename="audit-log-\d{4}-\d{2}-\d{2}\.csv"$/,
+    );
+    expect(res.headers['cache-control']).toBe('no-store');
+    const lines = (res.body as string)
+      .replace(/^\uFEFF/, '')
+      .trimEnd()
+      .split('\r\n');
+    expect(lines[0]).toBe(
+      'id,at,actorType,actorId,action,resourceType,resourceId,outcome,requestId,details',
+    );
+    expect(lines).toHaveLength(2);
+    // Formula-like text is neutralised; quoting survives commas and quotes.
+    expect(lines[1]).toContain(`"'=HYPERLINK(""https://example.test"")"`);
+    expect(lines[1]).toContain('"{""note"":""a, \\""quoted\\"" value""}"');
+    expect(lines[1]).not.toContain('too.old');
+
+    const exported = await AuditLogModel.findOne({ action: 'audit.exported' }).lean();
+    expect(exported).toMatchObject({ actorType: 'ADMIN', resourceType: 'auditLog' });
+    expect(exported!.details).toMatchObject({
+      format: 'csv',
+      filters: { from: '2026-01-01T00:00:00Z', to: '2026-03-01T00:00:00Z' },
+    });
+    await root
+      .as('get', '/audit-logs/export.csv?from=2026-03-01T00:00:00Z&to=2026-01-01T00:00:00Z')
+      .expect(400);
+  });
 });

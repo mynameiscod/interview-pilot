@@ -150,6 +150,8 @@ As `ops` (`sudo -e`):
 
    Razorpay webhook URL: `https://api.interview.codebegun.com/api/v1/payments/webhooks/razorpay`.
 
+   **Audit log retention:** `AUDIT_LOG_RETENTION_DAYS` (API; default `730`, two years; 30–3650) is how long audit entries are kept before MongoDB deletes them. The API applies it to the audit log's TTL index at startup, so a change takes effect on the next deploy, and lowering it deletes older entries within about a minute. Have the value confirmed with the retention policy (launch checklist, legal review). See [analytics-and-operations.md](../architecture/analytics-and-operations.md#audit-log).
+
    **Order matters for the first super admin:** they sign in with an email code, so configure **Email** before anyone can sign in, using the bootstrap script in §3.7. Everything else is configured in the admin site.
 
 3. `/srv/cbi/.env.backup` and `/srv/cbi/backup/age-recipients.txt`. See [runbook-backup-restore.md](runbook-backup-restore.md#1-one-time-setup).

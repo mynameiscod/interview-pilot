@@ -110,3 +110,27 @@ describe('session manager', () => {
     expect(manager.current).toBeNull();
   });
 });
+
+describe('api error listeners', () => {
+  it('tells subscribers about failed requests until they unsubscribe', async () => {
+    const refused = () =>
+      new Response(
+        JSON.stringify({ error: { code: 'MAINTENANCE', message: 'Back soon', requestId: 'r' } }),
+        { status: 503, headers: { 'Content-Type': 'application/json' } },
+      );
+    const fetchImpl = vi.fn().mockImplementation(async () => refused());
+    const manager = createSessionManager({
+      baseUrl: '',
+      audience: 'candidate',
+      fetchImpl,
+      locks: null,
+    });
+    const seen: string[] = [];
+    const stop = manager.onApiError((err) => seen.push(err.code));
+    await manager.api.post('/interviews', {}).catch(() => undefined);
+    expect(seen).toEqual(['MAINTENANCE']);
+    stop();
+    await manager.api.post('/interviews', {}).catch(() => undefined);
+    expect(seen).toEqual(['MAINTENANCE']);
+  });
+});

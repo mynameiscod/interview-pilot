@@ -42,6 +42,9 @@ export function errorMessage(t: TFunction, err: unknown): string {
       return t('errors.validation');
     case 'UNAUTHENTICATED':
       return t('errors.sessionEnded');
+    case 'MAINTENANCE':
+      // The admin's maintenance notice is written for candidates and shown as is.
+      return err.message.trim() || t('errors.generic');
     default:
       return t('errors.generic');
   }

@@ -1,0 +1,35 @@
+import { describe, expect, it } from 'vitest';
+import { planTtlIndex } from './indexes.js';
+
+const KEY = { at: -1 };
+const id = { name: '_id_', key: { _id: 1 } };
+
+describe('TTL index plan', () => {
+  it('creates the index when it is missing', () => {
+    expect(planTtlIndex([id], KEY, 100)).toEqual({ op: 'create' });
+    // Same field, other direction or compound: not the same index.
+    expect(planTtlIndex([id, { name: 'at_1', key: { at: 1 } }], KEY, 100)).toEqual({
+      op: 'create',
+    });
+    expect(planTtlIndex([{ name: 'at_-1_x_1', key: { at: -1, x: 1 } }], KEY, 100)).toEqual({
+      op: 'create',
+    });
+  });
+
+  it('changes the expiry in place when it differs, or adds it to a plain index', () => {
+    expect(
+      planTtlIndex([id, { name: 'at_-1', key: KEY, expireAfterSeconds: 50 }], KEY, 100),
+    ).toEqual({ op: 'collMod', name: 'at_-1', from: 50 });
+    expect(planTtlIndex([{ name: 'at_-1', key: KEY }], KEY, 100)).toEqual({
+      op: 'collMod',
+      name: 'at_-1',
+      from: null,
+    });
+  });
+
+  it('does nothing when the expiry already matches', () => {
+    expect(planTtlIndex([{ name: 'at_-1', key: KEY, expireAfterSeconds: 100 }], KEY, 100)).toEqual({
+      op: 'none',
+    });
+  });
+});

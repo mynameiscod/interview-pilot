@@ -1495,7 +1495,8 @@
   },
   "maintenance": {
     "title": "Scheduled maintenance.",
-    "fallback": "We are doing maintenance. New interviews cannot be started right now; please try again a little later.",
+    "fallback": "We are doing maintenance. You can still sign in and view your reports, but new interviews and other changes are paused; please try again a little later.",
+    "readOnly": "You can still view your reports; changes are paused until we finish.",
     "dismiss": "Dismiss the maintenance notice"
   },
   "proof": {

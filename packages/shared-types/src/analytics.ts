@@ -20,7 +20,6 @@ export const ClientEventName = z.enum([
   'setup_completed',
   'device_check_completed',
   'interview_room_joined',
-  'report_viewed',
   'report_pdf_downloaded',
   'compare_viewed',
   'pricing_viewed',
@@ -29,6 +28,18 @@ export const ClientEventName = z.enum([
   'proof_shared',
 ]);
 export type ClientEventName = z.infer<typeof ClientEventName>;
+
+/**
+ * Events only the server records, because the funnel depends on them and a
+ * client could fake them: `report_viewed` is stored when the owner's report
+ * is actually fetched (at most once per user and India-time day).
+ */
+export const ServerEventName = z.enum(['report_viewed']);
+export type ServerEventName = z.infer<typeof ServerEventName>;
+
+/** Every event name stored in `analyticsEvents`. */
+export const AnalyticsEventName = z.enum([...ClientEventName.options, ...ServerEventName.options]);
+export type AnalyticsEventName = z.infer<typeof AnalyticsEventName>;
 
 /** Random per-browser id (not linked to the person until they sign in). */
 export const AnonId = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);

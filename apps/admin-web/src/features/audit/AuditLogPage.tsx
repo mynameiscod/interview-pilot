@@ -3,21 +3,27 @@ import { errorMessage } from '@cbi/web-core';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAdminAuth } from '../../app/session';
+import { useAdminAuth, useCan } from '../../app/session';
+import { downloadExport } from '../campaigns/format';
+import { auditParams, NO_FILTERS, type AuditFilters } from './params';
 
 export function AuditLogPage() {
   const { t, i18n } = useTranslation();
   const id = useId();
   const { manager } = useAdminAuth();
-  const [actionInput, setActionInput] = useState('');
-  const [action, setAction] = useState('');
+  const canExport = useCan('audit.export');
+  const [form, setForm] = useState<AuditFilters>(NO_FILTERS);
+  const [filters, setFilters] = useState<AuditFilters>(NO_FILTERS);
+  const [rangeError, setRangeError] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const logs = useInfiniteQuery({
-    queryKey: ['audit-logs', action],
+    queryKey: ['audit-logs', filters],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ limit: '50' });
-      if (action) params.set('action', action);
+      const params = auditParams(filters);
+      params.set('limit', '50');
       if (pageParam) params.set('before', pageParam);
       return manager.api.get<AuditLogPageData>(`/admin/audit-logs?${params.toString()}`);
     },
@@ -32,30 +38,94 @@ export function AuditLogPage() {
 
   function applyFilter(event: FormEvent) {
     event.preventDefault();
-    setAction(actionInput.trim());
+    const invalid = Boolean(form.fromDay && form.toDay && form.fromDay > form.toDay);
+    setRangeError(invalid);
+    if (!invalid) setFilters(form);
   }
+
+  function clearFilters() {
+    setForm(NO_FILTERS);
+    setFilters(NO_FILTERS);
+    setRangeError(false);
+  }
+
+  async function exportCsv() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const qs = auditParams(filters).toString();
+      await downloadExport(
+        manager,
+        `/admin/audit-logs/export.csv${qs ? `?${qs}` : ''}`,
+        'audit-log.csv',
+      );
+    } catch (err) {
+      setExportError(errorMessage(t, err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const field = (key: keyof AuditFilters, label: string, extra: object = {}) => (
+    <div>
+      <label htmlFor={`${id}-${key}`} className="form-label small mb-1">
+        {label}
+      </label>
+      <input
+        id={`${id}-${key}`}
+        className="form-control"
+        value={form[key]}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        {...extra}
+      />
+    </div>
+  );
 
   return (
     <>
       <h1 className="h3 mb-2">{t('audit.title')}</h1>
       <p className="cb-text-secondary">{t('audit.subtitle')}</p>
-      <form className="d-flex flex-wrap gap-2 align-items-end mb-3" onSubmit={applyFilter}>
-        <div>
-          <label htmlFor={`${id}-action`} className="form-label small mb-1">
-            {t('audit.actionFilter')}
-          </label>
-          <input
-            id={`${id}-action`}
-            className="form-control"
-            placeholder="auth.login_succeeded"
-            value={actionInput}
-            onChange={(e) => setActionInput(e.target.value)}
-          />
-        </div>
+      <form
+        className="d-flex flex-wrap gap-2 align-items-end mb-3"
+        onSubmit={applyFilter}
+        aria-label={t('auditTools.filtersLabel')}
+      >
+        {field('action', t('audit.actionFilter'), { placeholder: 'auth.login_succeeded' })}
+        {field('actorId', t('auditTools.actorId'), { className: 'form-control font-monospace' })}
+        {field('resourceId', t('auditTools.resourceId'), {
+          className: 'form-control font-monospace',
+        })}
+        {field('fromDay', t('auditTools.from'), { type: 'date' })}
+        {field('toDay', t('auditTools.to'), { type: 'date' })}
         <button type="submit" className="btn btn-outline-primary">
           {t('audit.apply')}
         </button>
+        <button type="button" className="btn btn-link" onClick={clearFilters}>
+          {t('auditTools.clear')}
+        </button>
+        {canExport && (
+          <button
+            type="button"
+            className="btn btn-outline-secondary ms-auto"
+            onClick={() => void exportCsv()}
+            disabled={exporting}
+          >
+            <i className="bi bi-download me-1" aria-hidden="true" />
+            {exporting ? t('auditTools.exporting') : t('auditTools.export')}
+          </button>
+        )}
       </form>
+      {rangeError && (
+        <div className="alert alert-warning py-2" role="alert">
+          {t('auditTools.rangeInvalid')}
+        </div>
+      )}
+      {exportError && (
+        <div className="alert alert-danger py-2" role="alert">
+          {exportError}
+        </div>
+      )}
+      {canExport && <p className="small cb-text-secondary">{t('auditTools.exportHint')}</p>}
 
       <section className="border cb-border rounded-3 bg-white" aria-label={t('audit.title')}>
         {logs.isPending && (

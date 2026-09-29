@@ -28,6 +28,13 @@ describe('admin permission matrix', () => {
     }
   });
 
+  it('reserves audit log exports to SUPER_ADMIN, who can also read it', () => {
+    for (const role of AdminRole.options.filter((r) => r !== 'SUPER_ADMIN')) {
+      expect(hasPermission([role], 'audit.export')).toBe(false);
+    }
+    expect(hasPermission(['SUPER_ADMIN'], 'audit.read')).toBe(true);
+  });
+
   it('lets finance see AI cost without seeing provider configuration', () => {
     expect(hasPermission(['FINANCE_ADMIN'], 'ai_usage.read')).toBe(true);
     expect(hasPermission(['FINANCE_ADMIN'], 'ai.read')).toBe(false);

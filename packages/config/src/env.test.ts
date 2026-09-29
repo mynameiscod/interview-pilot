@@ -264,3 +264,21 @@ describe('judge settings', () => {
     expect(() => loadEnv(apiEnvSchema, withoutJudge)).toThrow(/mock judge/);
   });
 });
+
+describe('audit log retention', () => {
+  it('defaults to two years', () => {
+    expect(loadEnv(apiEnvSchema, base).AUDIT_LOG_RETENTION_DAYS).toBe(730);
+    expect(loadEnv(apiEnvSchema, deployed).AUDIT_LOG_RETENTION_DAYS).toBe(730);
+  });
+
+  it('accepts 30 to 3650 whole days', () => {
+    expect(loadEnv(apiEnvSchema, { ...base, AUDIT_LOG_RETENTION_DAYS: '365' })).toMatchObject({
+      AUDIT_LOG_RETENTION_DAYS: 365,
+    });
+    for (const bad of ['29', '3651', '90.5', 'forever']) {
+      expect(() => loadEnv(apiEnvSchema, { ...base, AUDIT_LOG_RETENTION_DAYS: bad })).toThrow(
+        /AUDIT_LOG_RETENTION_DAYS/,
+      );
+    }
+  });
+});

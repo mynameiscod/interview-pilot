@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
+import type { Logger } from '@cbi/config';
 import {
   FeatureFlagModel,
+  type Redis,
   SystemSettingModel,
   type FeatureFlagRecord,
   type SystemSettingRecord,
@@ -21,8 +23,85 @@ import { iso } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
 
-/** Flags and settings are read on hot paths; a short per-process cache is enough. */
+/**
+ * Flags and settings are read on hot paths, so each process caches them.
+ * Admin changes are broadcast on OPS_CONFIG_CHANNEL and every API process
+ * drops its copy at once; the TTL is the fallback if a message is missed.
+ */
 const CACHE_MS = 15_000;
+
+/** Redis pub/sub channel: a feature flag or system setting changed. */
+export const OPS_CONFIG_CHANNEL = 'cbi:ops:config-changed' as const;
+
+type PubSubRedis = Pick<Redis, 'publish' | 'duplicate'>;
+
+/**
+ * Cache-bust plumbing shared by the flag and settings services (the same
+ * pattern as the AI config and integrations channels). `redis: null` keeps
+ * invalidation local (unit tests).
+ */
+export function createOpsChangeBus(deps: { redis: PubSubRedis | null; logger?: Logger }) {
+  const listeners = new Set<() => void>();
+  function invalidateLocal() {
+    for (const fn of listeners) fn();
+  }
+  return {
+    /** Registers a cache to drop on every change (here or in another process). */
+    onChange(fn: () => void) {
+      listeners.add(fn);
+    },
+    invalidateLocal,
+    /** Drop caches here and tell every other process to do the same. */
+    async announceChange() {
+      invalidateLocal();
+      if (!deps.redis) return;
+      try {
+        await deps.redis.publish(OPS_CONFIG_CHANNEL, String(Date.now()));
+      } catch (err) {
+        // Other processes still pick the change up within CACHE_MS.
+        deps.logger?.warn({ err }, 'flag/setting change broadcast failed');
+      }
+    },
+    /** Subscribes on a dedicated connection; returns a function that unsubscribes. */
+    async listenForChanges(): Promise<() => Promise<void>> {
+      if (!deps.redis) return async () => undefined;
+      const subscriber = deps.redis.duplicate();
+      await subscriber.connect();
+      await subscriber.subscribe(OPS_CONFIG_CHANNEL);
+      subscriber.on('message', (channel: string) => {
+        if (channel === OPS_CONFIG_CHANNEL) invalidateLocal();
+      });
+      return async () => {
+        await subscriber.quit().catch(() => undefined);
+      };
+    },
+  };
+}
+
+export type OpsChangeBus = ReturnType<typeof createOpsChangeBus>;
+
+/**
+ * A TTL cache for one query. `invalidate` also discards a load that was
+ * already running, so a read that raced an admin change is not kept.
+ */
+export function createTtlCache<T>(load: () => Promise<T>, ttlMs: number, now: () => number) {
+  let cache: { at: number; value: T } | null = null;
+  let generation = 0;
+  return {
+    async get(): Promise<T> {
+      if (cache && now() - cache.at <= ttlMs) return cache.value;
+      const started = generation;
+      const at = now();
+      const value = await load();
+      if (started === generation) cache = { at, value };
+      return value;
+    },
+    invalidate() {
+      generation += 1;
+      cache = null;
+    },
+  };
+}
 
 const flagSummary = (f: FeatureFlagRecord): FeatureFlag => ({
   key: f.key,
@@ -49,15 +128,19 @@ export function flagOn(
   return userId !== null && rolloutBucket(flag.key, userId) < flag.rolloutPercent;
 }
 
-export function createFlagService(deps: { audit: AuditService; now?: () => number }) {
-  const now = deps.now ?? Date.now;
-  let cache: { at: number; flags: FeatureFlagRecord[] } | null = null;
-  async function all() {
-    if (!cache || now() - cache.at > CACHE_MS) {
-      cache = { at: now(), flags: await FeatureFlagModel.find().sort({ key: 1 }).lean() };
-    }
-    return cache.flags;
-  }
+export function createFlagService(deps: {
+  audit: AuditService;
+  changes?: OpsChangeBus;
+  now?: () => number;
+}) {
+  const changes = deps.changes ?? createOpsChangeBus({ redis: null });
+  const cache = createTtlCache(
+    () => FeatureFlagModel.find().sort({ key: 1 }).lean<FeatureFlagRecord[]>(),
+    CACHE_MS,
+    deps.now ?? Date.now,
+  );
+  changes.onChange(() => cache.invalidate());
+  const all = () => cache.get();
   return {
     /** Whether a flag is on for this user (off when unknown). */
     async isEnabled(key: KnownFlag, userId: string | null) {
@@ -109,27 +192,31 @@ export function createFlagService(deps: { audit: AuditService; now?: () => numbe
         );
         return after!;
       });
-      cache = null;
+      await changes.announceChange();
       return flagSummary(updated);
     },
     /** Tests: forget cached flags. */
     invalidate() {
-      cache = null;
+      cache.invalidate();
     },
   };
 }
 
 export type FlagService = ReturnType<typeof createFlagService>;
 
-export function createSettingsService(deps: { audit: AuditService; now?: () => number }) {
-  const now = deps.now ?? Date.now;
-  let cache: { at: number; rows: SystemSettingRecord[] } | null = null;
-  async function rows() {
-    if (!cache || now() - cache.at > CACHE_MS) {
-      cache = { at: now(), rows: await SystemSettingModel.find().lean() };
-    }
-    return cache.rows;
-  }
+export function createSettingsService(deps: {
+  audit: AuditService;
+  changes?: OpsChangeBus;
+  now?: () => number;
+}) {
+  const changes = deps.changes ?? createOpsChangeBus({ redis: null });
+  const cache = createTtlCache(
+    () => SystemSettingModel.find().lean<SystemSettingRecord[]>(),
+    CACHE_MS,
+    deps.now ?? Date.now,
+  );
+  changes.onChange(() => cache.invalidate());
+  const rows = () => cache.get();
   /** The stored value if it is valid, else the default (a bad row never breaks callers). */
   function valueOf<K extends SettingKey>(key: K, row: SystemSettingRecord | undefined) {
     const parsed = SystemSettings.shape[key].safeParse(row?.value);
@@ -185,11 +272,11 @@ export function createSettingsService(deps: { audit: AuditService; now?: () => n
           tx,
         );
       });
-      cache = null;
+      await changes.announceChange();
       return (await this.list()).find((e) => e.key === key)!;
     },
     invalidate() {
-      cache = null;
+      cache.invalidate();
     },
   };
 }

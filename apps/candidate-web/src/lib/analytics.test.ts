@@ -41,7 +41,7 @@ describe('analytics tracker', () => {
     const tracker = createTracker({ send, storage, flushIntervalMs: 5_000 });
 
     tracker.setPath('/app/reports/:id');
-    tracker.track('report_viewed');
+    tracker.track('compare_viewed');
     tracker.track('report_pdf_downloaded', { source: 'report' });
     expect(send).not.toHaveBeenCalled();
 
@@ -52,7 +52,7 @@ describe('analytics tracker', () => {
     expect(body.anonId).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
     expect(body.anonId).toBe(storage.data.get(ANON_ID_KEY));
     expect(body.events.map((e) => [e.name, e.path])).toEqual([
-      ['report_viewed', '/app/reports/:id'],
+      ['compare_viewed', '/app/reports/:id'],
       ['report_pdf_downloaded', '/app/reports/:id'],
     ]);
     expect(body.events[1]!.props).toEqual({ source: 'report' });

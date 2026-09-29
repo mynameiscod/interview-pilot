@@ -1,17 +1,14 @@
-import { AuditLogModel, mongoose } from '@cbi/db';
 import {
+  AuditLogExportQuery,
   AuditLogQuery,
   InviteAdminBody,
   permissionsFor,
   RevokeAdminAccessBody,
   UpdateAdminRolesBody,
   type AdminMeResponse,
-  type AuditActorType,
-  type AuditLogEntry,
 } from '@cbi/shared-types';
 import { Router } from 'express';
 import type { Container } from '../../container.js';
-import { AppError } from '../../lib/errors.js';
 import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
 import { aiAdminRouter } from '../ai/ai.routes.js';
@@ -22,6 +19,7 @@ import { codingAdminRouter } from '../coding/coding.routes.js';
 import { interviewsAdminRouter } from '../reports/reports.routes.js';
 import { campaignsAdminRouter } from '../campaigns/campaigns.routes.js';
 import { opsAdminRouter } from '../ops/ops.routes.js';
+import { createAuditLogService } from './audit-log.service.js';
 
 /** Admin-only endpoints (behind `/admin`, excluding `/admin/auth`). */
 export function adminRouter(c: Container): Router {
@@ -79,46 +77,35 @@ export function adminRouter(c: Container): Router {
   );
 
   // ---- Audit log ---------------------------------------------------------
+  const auditLog = createAuditLogService({ audit: c.audit });
   router.get('/audit-logs', requirePermission('audit.read'), async (req, res) => {
-    const query = AuditLogQuery.parse(req.query);
-    for (const [field, value] of [
-      ['actorId', query.actorId],
-      ['before', query.before],
-    ] as const) {
-      if (value && !mongoose.isValidObjectId(value)) {
-        throw AppError.validation(`Invalid ${field}`);
-      }
-    }
-    const filter: Record<string, unknown> = {};
-    if (query.action) filter.action = query.action;
-    if (query.actorId) filter.actorId = query.actorId;
-    if (query.resourceId) filter.resourceId = query.resourceId;
-    if (query.before) filter._id = { $lt: new mongoose.Types.ObjectId(query.before) };
-
-    const rows = await AuditLogModel.find(filter)
-      .sort({ _id: -1 })
-      .limit(query.limit + 1)
-      .lean();
-    const page = rows.slice(0, query.limit);
-    const items: AuditLogEntry[] = page.map((r) => ({
-      id: String(r._id),
-      at: r.at.toISOString(),
-      actorType: r.actorType as AuditActorType,
-      actorId: r.actorId ? String(r.actorId) : null,
-      action: r.action,
-      resourceType: r.resourceType ?? null,
-      resourceId: r.resourceId ?? null,
-      outcome: r.outcome as 'SUCCESS' | 'FAILURE',
-      requestId: r.requestId ?? null,
-      details: (r.details as Record<string, unknown> | undefined) ?? null,
-    }));
-    res.json({
-      data: {
-        items,
-        nextCursor: rows.length > query.limit ? String(page[page.length - 1]!._id) : null,
-      },
-    });
+    res.json({ data: await auditLog.list(AuditLogQuery.parse(req.query)) });
   });
+  // Every matching entry, streamed. Stricter than viewing (SUPER_ADMIN) and itself audited.
+  router.get(
+    '/audit-logs/export.csv',
+    requirePermission('audit.read'),
+    requirePermission('audit.export'),
+    async (req, res) => {
+      const query = AuditLogExportQuery.parse(req.query);
+      const day = new Date().toISOString().slice(0, 10);
+      try {
+        await auditLog.exportCsv(query, res, requireAuth(req).userId, clientContext(req), () => {
+          res
+            .status(200)
+            .set('Cache-Control', 'no-store')
+            .set('Content-Type', 'text/csv; charset=utf-8')
+            .set('Content-Disposition', `attachment; filename="audit-log-${day}.csv"`)
+            .set('X-Content-Type-Options', 'nosniff');
+        });
+      } catch (err) {
+        // Once rows are on the wire the JSON error envelope cannot follow: cut the download.
+        if (!res.headersSent) throw err;
+        req.log.error({ err }, 'audit log export failed mid-stream');
+        res.destroy();
+      }
+    },
+  );
 
   // ---- AI provider layer and prompt registry -----------------------------
   router.use(aiAdminRouter(c));

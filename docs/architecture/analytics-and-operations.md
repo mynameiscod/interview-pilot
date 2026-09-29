@@ -12,14 +12,16 @@ Links:
 
 - Contracts: [`analytics.ts`](../../packages/shared-types/src/analytics.ts), [`system.ts`](../../packages/shared-types/src/system.ts), [`proof.ts`](../../packages/shared-types/src/proof.ts)
 - Models and rollups: [`models/ops.ts`](../../packages/db/src/models/ops.ts), [`analytics.ts`](../../packages/db/src/analytics.ts)
-- API: [`apps/api/src/modules/ops/`](../../apps/api/src/modules/ops/)
+- API: [`apps/api/src/modules/ops/`](../../apps/api/src/modules/ops/), [`middleware/maintenance.ts`](../../apps/api/src/middleware/maintenance.ts), [`admin/audit-log.service.ts`](../../apps/api/src/modules/admin/audit-log.service.ts)
 - Tests: [`ops.integration.test.ts`](../../apps/api/src/modules/ops/ops.integration.test.ts)
 
 ## Product analytics
 
-The web apps send **allow-listed client events** to `POST /analytics/events`: up to 25 per batch, and 60 batches a minute per IP. The events describe what a person saw or clicked, such as `page_view`, `report_viewed`, `pricing_viewed` or `checkout_started`.
+The web apps send **allow-listed client events** to `POST /analytics/events`: up to 25 per batch, and 60 batches a minute per IP. The events describe what a person saw or clicked, such as `page_view`, `pricing_viewed` or `checkout_started`.
 
 **Business facts are never client events.** Registrations, interviews, payments and AI cost are read from the source collections, so a client can't inflate them.
+
+**Server events.** A few events feed the funnel and are recorded only by the API (`ServerEventName`); the ingestion endpoint rejects them. `report_viewed` is stored when the owner fetches their report (`GET /reports/:sessionId`, a candidate-visible revision only), at most once per user and India-time day, with `anonId: "server"`. Before this, any caller could post `report_viewed` and inflate the "viewed a report" step.
 
 **No personal data** is accepted:
 
@@ -62,7 +64,9 @@ Client timestamps are trusted only within the 24 hours before receipt. Anything 
   - AI cost in USD is converted at the configured `finance.usdToInr` rate.
   - Gateway fees are `revenue × finance.gatewayFeeRate`.
   - Gross margin is `(revenue − refunds − AI cost − fees) ÷ (revenue − refunds)`.
-- **Funnel:** follows the cohort of candidates who registered in the range. The steps are registered → onboarded → created an interview → started → completed → viewed a report (a client event) → paid.
+- **Funnel:** follows the cohort of candidates who registered in the range. The steps are registered → onboarded → created an interview → started → completed → viewed a report (recorded by the server) → paid.
+  - It is one aggregation on `users` (`funnelPipeline`): each step after onboarding is a `$lookup` into interviews, analytics events or purchases that stops at the first matching record, and a final `$group` counts the users per step. No id lists travel between MongoDB and the API, however large the cohort. Active users are counted the same way (`$unionWith` + `$group`).
+  - The integration tests seed a mixed cohort and check that the results match the previous `distinct()`/`$in` implementation.
 - **Provider health:** the latest window per provider and model.
 - **Targets:** the `targets` setting. The brief's §57 target values were never received, so the defaults are **placeholders**: completion 70%, free→paid 5%, gross margin 60%, failure rate at most 3%. The business should set real values in **System → Settings**.
 - **`computedAt`:** tells the admin how fresh the rollups are.
@@ -93,7 +97,7 @@ The API opens its queue connections only when the queue view is first used.
 - **Rollout.** A user is in the rollout when `sha256(key:userId) mod 100 < rolloutPercent`, so a rollout is stable per user. Partial rollouts never include anonymous visitors.
 - **Reading flags.** `GET /flags` returns the client-visible flags evaluated for the caller.
 - **Changing flags.** Changes need `system.manage` (SUPER_ADMIN only) and a reason, and are audited with the before and after values.
-- **Caching.** Flags and settings are cached for 15 seconds per API process, so a change reaches every replica within 15 seconds.
+- **Caching.** Flags and settings are cached per API process. A change is published on the Redis channel `cbi:ops:config-changed` (`OPS_CONFIG_CHANNEL`), and every API process drops its cached flags and settings as soon as the message arrives, the same way AI configuration and integration changes are shared. Each process subscribes on its own Redis connection at start and unsubscribes on shutdown. The 15-second cache lifetime stays as a fallback in case a message is missed (for example during a Redis blip). The worker reads no flags or settings, so it does not subscribe.
 
 ## System settings
 
@@ -105,7 +109,15 @@ The API opens its queue connections only when the queue view is first used.
 | `finance`     | `{usdToInr, gatewayFeeRate}`                                    | ₹84 per USD, 2%          |
 | `targets`     | `{completionRate, freeToPaidRate, grossMargin, maxFailureRate}` | placeholders (see above) |
 
-**Maintenance mode** makes interview starts and campaign joins answer `503 MAINTENANCE` with the admin's message. Interviews already running continue. The web apps show the banner from the public `GET /system/status`, which can be cached for 30 seconds.
+**Maintenance mode** makes the candidate API read-only. A middleware on `/api/v1` (`maintenanceGuard`) answers every `POST`, `PUT`, `PATCH` and `DELETE` with `503 MAINTENANCE`, the admin's message, `details.maintenance` and `Retry-After: 120`. Reads keep working, so candidates can still see their reports. These writes stay open (`MAINTENANCE_EXEMPT_PATHS`):
+
+- `/auth/**`: signing in and out, OTP, refresh and identity linking, so nobody is locked out;
+- `/admin/**`: admins run the maintenance. A request from any admin (a current admin token, or a candidate token of a user with admin roles) also passes on candidate routes;
+- payment webhooks and `POST /payments/verify` (and the development mock checkout): the money has already moved, so the purchase must be recorded;
+- `POST /analytics/events`: telemetry, not a change;
+- an interview that is already running: ending it, switching mode, transcription, coding answers and recording uploads. New interviews can't be created, set up, started or joined (campaigns), as before.
+
+The setting is read through the settings cache, so the check costs no database query, and an admin change applies on every process at once. If the setting can't be read, the request goes through: maintenance must never cause an outage. The web apps show the banner from the public `GET /system/status`, which can be cached for 30 seconds. The candidate app also turns the banner on as soon as any request is refused with `503 MAINTENANCE`, even if the candidate dismissed it, and shows the admin's message instead of a generic error.
 
 ## Candidate Proof (flag `reports.publicProof`, off)
 
@@ -119,6 +131,18 @@ A candidate can share a read-only proof of one report by link.
 - **Which revision:** the latest report revision the candidate may see. If the report stops being visible to the candidate (a campaign hides it), its links stop working.
 - **Search engines:** proof pages are served with `X-Robots-Tag: noindex`.
 
+## Audit log
+
+Admin → Audit log (`audit.read`) lists `auditLogs` newest first, 50 at a time. It filters by action, actor id, resource id and a date range (`from` inclusive, `to` exclusive, ISO 8601 instants; the admin app turns the chosen days into the admin's local midnights and includes the whole last day).
+
+**CSV export.** `GET /admin/audit-logs/export.csv` takes the same filters and returns every matching entry. It needs `audit.export`, which only SUPER_ADMIN has:
+
+- The export is recorded first (`audit.exported`, with the filters), in a transaction. If that write fails, nothing is sent.
+- Rows are streamed from a MongoDB cursor, respecting back-pressure, and the cursor stops if the client goes away. The log is never held in memory.
+- Cells that a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, tab or carriage return) are prefixed with `'`. `details` is written as JSON.
+
+**Retention.** Entries are kept for `AUDIT_LOG_RETENTION_DAYS` (default 730 days = two years, 30–3650), then MongoDB's TTL monitor deletes them. This is the only way entries leave the append-only collection. The TTL sits on the `{ at: -1 }` index. At startup, `ensureIndexes` creates it with the configured expiry, or changes it in place with `collMod` when the value changed; this also converts the plain time index of older deployments. A lower value deletes older entries within about a minute of the next API start.
+
 ## Permissions
 
 | Permission       | Roles                      | Grants                                    |
@@ -127,3 +151,5 @@ A candidate can share a read-only proof of one report by link.
 | `system.read`    | SUPER, OPERATIONS          | Health, queues, flags and settings (view) |
 | `system.manage`  | SUPER                      | Change flags and settings                 |
 | `queues.manage`  | SUPER, OPERATIONS          | Retry failed jobs, recompute rollups      |
+| `audit.read`     | SUPER, OPERATIONS, FINANCE | Audit log (view and filter)               |
+| `audit.export`   | SUPER                      | Audit log CSV export                      |

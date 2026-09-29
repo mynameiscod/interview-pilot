@@ -28,6 +28,9 @@ describe('maintenance mode', () => {
 
     const banner = await screen.findByText(NOTICE, {}, LOAD);
     expect(banner.closest('[role="status"]')).toHaveTextContent('Scheduled maintenance.');
+    expect(banner.closest('[role="status"]')).toHaveTextContent(
+      'You can still view your reports; changes are paused until we finish.',
+    );
     await user.click(screen.getByRole('button', { name: 'Dismiss the maintenance notice' }));
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
     expect(sessionStorage.getItem(MAINTENANCE_DISMISSED_KEY)).toBe(NOTICE);
@@ -53,7 +56,7 @@ describe('maintenance mode', () => {
     await renderRoute('/', { api: fakeApi({ 'GET /system/status': status(true, '') }) });
     expect(
       await screen.findByText(
-        /We are doing maintenance. New interviews cannot be started/,
+        /We are doing maintenance. You can still sign in and view your reports/,
         {},
         LOAD,
       ),
@@ -90,6 +93,61 @@ describe('maintenance mode', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Start interview' }, LOAD));
     expect(await screen.findByRole('alert')).toHaveTextContent(NOTICE);
+  });
+
+  it('turns the notice on as soon as a change is refused, even if it was dismissed', async () => {
+    sessionStorage.setItem(MAINTENANCE_DISMISSED_KEY, NOTICE);
+    const api = fakeApi({
+      ...signedIn,
+      // The status poll has not caught up yet.
+      'GET /system/status': status(false),
+      'GET /interviews/int1': () => ok(makeInterview()),
+      'GET /credits/balance': () => ok({ available: 1, reserved: 0, lots: [] }),
+      'POST /interviews/int1/start': () => ({
+        status: 503,
+        body: {
+          error: {
+            code: 'MAINTENANCE',
+            message: NOTICE,
+            requestId: 'test',
+            details: { maintenance: { enabled: true, message: NOTICE } },
+          },
+        },
+      }),
+    });
+    await renderRoute('/app/interviews/int1/start', { api });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Start interview' }, LOAD));
+
+    const notice = await screen.findByRole('status', {}, LOAD);
+    await waitFor(() => expect(notice).toHaveTextContent('Scheduled maintenance.'));
+    expect(notice).toHaveTextContent(NOTICE);
+    expect(sessionStorage.getItem(MAINTENANCE_DISMISSED_KEY)).toBeNull();
+  });
+
+  it('uses the default notice when a refusal carries no admin message', async () => {
+    const api = fakeApi({
+      ...signedIn,
+      'GET /interviews/int1': () => ok(makeInterview()),
+      'GET /credits/balance': () => ok({ available: 1, reserved: 0, lots: [] }),
+      'POST /interviews/int1/start': () => ({
+        status: 503,
+        body: {
+          error: {
+            code: 'MAINTENANCE',
+            message: 'We are doing maintenance. Please try again a little later.',
+            requestId: 'test',
+            details: { maintenance: { enabled: true, message: '' } },
+          },
+        },
+      }),
+    });
+    await renderRoute('/app/interviews/int1/start', { api });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Start interview' }, LOAD));
+    expect(
+      await screen.findByText(/You can still sign in and view your reports/, {}, LOAD),
+    ).toBeInTheDocument();
   });
 
   it('maps the MAINTENANCE error (also used when joining a campaign) to the admin message', async () => {
