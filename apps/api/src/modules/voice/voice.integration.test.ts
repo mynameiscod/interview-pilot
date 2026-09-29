@@ -168,17 +168,26 @@ async function joinRoom(token: string, sessionId: string) {
   return { socket, snapshot, question };
 }
 
+/**
+ * Sends a clip as a recorded answer. Mock clips are padded to a realistic
+ * size: the server bills the smaller of the browser's duration and what the
+ * bytes can hold, and a bare marker clip holds only a fraction of a second.
+ */
 function transcribe(
   call: Call,
   id: string,
   questionId: string,
   audio: Uint8Array,
   durationMs = 4200,
+  pad = 16_000,
 ) {
   return call('post', `/interviews/${id}/voice/transcribe`)
     .field('questionId', questionId)
     .field('durationMs', String(durationMs))
-    .attach('audio', Buffer.from(audio), { filename: 'answer.wav', contentType: 'audio/wav' });
+    .attach('audio', Buffer.concat([Buffer.from(audio), Buffer.alloc(pad)]), {
+      filename: 'answer.wav',
+      contentType: 'audio/wav',
+    });
 }
 
 describe('voice readiness', () => {
@@ -258,6 +267,16 @@ describe('voice interview (mocked speech providers)', () => {
     const res = await transcribe(call, id, question.questionId, mockSpeech(spoken)).expect(200);
     const transcript = VoiceTranscript.parse(res.body.data);
     expect(transcript).toMatchObject({ text: spoken, lowConfidence: false, durationSec: 4.2 });
+    // The browser's duration is not trusted beyond what the bytes can hold (no padding: ~0.1 s).
+    const tiny = await transcribe(
+      call,
+      id,
+      question.questionId,
+      mockSpeech(spoken),
+      4200,
+      0,
+    ).expect(200);
+    expect(tiny.body.data.durationSec).toBeLessThan(1);
     const unclear = VoiceTranscript.parse(
       (await transcribe(call, id, question.questionId, mockSpeech('um [unclear]')).expect(200)).body
         .data,

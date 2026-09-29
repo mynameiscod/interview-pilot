@@ -28,6 +28,7 @@ import { objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import type { ConsentService } from '../consent/consent.service.js';
 import type { RoomEmitter } from '../live/live.service.js';
+import { billableDurationSec } from './audio-duration.js';
 
 type Session = InterviewSessionRecord;
 
@@ -231,6 +232,8 @@ export function createVoiceService(deps: Deps) {
           'This recording format is not supported.',
         );
       }
+      // Usage and cost follow the audio itself, not the browser's figure (some models report none).
+      const durationSec = billableDurationSec(audio, mimeType, fields.durationMs);
       let result;
       try {
         result = await ai.router.transcribe(
@@ -238,7 +241,7 @@ export function createVoiceService(deps: Deps) {
             audio: new Uint8Array(audio.buffer, audio.byteOffset, audio.byteLength),
             mimeType,
             language: language(s),
-            durationSec: fields.durationMs / 1000,
+            durationSec,
           },
           { userId, sessionId },
         );
@@ -255,7 +258,7 @@ export function createVoiceService(deps: Deps) {
         sessionId,
         questionId: fields.questionId,
         text: result.result.text.slice(0, 6000),
-        durationSec: result.usage.audioSec ?? fields.durationMs / 1000,
+        durationSec: result.usage.audioSec ?? durationSec,
         language: result.result.language,
         confidence: result.result.confidence,
         model: result.model.modelId,
