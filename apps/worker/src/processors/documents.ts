@@ -20,6 +20,7 @@ import {
   type ExtractionWarning,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
+import { knownNames, redactForAi } from './pii.js';
 
 export interface DocumentProcessorDeps {
   storage: StorageProvider;
@@ -153,11 +154,17 @@ export async function processResumeExtract(
     async () => {
       const file = await deps.storage.get(resume.storageKey);
       const extracted = await extractDocumentText(file, { ocr: deps.ocr });
+      // Contact details and the candidate's name never leave for the model.
+      const forAi = redactForAi(deps.logger, extracted.text.slice(0, STRUCTURE_INPUT_CHARS), {
+        what: 'resume.structure',
+        userId: String(resume.userId),
+        names: await knownNames(resume.userId),
+      });
       const structured = await structure(
         deps,
         'resume.structure',
         ResumeStructured,
-        { resume: untrusted(extracted.text.slice(0, STRUCTURE_INPUT_CHARS)) },
+        { resume: untrusted(forAi) },
         String(resume.userId),
       );
       await ResumeModel.updateOne(
@@ -268,7 +275,14 @@ export async function processJdExtract(
               'jd.structure',
               JdStructured,
               {
-                jd: untrusted(text.slice(0, STRUCTURE_INPUT_CHARS)),
+                // Recruiter e-mails and phone numbers in a JD are not needed either.
+                jd: untrusted(
+                  redactForAi(deps.logger, text.slice(0, STRUCTURE_INPUT_CHARS), {
+                    what: 'jd.structure',
+                    userId: String(target.userId),
+                    addresses: false,
+                  }),
+                ),
                 companyName: untrusted(target.companyName ?? ''),
               },
               String(target.userId),
