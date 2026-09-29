@@ -3,6 +3,7 @@ import { UiLocale } from './i18n.js';
 import { InterviewState } from './interviews.js';
 import { Difficulty, InterviewMode, RoundType } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
+import type { VoiceStreamStarted } from './voice-realtime.js';
 
 /**
  * The live interview (Phase 4): rounds, turns (the question ledger), the
@@ -138,6 +139,26 @@ export const RtEvent = {
   /** Client → server: a browser integrity observation (tab hidden, paste …). */
   INTEGRITY: 'integrity:event',
   DRAINING: 'server:draining',
+  // ---- Realtime voice (flag `voice.realtime`; payloads in voice-realtime.ts) ----
+  /** Client → server: open a streaming transcription for the current question. */
+  VOICE_STREAM_START: 'voice:stream:start',
+  /** Client → server: one microphone frame (binary, acknowledged: the browser's backpressure). */
+  VOICE_STREAM_AUDIO: 'voice:stream:audio',
+  VOICE_STREAM_STOP: 'voice:stream:stop',
+  /** Client → server: the candidate interrupted the spoken question. */
+  VOICE_BARGE_IN: 'voice:barge-in',
+  VOICE_TRANSCRIPT: 'voice:stream:transcript',
+  /** The provider heard speech start (also a barge-in signal). */
+  VOICE_SPEECH: 'voice:stream:speech',
+  VOICE_TURN_END: 'voice:stream:turn-end',
+  /** Speech continued after a turn end: the grace countdown stops. */
+  VOICE_RESUMED: 'voice:stream:resumed',
+  VOICE_STREAM_ERROR: 'voice:stream:error',
+  VOICE_STREAM_CLOSED: 'voice:stream:closed',
+  /** The next question's text as it is generated (a preview until `interview:question`). */
+  QUESTION_DELTA: 'question:delta',
+  QUESTION_AUDIO: 'question:audio',
+  QUESTION_STREAM_END: 'question:stream-end',
 } as const;
 
 const clientMsgId = z.string().trim().min(8).max(64);
@@ -160,6 +181,12 @@ export const AnswerTextPayload = z.object({
    * server then uses its own transcript and ignores `text`.
    */
   voiceTranscriptId: z.uuid().optional(),
+  /**
+   * The candidate corrected the transcript before sending it (realtime
+   * voice): `text` is then the answer, and the turn still records the speech
+   * metadata, marked as edited.
+   */
+  voiceEdited: z.boolean().optional(),
 });
 export type AnswerTextPayload = z.infer<typeof AnswerTextPayload>;
 
@@ -167,7 +194,7 @@ export const HeartbeatPayload = z.object({ sessionId: z.string().min(1).max(64) 
 
 /** Acknowledgement for every client → server event. */
 export type RtAck =
-  | { ok: true; snapshot?: InterviewSnapshot; duplicate?: boolean }
+  | { ok: true; snapshot?: InterviewSnapshot; duplicate?: boolean; stream?: VoiceStreamStarted }
   | { ok: false; code: RtErrorCode; message: string };
 
 export const RtErrorCode = z.enum([
@@ -178,6 +205,9 @@ export const RtErrorCode = z.enum([
   'STALE_QUESTION',
   'BUSY',
   'INTERNAL',
+  /** Realtime voice is off or not possible here: the room uses push-to-talk. */
+  'UNSUPPORTED',
+  'SPEECH_UNAVAILABLE',
 ]);
 export type RtErrorCode = z.infer<typeof RtErrorCode>;
 

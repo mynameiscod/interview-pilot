@@ -1,4 +1,5 @@
 import type { SttAdapter } from '@cbi/ai-core';
+import { createDeepgramLiveAdapter, type WebSocketFactory } from './deepgram-live.js';
 import { baseMime, speechFetch, speechJson, type FetchLike } from './http.js';
 
 interface DeepgramResponse {
@@ -15,11 +16,16 @@ interface DeepgramResponse {
  * Deepgram pre-recorded transcription (`POST /v1/listen`). A language hint is
  * passed when the interview has one; otherwise Deepgram detects it. A
  * language the model does not support fails with 400, which the router
- * treats as "try the next model".
+ * treats as "try the next model". `openStream` is live transcription
+ * (realtime voice, see deepgram-live.ts).
  */
-export function createDeepgramSttAdapter(opts: { fetchImpl?: FetchLike } = {}): SttAdapter {
+export function createDeepgramSttAdapter(
+  opts: { fetchImpl?: FetchLike; webSocket?: WebSocketFactory } = {},
+): SttAdapter {
+  const live = createDeepgramLiveAdapter({ webSocket: opts.webSocket });
   return {
     providerKey: 'deepgram',
+    openStream: (input) => live.openStream(input),
     async transcribe({ model, request, credentials, signal }) {
       const base = (credentials.baseUrl ?? 'https://api.deepgram.com').replace(/\/$/, '');
       const params = new URLSearchParams({

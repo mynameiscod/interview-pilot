@@ -1,8 +1,9 @@
-import type { SttAdapter, TtsAdapter } from '@cbi/ai-core';
+import type { SttAdapter, TtsAdapter, TtsCallInput } from '@cbi/ai-core';
 import {
   audioExtension,
   baseMime,
   speechBytes,
+  speechChunks,
   speechFetch,
   speechJson,
   type FetchLike,
@@ -56,33 +57,44 @@ export function createOpenAiSttAdapter(opts: { fetchImpl?: FetchLike } = {}): St
   };
 }
 
-/** OpenAI speech (`POST /v1/audio/speech`), MP3 output. */
+/**
+ * OpenAI speech (`POST /v1/audio/speech`), MP3 output. `synthesizeStream`
+ * reads the same response as it arrives (chunked transfer, `stream_format:
+ * audio`), so playback can start before the whole file is generated.
+ */
 export function createOpenAiTtsAdapter(opts: { fetchImpl?: FetchLike } = {}): TtsAdapter {
+  const call = ({ model, request, credentials, signal }: TtsCallInput, stream: boolean) =>
+    speechFetch(
+      'openai',
+      `${apiBase(credentials.baseUrl)}/audio/speech`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${credentials.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model.modelId,
+          input: request.text,
+          voice: model.params.voice ?? DEFAULT_VOICE,
+          response_format: 'mp3',
+          ...(stream ? { stream_format: 'audio' } : {}),
+          // Older tts-1 models ignore style instructions; gpt-4o-mini-tts follows them.
+          ...(model.modelId.startsWith('tts-1') ? {} : { instructions: INTERVIEWER_STYLE }),
+        }),
+      },
+      signal,
+      opts.fetchImpl,
+    );
   return {
     providerKey: 'openai',
-    async synthesize({ model, request, credentials, signal }) {
-      const res = await speechFetch(
-        'openai',
-        `${apiBase(credentials.baseUrl)}/audio/speech`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${credentials.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: model.modelId,
-            input: request.text,
-            voice: model.params.voice ?? DEFAULT_VOICE,
-            response_format: 'mp3',
-            // Older tts-1 models ignore style instructions; gpt-4o-mini-tts follows them.
-            ...(model.modelId.startsWith('tts-1') ? {} : { instructions: INTERVIEWER_STYLE }),
-          }),
-        },
-        signal,
-        opts.fetchImpl,
-      );
+    async synthesize(input) {
+      const res = await call(input, false);
       return { audio: await speechBytes('openai', res), mimeType: 'audio/mpeg', servedModel: null };
+    },
+    async synthesizeStream(input) {
+      const res = await call(input, true);
+      return { mimeType: 'audio/mpeg', chunks: speechChunks('openai', res) };
     },
   };
 }

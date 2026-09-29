@@ -22,6 +22,7 @@ export * from './queues.js';
 export * from './review.js';
 export * from './users.js';
 export * from './voice.js';
+export * from './voice-realtime.js';
 export * from './analytics.js';
 export * from './system.js';
 export * from './proof.js';

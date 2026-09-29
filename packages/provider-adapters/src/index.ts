@@ -50,6 +50,12 @@ export type {
   PaymentGateway,
 } from './payments/types.js';
 export { createDeepgramSttAdapter } from './speech/deepgram.js';
+export {
+  createDeepgramLiveAdapter,
+  deepgramLiveLanguage,
+  type WebSocketFactory,
+  type WebSocketLike,
+} from './speech/deepgram-live.js';
 export { createElevenLabsTtsAdapter, ELEVENLABS_DEFAULT_VOICE } from './speech/elevenlabs.js';
 export {
   createMockSttAdapter,
@@ -58,6 +64,7 @@ export {
   MOCK_SPEECH_PREFIX,
   mockSpeech,
   mockSpeechFailure,
+  openMockSpeechStream,
 } from './speech/mock.js';
 export { createOpenAiSttAdapter, createOpenAiTtsAdapter } from './speech/openai.js';
 export {

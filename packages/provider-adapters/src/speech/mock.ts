@@ -1,4 +1,11 @@
-import { AiProviderError, type SttAdapter, type TtsAdapter } from '@cbi/ai-core';
+import {
+  AiProviderError,
+  type SpeechStream,
+  type SpeechStreamEvent,
+  type SttAdapter,
+  type SttStreamInput,
+  type TtsAdapter,
+} from '@cbi/ai-core';
 
 /**
  * DEVELOPMENT/TEST ONLY speech mocks (registered with AI_MOCK_MODE, like the
@@ -11,6 +18,12 @@ import { AiProviderError, type SttAdapter, type TtsAdapter } from '@cbi/ai-core'
  *
  * TTS: a short, quiet WAV chime followed by silence roughly as long as
  * reading the text, so the room's speaking indicator behaves realistically.
+ *
+ * Streaming STT (realtime voice) follows the audio clock, not timers: a
+ * frame starting with `MOCK-SPEECH:` is "heard" as its text; real PCM that
+ * is loud enough counts as speech and is transcribed to a labelled
+ * placeholder once the speaker pauses. Quiet audio after the last word
+ * produces the utterance end. Streaming TTS sends the WAV in chunks.
  */
 export const MOCK_SPEECH_PREFIX = 'MOCK-SPEECH:';
 export const MOCK_SPEECH_FAIL = 'MOCK-SPEECH-FAIL';
@@ -29,6 +42,7 @@ export const mockSpeechFailure = () =>
 export function createMockSttAdapter(): SttAdapter {
   return {
     providerKey: 'mock',
+    openStream: async (input) => openMockSpeechStream(input),
     async transcribe({ request }) {
       const decoded = new TextDecoder().decode(request.audio);
       if (decoded.slice(0, 64).includes(MOCK_SPEECH_FAIL)) {
@@ -86,6 +100,151 @@ export function createMockTtsAdapter(): TtsAdapter {
     providerKey: 'mock',
     async synthesize({ request }) {
       return { audio: mockSpeechWav(request.text), mimeType: 'audio/wav', servedModel: 'mock-tts' };
+    },
+    async synthesizeStream({ request, signal }) {
+      const wav = mockSpeechWav(request.text);
+      return {
+        mimeType: 'audio/wav',
+        chunks: (async function* () {
+          const size = Math.ceil(wav.length / 3);
+          for (let at = 0; at < wav.length; at += size) {
+            signal.throwIfAborted();
+            yield wav.subarray(at, at + size);
+          }
+        })(),
+      };
+    },
+  };
+}
+
+/** Peak-normalised RMS above which mock streaming hears speech (quiet rooms are ~0.005). */
+const MOCK_SPEECH_RMS = 0.02;
+/** A pause this long ends a mock "phrase" (like provider endpointing). */
+const MOCK_PHRASE_PAUSE_SEC = 0.3;
+
+function pcmRms(bytes: Uint8Array): number {
+  const view = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength - (bytes.byteLength % 2),
+  );
+  const samples = view.byteLength / 2;
+  if (samples === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < samples; i++) {
+    const v = view.getInt16(i * 2, true) / 32768;
+    sum += v * v;
+  }
+  return Math.sqrt(sum / samples);
+}
+
+/** The mock live transcription session (see the notes at the top of this file). */
+export function openMockSpeechStream(input: SttStreamInput): SpeechStream {
+  const { request, onEvent } = input;
+  const bytesPerSec = request.sampleRate * 2;
+  let closed = false;
+  let clock = 0;
+  let lastWordEnd: number | null = null;
+  let utteranceEnded = true;
+  /** Real audio being heard: when it started and how much of it was voiced. */
+  let phrase: { start: number; voiced: number; lastVoice: number } | null = null;
+  const emit = (event: SpeechStreamEvent) => {
+    if (!closed) onEvent(event);
+  };
+  const final = (text: string, start: number, end: number, fromFinalize = false) => {
+    emit({
+      type: 'transcript',
+      text,
+      isFinal: true,
+      speechFinal: !fromFinalize,
+      confidence: text.includes('[unclear]') ? 0.3 : 0.99,
+      start,
+      duration: Math.max(0, end - start),
+    });
+    lastWordEnd = end;
+    utteranceEnded = false;
+  };
+  const endPhrase = (fromFinalize = false) => {
+    if (!phrase) return;
+    const seconds = Math.max(1, Math.round(phrase.voiced));
+    final(
+      `[mock] Spoken answer of about ${seconds} second${seconds === 1 ? '' : 's'}.`,
+      phrase.start,
+      phrase.lastVoice,
+      fromFinalize,
+    );
+    phrase = null;
+  };
+  return {
+    send(audio) {
+      if (closed) return;
+      const text = new TextDecoder().decode(audio.subarray(0, 64));
+      if (text.startsWith(MOCK_SPEECH_FAIL)) {
+        emit({
+          type: 'error',
+          error: new AiProviderError('mock', 'PROVIDER_ERROR', 'mock_failure', 'simulated outage'),
+        });
+        return;
+      }
+      if (text.startsWith(MOCK_SPEECH_PREFIX)) {
+        // A scripted phrase: one second of speech per call.
+        const spoken = new TextDecoder().decode(audio).slice(MOCK_SPEECH_PREFIX.length).trim();
+        const words = spoken.split(/\s+/).filter(Boolean);
+        emit({ type: 'speech_started', at: clock });
+        emit({
+          type: 'transcript',
+          text: words.slice(0, Math.ceil(words.length / 2)).join(' '),
+          isFinal: false,
+          speechFinal: false,
+          confidence: null,
+          start: clock,
+          duration: 0.5,
+        });
+        final(spoken, clock, clock + 1);
+        clock += 1;
+        return;
+      }
+      const seconds = audio.byteLength / bytesPerSec;
+      const voiced = pcmRms(audio) >= MOCK_SPEECH_RMS;
+      if (voiced) {
+        if (!phrase) {
+          phrase = { start: clock, voiced: 0, lastVoice: clock };
+          emit({ type: 'speech_started', at: clock });
+        }
+        phrase.voiced += seconds;
+        phrase.lastVoice = clock + seconds;
+        emit({
+          type: 'transcript',
+          text: '[mock] Spoken answer',
+          isFinal: false,
+          speechFinal: false,
+          confidence: null,
+          start: phrase.start,
+          duration: phrase.lastVoice - phrase.start,
+        });
+      }
+      clock += seconds;
+      if (phrase && clock - phrase.lastVoice >= MOCK_PHRASE_PAUSE_SEC) endPhrase();
+      if (
+        !phrase &&
+        !utteranceEnded &&
+        lastWordEnd !== null &&
+        clock - lastWordEnd >= request.utteranceEndMs / 1000
+      ) {
+        utteranceEnded = true;
+        emit({ type: 'utterance_end', lastWordEnd });
+      }
+    },
+    finalize() {
+      endPhrase(true);
+    },
+    bufferedAmount: () => 0,
+    async close() {
+      if (!closed) {
+        emit({ type: 'closed' });
+        closed = true;
+      }
+      return { durationSec: Math.round(clock * 100) / 100, servedModel: 'mock-stt' };
     },
   };
 }

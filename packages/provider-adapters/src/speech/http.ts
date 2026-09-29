@@ -65,6 +65,33 @@ export async function speechBytes(provider: string, res: Response): Promise<Uint
   return bytes;
 }
 
+/**
+ * A streamed response body as chunks. A read failure becomes an
+ * AiProviderError (the router ends the stream); an empty body fails too.
+ */
+export async function* speechChunks(provider: string, res: Response): AsyncGenerator<Uint8Array> {
+  if (!res.body) {
+    throw new AiProviderError(provider, 'PROVIDER_ERROR', 'empty_audio', 'empty audio response');
+  }
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      let step: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        step = await reader.read();
+      } catch (err) {
+        throw new AiProviderError(provider, 'NETWORK_ERROR', 'stream', 'audio stream interrupted', {
+          cause: err,
+        });
+      }
+      if (step.done) return;
+      if (step.value.byteLength > 0) yield step.value;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
 /** Container type without codec parameters (`audio/webm;codecs=opus` → `audio/webm`). */
 export const baseMime = (mime: string) => mime.split(';')[0]!.trim().toLowerCase();
 
