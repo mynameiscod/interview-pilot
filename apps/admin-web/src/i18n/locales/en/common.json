@@ -148,6 +148,12 @@
     "revoke": "Revoke access",
     "revokeExplain": "{{email}} will lose admin access and be signed out of the admin console. Their candidate account is not affected.",
     "confirmRevoke": "Revoke admin access",
+    "mfaOn": "2FA on",
+    "resetMfa": "Reset 2FA",
+    "resetMfaExplain": "Use this when {{email}} has lost both their authenticator and their recovery codes. Their two-factor authentication is removed and they are signed out everywhere; at their next sign-in they set up a new authenticator. Confirm who they are first (for example on a call).",
+    "yourCode": "Your 6-digit authenticator code",
+    "yourCodeHint": "From your own authenticator app, to confirm it is you.",
+    "confirmResetMfa": "Reset two-factor authentication",
     "reason": "Reason (recorded in the audit log)",
     "cancel": "Cancel",
     "you": "You"

@@ -73,6 +73,7 @@ const adminUser = (overrides: Partial<AdminUserSummary> = {}): AdminUserSummary 
   emailVerified: true,
   lastLoginAt: '2026-09-20T10:30:00.000Z',
   createdAt: '2026-01-01T00:00:00.000Z',
+  mfaEnabled: false,
   ...overrides,
 });
 
@@ -322,6 +323,39 @@ describe('changing an admin', () => {
     );
     // The form stays open so the admin can correct it and retry.
     expect(within(list).getByRole('button', { name: 'Save roles' })).toBeInTheDocument();
+  });
+
+  it('resets another admin’s 2FA with a reason and the super admin’s own code', async () => {
+    let admins = [self, adminUser({ mfaEnabled: true }), newcomer];
+    const { api } = await renderAt('/admins', ['SUPER_ADMIN'], {
+      'GET /admin/users': () => ok(admins),
+      'POST /admin/users/admin-2/reset-mfa': () => {
+        admins = admins.map((a) => (a.id === 'admin-2' ? { ...a, mfaEnabled: false } : a));
+        return ok(admins[1]);
+      },
+    });
+    const list = await screen.findByRole('region', { name: 'Admin accounts' });
+    const user = userEvent.setup();
+    const row = await within(list).findByRole('row', { name: /Priya/ });
+    expect(within(row).getByText('2FA on')).toBeInTheDocument();
+    // Only admins with 2FA on can have it reset.
+    const other = within(list).getByRole('row', { name: /new.hire/ });
+    expect(within(other).queryByRole('button', { name: 'Reset 2FA' })).not.toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'Reset 2FA' }));
+    expect(within(list).getByText(/has lost both their authenticator/)).toBeInTheDocument();
+    const confirm = within(list).getByRole('button', { name: 'Reset two-factor authentication' });
+    await user.type(within(list).getByLabelText(REASON), 'Lost phone, ticket 42');
+    expect(confirm).toBeDisabled();
+    await user.type(within(list).getByLabelText('Your 6-digit authenticator code'), '12a3456');
+    expect(within(list).getByLabelText('Your 6-digit authenticator code')).toHaveValue('123456');
+    await user.click(confirm);
+
+    await expect.poll(() => within(row).queryByText('2FA on')).toBeNull();
+    expect(bodyOf(api, 'POST /admin/users/admin-2/reset-mfa')).toEqual({
+      code: '123456',
+      reason: 'Lost phone, ticket 42',
+    });
   });
 
   it('revokes admin access with a reason', async () => {

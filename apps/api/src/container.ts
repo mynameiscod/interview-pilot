@@ -182,10 +182,20 @@ export function buildContainer(opts: ContainerOptions) {
   const google = env.GOOGLE_CLIENT_ID
     ? createGoogleVerifier({ clientId: env.GOOGLE_CLIENT_ID, keySet: opts.overrides?.googleKeySet })
     : null;
+  const mfa = createMfaService({
+    redis,
+    secrets: ai.secrets,
+    audit,
+    hashSecret: env.OTP_HMAC_SECRET,
+    issuer: env.ADMIN_MFA_ISSUER,
+    policy: env.ADMIN_MFA_REQUIRED,
+  });
   const adminUsers = createAdminUserService({
     accounts,
     sessions,
     userState,
+    mfa,
+    revokedSessions,
     audit,
     email,
     logger,
@@ -218,14 +228,6 @@ export function buildContainer(opts: ContainerOptions) {
     retentionDays: env.MEDIA_RETENTION_DAYS_DEFAULT,
     // A separate key per purpose, derived from the server secret.
     signingSecret: createHmac('sha256', env.OTP_HMAC_SECRET).update('media-playback').digest('hex'),
-  });
-  const mfa = createMfaService({
-    redis,
-    secrets: ai.secrets,
-    audit,
-    hashSecret: env.OTP_HMAC_SECRET,
-    issuer: env.ADMIN_MFA_ISSUER,
-    policy: env.ADMIN_MFA_REQUIRED,
   });
   const privacy = createPrivacyService({
     audit,

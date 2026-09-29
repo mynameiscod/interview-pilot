@@ -290,6 +290,18 @@ export function createMfaService(deps: {
       return { recoveryCodes: codes };
     },
 
+    /**
+     * Confirms a sensitive action with the user's own current authenticator
+     * code (not a recovery code). Throws when 2FA is off or the code is wrong.
+     */
+    async verifyOwnCode(userId: string, code: string) {
+      const mfa = await loadMfa(userId);
+      if (!mfa) {
+        throw AppError.conflict('Turn on two-factor authentication for your own account first.');
+      }
+      if (!(await acceptTotp(userId, mfa, code))) throw invalidCode();
+    },
+
     async regenerateRecoveryCodes(userId: string, code: string, ctx: ClientContext) {
       const mfa = await loadMfa(userId);
       if (!mfa) throw AppError.conflict('Two-factor authentication is not on.');

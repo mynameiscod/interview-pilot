@@ -150,19 +150,24 @@ function AdminRow({
   const id = useId();
   const { manager } = useAdminAuth();
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<'view' | 'roles' | 'revoke'>('view');
+  const [mode, setMode] = useState<'view' | 'roles' | 'revoke' | 'mfa'>('view');
   const [roles, setRoles] = useState<AdminRole[]>(admin.roles);
   const [reason, setReason] = useState('');
+  // The acting super admin's own authenticator code (2FA reset only).
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: () =>
       mode === 'roles'
         ? manager.api.put(`/admin/users/${admin.id}/roles`, { roles, reason })
-        : manager.api.post(`/admin/users/${admin.id}/revoke-access`, { reason }),
+        : mode === 'mfa'
+          ? manager.api.post(`/admin/users/${admin.id}/reset-mfa`, { code, reason })
+          : manager.api.post(`/admin/users/${admin.id}/revoke-access`, { reason }),
     onSuccess: async () => {
       setMode('view');
       setReason('');
+      setCode('');
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
     },
@@ -186,6 +191,12 @@ function AdminRow({
               {t('admins.pendingFirstSignIn')}
             </span>
           )}
+          {admin.mfaEnabled && (
+            <span className="badge text-bg-light border cb-border mt-1 ms-1">
+              <i className="bi bi-shield-lock me-1" aria-hidden="true" />
+              {t('admins.mfaOn')}
+            </span>
+          )}
         </td>
         <td>
           <div className="d-flex flex-wrap gap-1">
@@ -207,6 +218,15 @@ function AdminRow({
               >
                 {t('admins.editRoles')}
               </button>
+              {admin.mfaEnabled && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary me-2"
+                  onClick={() => setMode('mfa')}
+                >
+                  {t('admins.resetMfa')}
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-sm btn-outline-danger"
@@ -238,6 +258,29 @@ function AdminRow({
               {mode === 'revoke' && (
                 <p className="mb-2">{t('admins.revokeExplain', { email: admin.email })}</p>
               )}
+              {mode === 'mfa' && (
+                <>
+                  <p className="mb-2">{t('admins.resetMfaExplain', { email: admin.email })}</p>
+                  <label htmlFor={`${id}-code`} className="form-label">
+                    {t('admins.yourCode')}
+                  </label>
+                  <input
+                    id={`${id}-code`}
+                    className="form-control mb-2 font-monospace"
+                    style={{ maxWidth: '10rem' }}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={code}
+                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                    aria-describedby={`${id}-code-hint`}
+                    required
+                  />
+                  <p id={`${id}-code-hint`} className="small cb-text-secondary">
+                    {t('admins.yourCodeHint')}
+                  </p>
+                </>
+              )}
               <label htmlFor={`${id}-reason`} className="form-label">
                 {t('admins.reason')}
               </label>
@@ -261,10 +304,15 @@ function AdminRow({
                   disabled={
                     save.isPending ||
                     reason.trim().length < 3 ||
-                    (mode === 'roles' && roles.length === 0)
+                    (mode === 'roles' && roles.length === 0) ||
+                    (mode === 'mfa' && code.length !== 6)
                   }
                 >
-                  {mode === 'revoke' ? t('admins.confirmRevoke') : t('admins.saveRoles')}
+                  {mode === 'revoke'
+                    ? t('admins.confirmRevoke')
+                    : mode === 'mfa'
+                      ? t('admins.confirmResetMfa')
+                      : t('admins.saveRoles')}
                 </button>
                 <button
                   type="button"
@@ -272,6 +320,7 @@ function AdminRow({
                   onClick={() => {
                     setMode('view');
                     setRoles(admin.roles);
+                    setCode('');
                     setError(null);
                   }}
                 >

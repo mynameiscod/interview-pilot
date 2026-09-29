@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "openapi:generate": "tsx --conditions=@cbi/source src/openapi/generate.ts",
-    "admin:seed": "tsx --env-file-if-exists=../../.env --conditions=@cbi/source src/scripts/seed-super-admin.ts"
+    "admin:seed": "tsx --env-file-if-exists=../../.env --conditions=@cbi/source src/scripts/seed-super-admin.ts",
+    "admin:reset-mfa": "tsx --env-file-if-exists=../../.env --conditions=@cbi/source src/scripts/reset-admin-mfa.ts"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "9.1.0",

@@ -186,6 +186,7 @@ import {
   OtpRequestResponse,
   OtpVerifyBody,
   ReadinessResponse,
+  ResetAdminMfaBody,
   RevokeAdminAccessBody,
   SessionResponse,
   UpdateAdminRolesBody,
@@ -525,6 +526,15 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: "Replace an admin's roles (admin_users.manage)",
     auth: 'bearer',
     body: UpdateAdminRolesBody,
+    response: AdminUserSummary,
+    errors: [400, 401, 403, 404, 409],
+  });
+  route('post', '/admin/users/{id}/reset-mfa', {
+    tag: 'Admin',
+    summary:
+      "Reset another admin's two-factor authentication, confirmed with your own authenticator code; signs them out everywhere, audited (admin_users.manage)",
+    auth: 'bearer',
+    body: ResetAdminMfaBody,
     response: AdminUserSummary,
     errors: [400, 401, 403, 404, 409],
   });

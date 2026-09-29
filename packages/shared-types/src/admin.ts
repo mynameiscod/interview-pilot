@@ -11,6 +11,8 @@ export const AdminUserSummary = z.object({
   emailVerified: z.boolean(),
   lastLoginAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
+  /** Two-factor authentication (TOTP) is on. */
+  mfaEnabled: z.boolean(),
 });
 export type AdminUserSummary = z.infer<typeof AdminUserSummary>;
 
@@ -40,6 +42,19 @@ export const RevokeAdminAccessBody = z.object({
   reason: z.string().trim().min(3).max(300),
 });
 export type RevokeAdminAccessBody = z.infer<typeof RevokeAdminAccessBody>;
+
+/**
+ * A super admin resets another admin's 2FA (lost phone and recovery codes):
+ * confirmed with the acting super admin's own authenticator code.
+ */
+export const ResetAdminMfaBody = z.object({
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, 'Enter the 6-digit code'),
+  reason: z.string().trim().min(3).max(300),
+});
+export type ResetAdminMfaBody = z.infer<typeof ResetAdminMfaBody>;
 
 export const InviteAdminResponse = z.object({
   admin: AdminUserSummary,

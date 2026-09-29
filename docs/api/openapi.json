@@ -11758,6 +11758,9 @@
                           "createdAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "mfaEnabled": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -11768,7 +11771,8 @@
                           "status",
                           "emailVerified",
                           "lastLoginAt",
-                          "createdAt"
+                          "createdAt",
+                          "mfaEnabled"
                         ]
                       }
                     }
@@ -12034,6 +12038,9 @@
                             "createdAt": {
                               "type": "string",
                               "format": "date-time"
+                            },
+                            "mfaEnabled": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -12044,7 +12051,8 @@
                             "status",
                             "emailVerified",
                             "lastLoginAt",
-                            "createdAt"
+                            "createdAt",
+                            "mfaEnabled"
                           ]
                         },
                         "inviteEmailSent": {
@@ -12462,6 +12470,9 @@
                         "createdAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "mfaEnabled": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -12472,7 +12483,493 @@
                         "status",
                         "emailVerified",
                         "lastLoginAt",
-                        "createdAt"
+                        "createdAt",
+                        "mfaEnabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "BAD_REQUEST",
+                            "VALIDATION_FAILED",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN",
+                            "NOT_FOUND",
+                            "CONFLICT",
+                            "PAYLOAD_TOO_LARGE",
+                            "RATE_LIMITED",
+                            "ORIGIN_NOT_ALLOWED",
+                            "SERVICE_UNAVAILABLE",
+                            "INTERNAL_ERROR",
+                            "CSRF_REJECTED",
+                            "OTP_INVALID",
+                            "OTP_EXPIRED",
+                            "OTP_TOO_MANY_ATTEMPTS",
+                            "OTP_COOLDOWN",
+                            "IDENTITY_IN_USE",
+                            "ACCOUNT_SUSPENDED",
+                            "FEATURE_DISABLED",
+                            "PROVIDER_UNAVAILABLE",
+                            "AI_UNAVAILABLE",
+                            "UNSUPPORTED_MEDIA_TYPE",
+                            "INVALID_STATE",
+                            "INSUFFICIENT_CREDITS",
+                            "PAYMENT_VERIFICATION_FAILED",
+                            "SPEECH_UNAVAILABLE",
+                            "JUDGE_UNAVAILABLE",
+                            "CAMPAIGN_CLOSED",
+                            "MAINTENANCE",
+                            "NOT_CONFIGURED",
+                            "INVALID_CREDENTIALS",
+                            "ACCOUNT_LOCKED",
+                            "MFA_INVALID",
+                            "MFA_EXPIRED",
+                            "ACCOUNT_DELETION_PENDING",
+                            "QUOTA_EXCEEDED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}/reset-mfa": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Reset another admin's two-factor authentication, confirmed with your own authenticator code; signs them out everywhere, audited (admin_users.manage)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  }
+                },
+                "required": [
+                  "code",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "email"
+                        },
+                        "displayName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "roles": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "SUPER_ADMIN",
+                              "OPERATIONS_ADMIN",
+                              "CONTENT_ADMIN",
+                              "SUPPORT_ADMIN",
+                              "FINANCE_ADMIN"
+                            ]
+                          }
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "ACTIVE",
+                            "SUSPENDED",
+                            "DELETION_PENDING",
+                            "DELETED"
+                          ]
+                        },
+                        "emailVerified": {
+                          "type": "boolean"
+                        },
+                        "lastLoginAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "mfaEnabled": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "displayName",
+                        "roles",
+                        "status",
+                        "emailVerified",
+                        "lastLoginAt",
+                        "createdAt",
+                        "mfaEnabled"
                       ]
                     }
                   },

@@ -17,7 +17,8 @@ type RevokeReason =
   | 'SUSPENDED'
   | 'ROLE_CHANGE'
   | 'DEVICE_REVOKED'
-  | 'ACCOUNT_DELETION';
+  | 'ACCOUNT_DELETION'
+  | 'MFA_RESET';
 
 export interface IssuedSession {
   userId: string;
