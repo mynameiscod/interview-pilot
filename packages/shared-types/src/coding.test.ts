@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CODING_LIMITS,
   CreateProblemVersionBody,
+  CustomRunBody,
   judgeTestsFor,
   parseLanguageIds,
   problemContentIssues,
@@ -82,6 +84,16 @@ describe('judge tests for a problem', () => {
 
   it('passes stdin tests through for other problems', () => {
     expect(judgeTestsFor({}, tests)).toEqual([{ ...tests[0], compare: 'EXACT' }]);
+  });
+});
+
+describe('custom input', () => {
+  it('caps the input a candidate can run with', () => {
+    const body = { language: 'python', code: 'print(input())' };
+    const max = CODING_LIMITS.maxCustomInputBytes;
+    expect(CustomRunBody.safeParse({ ...body, stdin: 'x'.repeat(max) }).success).toBe(true);
+    expect(CustomRunBody.safeParse({ ...body, stdin: 'x'.repeat(max + 1) }).success).toBe(false);
+    expect(CustomRunBody.safeParse({ ...body, stdin: '' }).success).toBe(true);
   });
 });
 
