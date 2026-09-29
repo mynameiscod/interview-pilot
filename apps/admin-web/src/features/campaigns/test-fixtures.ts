@@ -33,6 +33,11 @@ export const campaign = (overrides: Partial<CampaignSummary> = {}): CampaignSumm
   candidateSeesReport: true,
   sponsoredCredits: { total: 40, used: 9 },
   tokenHint: 'k3Xq',
+  orgId: null,
+  requireInvite: false,
+  employerView: 'FULL_REPORT',
+  idCapture: false,
+  reminders: { enabled: true, max: 2, intervalHours: 48 },
   createdAt: now,
   updatedAt: now,
   ...overrides,
@@ -51,6 +56,7 @@ export const resultRow = (overrides: Partial<CampaignResultRow> = {}): CampaignR
   scoreRevision: 0,
   dimensions: { 'api-design': 82, debugging: 71 },
   flagged: false,
+  stage: 'NEW',
   ...overrides,
 });
 

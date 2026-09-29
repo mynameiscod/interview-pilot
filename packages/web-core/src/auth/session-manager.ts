@@ -25,6 +25,13 @@ export type SessionChangeReason = 'local' | 'remote-sign-out';
 type Listener = (session: SessionResponse | null, reason: SessionChangeReason) => void;
 
 type TabMessage = { type: 'signed-out' } | { type: 'signed-in' };
+
+/** Auth endpoints per app: the candidate app, the admin console and the org portal. */
+const AUTH_BASE: Record<SessionAudience, string> = {
+  candidate: '/auth',
+  admin: '/admin/auth',
+  org: '/org/auth',
+};
 type ErrorListener = (err: ApiClientError) => void;
 
 /**
@@ -34,7 +41,7 @@ type ErrorListener = (err: ApiClientError) => void;
  * and parallel rotations would look like token theft to the server.
  */
 export function createSessionManager(opts: SessionManagerOptions) {
-  const authBase = opts.audience === 'admin' ? '/admin/auth' : '/auth';
+  const authBase = AUTH_BASE[opts.audience];
   const locks =
     opts.locks !== undefined
       ? opts.locks

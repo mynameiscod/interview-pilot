@@ -130,6 +130,13 @@ const NAV_ITEMS: NavItem[] = [
     group: 'review',
   },
   {
+    to: '/orgs',
+    key: 'nav.orgs',
+    icon: 'bi-buildings',
+    permission: 'orgs.read',
+    group: 'review',
+  },
+  {
     to: '/system/health',
     key: 'nav.health',
     icon: 'bi-heart-pulse',
