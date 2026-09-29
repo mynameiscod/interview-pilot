@@ -13,6 +13,7 @@ import {
   ExportJob,
   QueueName,
   type CampaignPackageJobData,
+  type CertificatePdfJobData,
   type EvaluationStageJobData,
   type ReportPdfJobData,
   type InterviewAnalyzeJobData,
@@ -45,6 +46,8 @@ import { reconcilePayments } from './processors/payment-reconcile.js';
 import { runMediaFileBuilds, type FfmpegRunner } from './processors/media-file.js';
 import { runMediaSweep } from './processors/media-sweep.js';
 import { runAccountErasure } from './processors/account-erasure.js';
+import { processCertificatePdf } from './processors/certificate.js';
+import { runPracticeNudges, type PracticeNudgeDeps } from './processors/practice-nudge.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
@@ -56,6 +59,7 @@ export const MEDIA_FILE_JOB = 'media-file' as const;
 export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
 export const EXPORT_SWEEP_JOB = 'export-sweep' as const;
 export const ACCOUNT_ERASURE_JOB = 'account-erasure' as const;
+export const PRACTICE_NUDGE_JOB = 'practice-nudge' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -90,6 +94,8 @@ export interface WorkerRuntimeOptions {
   erasure?: { storage: MediaStorage; intervalMs: number };
   /** Analytics rollups for today and yesterday; omit to disable. */
   analyticsRollupIntervalMs?: number;
+  /** Practice nudge emails (opted-in candidates, one per 3 days at most); omit to disable. */
+  nudges?: { deps: Omit<PracticeNudgeDeps, 'logger' | 'now'>; intervalMs: number };
   /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
   evaluation?: { deps: EvaluationDeps; concurrency: number };
   /** Campaign package exports and the sweep of expired files; omit to leave the queue unconsumed. */
@@ -218,6 +224,14 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
     );
   }
 
+  if (opts.nudges) {
+    await systemQueue.upsertJobScheduler(
+      PRACTICE_NUDGE_JOB,
+      { every: opts.nudges.intervalMs },
+      { name: PRACTICE_NUDGE_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+
   const workers: Worker[] = [
     new Worker(
       QueueName.SYSTEM,
@@ -272,6 +286,12 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
               .finally(() => {
                 mediaFileRun = null;
               });
+            return;
+          }
+          case PRACTICE_NUDGE_JOB: {
+            if (!opts.nudges) return;
+            const counts = await runPracticeNudges({ ...opts.nudges.deps, logger: opts.logger });
+            if (counts.sent + counts.failed > 0) opts.logger.info(counts, 'practice nudges sent');
             return;
           }
           case ACCOUNT_ERASURE_JOB: {
@@ -368,6 +388,11 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
           if (job.name === EvaluationJob.REPORT_PDF) {
             const { sessionId, revision } = job.data as ReportPdfJobData;
             await renderRevisionPdf(deps, sessionId, revision);
+            return;
+          }
+          if (job.name === EvaluationJob.CERTIFICATE_PDF) {
+            const { certificateId } = job.data as CertificatePdfJobData;
+            await processCertificatePdf(deps, certificateId);
             return;
           }
           if (job.name !== EvaluationJob.STAGE)

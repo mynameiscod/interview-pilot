@@ -17,6 +17,7 @@ import {
   type ScoreDimensionRecord,
   IntegrityEventModel,
 } from '@cbi/db';
+import { drillBlueprint } from '@cbi/interview-engine';
 import type { EmailProvider, StorageProvider } from '@cbi/provider-adapters';
 import {
   aggregate,
@@ -82,6 +83,12 @@ const SUFFICIENCY_STRENGTH = { STRONG: 2, ADEQUATE: 1, WEAK: -1, NO_ANSWER: -2 }
 
 type Session = InterviewSessionRecord;
 
+const isDrill = (s: Session) => s.kind === 'DRILL' && s.drill !== null;
+
+/**
+ * The session's blueprint, template and turns. A drill is evaluated on its
+ * one competency only, so its overall score is that dimension's score.
+ */
 async function context(s: Session) {
   const [blueprint, template, turns] = await Promise.all([
     RoleBlueprintModel.findById(s.blueprintId).lean(),
@@ -90,7 +97,10 @@ async function context(s: Session) {
   ]);
   if (!blueprint || !template)
     throw new Error('session references a missing blueprint or template');
-  return { blueprint: blueprint.content, template: template.content, turns };
+  const content = isDrill(s)
+    ? drillBlueprint(blueprint.content, s.drill!.competencyKey)
+    : blueprint.content;
+  return { blueprint: content, template: template.content, turns };
 }
 
 const answerTexts = (turns: readonly { answer?: { text: string } | null }[]) =>
@@ -312,6 +322,22 @@ async function recommendations(deps: EvaluationDeps, s: Session) {
     InterviewScoreModel.findOne({ sessionId: s._id, revision: 0 }).lean(),
   ]);
   if (!score) throw new Error('score revision 0 missing');
+  if (isDrill(s)) {
+    // A drill's evaluation is quick: its feedback is the evidence per question, not a plan.
+    await InterviewSessionModel.updateOne(
+      { _id: s._id },
+      {
+        $set: {
+          'processing.draft.recommendations': {
+            ...fallbackRecommendations(score.dimensions),
+            promptVersion: null,
+            fallback: true,
+          },
+        },
+      },
+    );
+    return;
+  }
   const language = outputLanguage(s.language, answerTexts(turns));
   const evidence = await InterviewEvidenceModel.find({ sessionId: s._id, run: s.processing!.run })
     .sort({ strength: -1 })
@@ -372,16 +398,20 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       sessionId: s._id,
       run: s.processing!.run,
     }).lean();
+    // A drill copies its source interview's analysis, so it groups with the same role.
     const roleKey = roleKeyOf(s);
-    const previousReport = roleKey
-      ? await InterviewReportModel.findOne({
-          userId: s.userId,
-          roleKey,
-          sessionId: { $ne: s._id },
-        })
-          .sort({ generatedAt: -1 })
-          .lean()
-      : null;
+    // "Since your last attempt" compares interviews; drills have their own previous score.
+    const previousReport =
+      roleKey && !isDrill(s)
+        ? await InterviewReportModel.findOne({
+            userId: s.userId,
+            roleKey,
+            kind: { $ne: 'DRILL' },
+            sessionId: { $ne: s._id },
+          })
+            .sort({ generatedAt: -1 })
+            .lean()
+        : null;
     const target = await JobTargetModel.findById(s.jobTargetId, {
       companyName: 1,
       structured: 1,
@@ -460,6 +490,7 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       userId: s.userId,
       revision: 0,
       scoreRevision: 0,
+      kind: isDrill(s) ? 'DRILL' : 'INTERVIEW',
       content,
       // A campaign decides whether its candidates see their own report.
       visibility: { candidate: await candidateSeesReport(s) },
@@ -479,8 +510,9 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
   }
 }
 
-/** 7. The PDF copy of the report (the report is already visible without it). */
+/** 7. The PDF copy of the report (the report is already visible without it). Drills have none. */
 async function renderPdf(deps: EvaluationDeps, s: Session) {
+  if (isDrill(s)) return;
   await renderRevisionPdf(deps, String(s._id), 0);
 }
 
@@ -506,6 +538,8 @@ export async function renderRevisionPdf(
 
 /** 8. "Your report is ready" email, when email is configured and the address is verified. */
 async function notify(deps: EvaluationDeps, s: Session) {
+  // The drill result is shown as soon as the candidate finishes; no email.
+  if (isDrill(s)) return;
   if (!deps.email || (deps.emailEnabled && !deps.emailEnabled())) {
     deps.logger.info({ sessionId: String(s._id) }, 'email disabled; report-ready notice skipped');
     return;

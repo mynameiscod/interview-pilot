@@ -341,6 +341,9 @@ importers:
       '@cbi/ai-runtime':
         specifier: workspace:*
         version: link:../../packages/ai-runtime
+      '@cbi/auth-core':
+        specifier: workspace:*
+        version: link:../../packages/auth-core
       '@cbi/config':
         specifier: workspace:*
         version: link:../../packages/config

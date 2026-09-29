@@ -272,6 +272,55 @@ describe('evaluation pipeline', () => {
     expect(mail.sent[0]!.text).toContain(`https://interview.example.com/app/reports/${id}`);
   });
 
+  it('evaluates a drill on its one competency, without a PDF or email', async () => {
+    const first = await finishedInterview();
+    await beginEvaluation(first.id);
+    await runAll(first.id, 1);
+    mail.sent.length = 0;
+
+    const { id } = await finishedInterview({ userId: first.userId });
+    const turn = await InterviewTurnModel.findOne({
+      sessionId: id,
+      'question.competencyKey': { $ne: null },
+    }).lean();
+    const key = turn!.question.competencyKey!;
+    await InterviewSessionModel.updateOne(
+      { _id: id },
+      {
+        $set: {
+          kind: 'DRILL',
+          drill: {
+            competencyKey: key,
+            competencyName: turn!.question.competencyName,
+            sourceSessionId: new mongoose.Types.ObjectId(first.id),
+          },
+          credit: { status: 'FREE', lotId: null },
+        },
+      },
+    );
+    await beginEvaluation(id);
+    expect(await runAll(id, 1)).toEqual([...STAGES]);
+
+    const report = await InterviewReportModel.findOne({ sessionId: id, revision: 0 }).lean();
+    expect(report!.kind).toBe('DRILL');
+    const content = ReportContent.parse(report!.content);
+    expect(content.dimensions.map((d) => d.key)).toEqual([key]);
+    expect(content.overall.score).toBe(content.dimensions[0]!.score);
+    expect(content.previous).toBeNull();
+    expect(report!.pdf.status).toBe('PENDING');
+    expect(mail.sent).toHaveLength(0);
+    // Evidence belongs to the drill's competency only.
+    const evidence = await InterviewEvidenceModel.find({ sessionId: id }).lean();
+    expect(evidence.every((e) => e.competencyKey === key)).toBe(true);
+
+    // The next interview compares with the previous interview, not the drill.
+    const next = await finishedInterview({ userId: first.userId });
+    await beginEvaluation(next.id);
+    await runAll(next.id, 1);
+    const nextReport = await InterviewReportModel.findOne({ sessionId: next.id }).lean();
+    expect(nextReport!.content.previous?.sessionId).toBe(first.id);
+  });
+
   it('hides a campaign report from the candidate when the company keeps it', async () => {
     const { id } = await finishedInterview();
     const session = await InterviewSessionModel.findById(id).lean();
