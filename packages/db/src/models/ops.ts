@@ -1,6 +1,6 @@
-import { ClientEventName, IntegrationKind, SettingKey } from '@cbi/shared-types';
+import { AnalyticsEventName, IntegrationKind, SettingKey } from '@cbi/shared-types';
 import type {
-  ClientEventName as ClientEventNameT,
+  AnalyticsEventName as AnalyticsEventNameT,
   IntegrationKind as IntegrationKindT,
   SettingKey as SettingKeyT,
 } from '@cbi/shared-types';
@@ -17,7 +17,7 @@ export const ANALYTICS_RETENTION_DAYS = 400;
 
 export interface AnalyticsEventRecord {
   _id: Types.ObjectId;
-  name: ClientEventNameT;
+  name: AnalyticsEventNameT;
   userId: Types.ObjectId | null;
   anonId: string;
   path: string | null;
@@ -28,7 +28,7 @@ export interface AnalyticsEventRecord {
 
 const analyticsEventSchema = new Schema<AnalyticsEventRecord>(
   {
-    name: { type: String, enum: ClientEventName.options, required: true },
+    name: { type: String, enum: AnalyticsEventName.options, required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     anonId: { type: String, required: true },
     path: { type: String, default: null },

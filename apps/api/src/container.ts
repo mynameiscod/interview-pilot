@@ -237,7 +237,7 @@ export function buildContainer(opts: ContainerOptions) {
     maintenance: () => settings.get('maintenance'),
   });
   const review = createReviewService({ audit, jobs, logger });
-  const analytics = createAnalyticsService({ audit, settings });
+  const analytics = createAnalyticsService({ audit, settings, logger });
   const queueAdmin = opts.overrides?.queueAdmin ?? createQueueAdmin(opts.queueRedis ?? redis);
   const system = createSystemService({
     redis,

@@ -7,13 +7,14 @@ import {
   InterviewReportModel,
   InterviewSessionModel,
   istDay,
+  istDayBounds,
   mongoose,
   PurchaseModel,
   ShareLinkModel,
   UserModel,
   UserProfileModel,
 } from '@cbi/db';
-import type { FailedJob } from '@cbi/shared-types';
+import type { FailedJob, PurchaseStatus } from '@cbi/shared-types';
 import {
   ClientFlags,
   CostReport,
@@ -44,7 +45,7 @@ afterEach(async () => {
   for (const close of closers.splice(0)) await close();
 });
 
-type Method = 'get' | 'post' | 'put' | 'delete';
+type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 async function candidate(email = 'asha@example.com') {
   const { accessToken, user } = await signInWithEmail(t.app, t.email.sent, email);
@@ -71,6 +72,80 @@ const publicCall = (method: Method, path: string) =>
   request(t.app)[method](`/api/v1${path}`).set('Origin', TEST_ORIGIN);
 
 const today = () => istDay(new Date());
+
+/** A candidate-visible report (for proof links and report views). */
+async function reported(userId: string, visible = true) {
+  const s = await InterviewSessionModel.create({
+    userId,
+    jobTargetId: new mongoose.Types.ObjectId(),
+    templateId: new mongoose.Types.ObjectId(),
+    state: 'REPORT_READY',
+    mode: 'TEXT',
+  });
+  await reportFor(String(s._id), userId, visible);
+  return String(s._id);
+}
+
+async function reportFor(sessionId: string, userId: string, visible = true) {
+  await InterviewReportModel.create({
+    sessionId,
+    userId,
+    revision: 0,
+    scoreRevision: 0,
+    visibility: { candidate: visible },
+    generatedAt: new Date(),
+    overall: 72,
+    content: {
+      schemaVersion: 1,
+      header: {
+        title: 'Backend Engineer',
+        companyName: 'Acme',
+        mode: 'TEXT',
+        language: 'en',
+        startedAt: null,
+        endedAt: '2026-09-24T10:25:00.000Z',
+        durationSec: 1500,
+        endReason: 'ROUND_ENDED',
+      },
+      overall: {
+        score: 72,
+        band: 'READY_WITH_GAPS',
+        confidence: {
+          level: 'MEDIUM',
+          value: 0.6,
+          factors: {
+            independentQuestions: 1,
+            practicalEvidence: 1,
+            consistency: 1,
+            completeness: 1,
+          },
+        },
+        assessedWeight: 1,
+      },
+      summary: 'Private summary',
+      dimensions: [
+        {
+          key: 'api',
+          name: 'API design',
+          category: 'TECHNICAL',
+          weight: 100,
+          score: 72,
+          rationale: 'Private rationale',
+          evidence: [],
+          fallback: false,
+        },
+      ],
+      strengths: [],
+      gaps: [],
+      rounds: [],
+      coverage: [],
+      plan: { next24h: [], next3Days: [], next7Days: [] },
+      previous: null,
+      transcript: [{ seq: 1, roundType: 'INTRO', question: 'Q', answer: 'SECRET ANSWER' }],
+      disclaimer: 'AI-generated estimate.',
+    },
+  });
+}
 
 describe('permissions', () => {
   it('limits analytics and operations to the right roles', async () => {
@@ -116,7 +191,7 @@ describe('analytics ingestion', () => {
       .send({
         anonId: 'anon_12345678',
         events: [
-          { name: 'report_viewed', path: '/app/reports/:id' },
+          { name: 'compare_viewed', path: '/app/reports/compare' },
           // A timestamp from last week is not trusted.
           { name: 'pricing_viewed', at: new Date(Date.now() - 7 * 86_400_000).toISOString() },
         ],
@@ -125,8 +200,8 @@ describe('analytics ingestion', () => {
     const stored = await AnalyticsEventModel.find().sort({ receivedAt: 1, name: 1 }).lean();
     expect(stored.map((e) => [e.name, e.userId ? String(e.userId) : null])).toEqual([
       ['page_view', null],
+      ['compare_viewed', asha.userId],
       ['pricing_viewed', asha.userId],
-      ['report_viewed', asha.userId],
     ]);
     const old = stored.find((e) => e.name === 'pricing_viewed')!;
     expect(old.at.getTime()).toBe(old.receivedAt.getTime());
@@ -137,6 +212,7 @@ describe('analytics ingestion', () => {
     const send = (events: unknown[]) =>
       publicCall('post', '/analytics/events').send({ anonId: 'anon_12345678', events });
     await send([{ name: 'purchase_paid' }]).expect(400); // server-side facts are not client events
+    await send([{ name: 'report_viewed' }]).expect(400); // recorded by the API, never by clients
     await send([{ name: 'page_view', path: '/login?email=a@b.c' }]).expect(400);
     await send([{ name: 'page_view', props: { Email: 'a@b.c' } }]).expect(400);
     await send(Array.from({ length: 26 }, () => ({ name: 'page_view' }))).expect(400);
@@ -203,10 +279,13 @@ describe('rollups and the dashboard', () => {
       usage('interview.question', 'openai', 200_000),
       usage('role.analyze', 'anthropic', 200_000),
     ]);
-    await asha
-      .call('post', '/analytics/events')
-      .send({ anonId: 'anon_12345678', events: [{ name: 'report_viewed' }] })
-      .expect(202);
+    // Viewing the report records `report_viewed` (once a day, however often it is opened).
+    await reportFor(String(started._id), asha.userId);
+    await asha.call('get', `/reports/${String(started._id)}`).expect(200);
+    await asha.call('get', `/reports/${String(started._id)}`).expect(200);
+    expect(
+      await AnalyticsEventModel.countDocuments({ name: 'report_viewed', userId: asha.userId }),
+    ).toBe(1);
     return asha;
   }
 
@@ -255,6 +334,148 @@ describe('rollups and the dashboard', () => {
     ]);
     expect(byProvider.totals.aiCostPerInterviewMinor).toBe(8_400);
     await ops('get', `/analytics/costs?from=${day}&to=2020-01-01`).expect(400);
+  });
+
+  it('computes the funnel and active users in MongoDB with the same results as before', async () => {
+    const now = new Date();
+    const earlier = new Date(Date.now() - 3 * 86_400_000);
+    const user = async (email: string, extra: Record<string, unknown> = {}) =>
+      String((await UserModel.create({ primaryEmail: email, ...extra }))._id);
+    const session = (userId: string, extra: Record<string, unknown> = {}) =>
+      InterviewSessionModel.create({
+        userId,
+        jobTargetId: new mongoose.Types.ObjectId(),
+        templateId: new mongoose.Types.ObjectId(),
+        state: 'READY',
+        ...extra,
+      });
+    const purchase = (userId: string, statuses: PurchaseStatus[]) =>
+      PurchaseModel.create({
+        userId,
+        planId: new mongoose.Types.ObjectId(),
+        plan: { code: 'starter', version: 1, name: 'Starter', credits: 3, validityDays: null },
+        couponId: null,
+        couponCode: null,
+        listPriceMinor: 100,
+        discountMinor: 0,
+        amountMinor: 100,
+        currency: 'INR',
+        status: statuses.at(-1),
+        statusHistory: statuses.map((status) => ({ status, at: now, source: 'test' })),
+      });
+    const viewed = (userId: string) =>
+      AnalyticsEventModel.create({
+        name: 'report_viewed',
+        userId,
+        anonId: 'server',
+        at: now,
+        receivedAt: now,
+      });
+
+    // Created only (twice), not onboarded.
+    const u1 = await user('u1@example.com');
+    await session(u1);
+    await session(u1, { startedAt: null });
+    // Onboarded, started one and has another processing.
+    const u2 = await user('u2@example.com', { onboardingCompletedAt: now });
+    await session(u2, { state: 'ACTIVE', startedAt: now });
+    await session(u2, { state: 'PROCESSING', startedAt: now });
+    // Everything, with two paid purchases and two views.
+    const u3 = await user('u3@example.com', { onboardingCompletedAt: now });
+    await session(u3, { state: 'REPORT_READY', startedAt: now, endedAt: now });
+    await viewed(u3);
+    await viewed(u3);
+    await purchase(u3, ['CREATED', 'PAID']);
+    await purchase(u3, ['CREATED', 'PAID', 'REFUNDED']);
+    // A view and an unpaid purchase, no interviews.
+    const u4 = await user('u4@example.com');
+    await viewed(u4);
+    await purchase(u4, ['CREATED', 'FAILED']);
+    // Registered with nothing else.
+    await user('u5@example.com', { onboardingCompletedAt: null });
+    // Outside the cohort: an admin, and a candidate who registered earlier.
+    const admin = await user('ops@example.com', { adminRoles: ['OPERATIONS_ADMIN'] });
+    await session(admin, { startedAt: now });
+    const old = await user('old@example.com', { createdAt: earlier });
+    await session(old, { state: 'REPORT_READY', startedAt: now });
+    await purchase(old, ['PAID']);
+
+    const day = today();
+    const { start, end } = { start: istDayBounds(day).start, end: istDayBounds(day).end };
+    const within = { $gte: start, $lt: end };
+
+    // The previous implementation, kept here as the reference.
+    const cohort = await UserModel.find(
+      { adminRoles: { $size: 0 }, createdAt: within },
+      { _id: 1, onboardingCompletedAt: 1 },
+    ).lean();
+    const ids = cohort.map((u) => u._id);
+    const [created, started, completed, views, paid] = await Promise.all([
+      InterviewSessionModel.distinct('userId', { userId: { $in: ids } }),
+      InterviewSessionModel.distinct('userId', { userId: { $in: ids }, startedAt: { $ne: null } }),
+      InterviewSessionModel.distinct('userId', {
+        userId: { $in: ids },
+        state: { $in: ['PROCESSING', 'REPORT_READY'] },
+      }),
+      AnalyticsEventModel.distinct('userId', { userId: { $in: ids }, name: 'report_viewed' }),
+      PurchaseModel.distinct('userId', { userId: { $in: ids }, 'statusHistory.status': 'PAID' }),
+    ]);
+    const reference = [
+      cohort.length,
+      cohort.filter((u) => u.onboardingCompletedAt).length,
+      created.length,
+      started.length,
+      completed.length,
+      views.length,
+      paid.length,
+    ];
+    const [eventUsers, sessionUsers] = await Promise.all([
+      AnalyticsEventModel.distinct('userId', { at: within, userId: { $ne: null } }),
+      InterviewSessionModel.distinct('userId', {
+        $or: [{ createdAt: within }, { startedAt: within }],
+      }),
+    ]);
+    const referenceActive = new Set([...eventUsers, ...sessionUsers].map(String)).size;
+
+    const ops = await adminAs(['OPERATIONS_ADMIN']);
+    const d = Dashboard.parse(
+      (await ops('get', `/analytics/dashboard?from=${day}&to=${day}`).expect(200)).body.data,
+    );
+    expect(d.funnel.map((f) => f.users)).toEqual(reference);
+    expect(reference).toEqual([5, 2, 3, 2, 2, 2, 1]);
+    expect(d.funnel.map((f) => f.step)).toEqual([
+      'registered',
+      'onboarded',
+      'created_interview',
+      'started_interview',
+      'completed_interview',
+      'viewed_report',
+      'paid',
+    ]);
+    expect(d.kpis.activeUsers).toBe(referenceActive);
+    expect(d.kpis.freeToPaidRate).toBe(0.2);
+
+    // A range with no registrations gives zeros, not an error.
+    const empty = Dashboard.parse(
+      (await ops('get', '/analytics/dashboard?from=2020-01-01&to=2020-01-02').expect(200)).body
+        .data,
+    );
+    expect(empty.funnel.map((f) => f.users)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(empty.kpis.activeUsers).toBe(0);
+  });
+
+  it('records report_viewed only for the owner of a visible report', async () => {
+    const asha = await candidate();
+    const ravi = await candidate('ravi@example.com');
+    const id = await reported(asha.userId);
+    const hidden = await reported(asha.userId, false);
+    await ravi.call('get', `/reports/${id}`).expect(404);
+    await asha.call('get', `/reports/${hidden}`).expect(404);
+    expect(await AnalyticsEventModel.countDocuments({ name: 'report_viewed' })).toBe(0);
+    await asha.call('get', `/reports/${id}`).expect(200);
+    const events = await AnalyticsEventModel.find({ name: 'report_viewed' }).lean();
+    expect(events.map((e) => String(e.userId))).toEqual([asha.userId]);
+    expect(events[0]).toMatchObject({ anonId: 'server', path: '/app/reports/:id' });
   });
 
   it('uses the configured exchange rate and India-time days', async () => {
@@ -309,7 +530,7 @@ describe('feature flags and settings', () => {
     expect(await AuditLogModel.countDocuments({ action: 'flag.updated' })).toBe(2);
   });
 
-  it('validates settings, and maintenance mode stops new interviews only', async () => {
+  it('validates settings, and maintenance mode stops new interviews', async () => {
     const superAdmin = await adminAs(['SUPER_ADMIN']);
     await superAdmin('put', '/settings/finance')
       .send({ value: { usdToInr: -1, gatewayFeeRate: 0.02 }, reason: 'bad' })
@@ -333,6 +554,63 @@ describe('feature flags and settings', () => {
     const res = await asha.call('post', `/interviews/${String(s._id)}/start`).expect(503);
     expect(res.body.error).toMatchObject({ code: 'MAINTENANCE', message: 'Back at 10 pm IST' });
     expect(await AuditLogModel.countDocuments({ action: 'setting.updated' })).toBe(1);
+  });
+
+  it('maintenance mode refuses candidate writes but not reads, sign-in or admins', async () => {
+    const superAdmin = await adminAs(['SUPER_ADMIN']);
+    const asha = await candidate();
+    const profile = { displayName: 'Asha', preferredInterviewLanguage: 'en' };
+    await superAdmin('put', '/settings/maintenance')
+      .send({ value: { enabled: true, message: 'Back soon' }, reason: 'deploy' })
+      .expect(200);
+
+    const refused = await asha.call('patch', '/users/me/profile').send(profile).expect(503);
+    expect(refused.headers['retry-after']).toBe('120');
+    expect(refused.body.error).toMatchObject({
+      code: 'MAINTENANCE',
+      message: 'Back soon',
+      details: { maintenance: { enabled: true, message: 'Back soon' } },
+    });
+    await asha.call('post', '/interviews').send({}).expect(503);
+    await asha.call('get', '/users/me').expect(200);
+    await asha.call('get', '/reports').expect(200);
+    // Signing in still works, and admins keep working.
+    await candidate('ravi@example.com');
+    await superAdmin('put', '/flags/reports.publicProof')
+      .send({ enabled: true, rolloutPercent: 100, reason: 'during maintenance' })
+      .expect(200);
+
+    await superAdmin('put', '/settings/maintenance')
+      .send({ value: { enabled: false, message: '' }, reason: 'done' })
+      .expect(200);
+    await asha.call('patch', '/users/me/profile').send(profile).expect(200);
+  });
+
+  it('applies flag and setting changes on other API processes at once (Redis pub/sub)', async () => {
+    const other = await buildTestApp({ redis });
+    const stop = await other.container.opsChanges.listenForChanges();
+    closers.push(stop);
+    // Warm the other process's caches.
+    expect(await other.container.settings.get('maintenance')).toEqual({
+      enabled: false,
+      message: '',
+    });
+    expect(await other.container.flags.isSwitchedOn('reports.publicProof')).toBe(false);
+
+    const superAdmin = await adminAs(['SUPER_ADMIN']);
+    await superAdmin('put', '/settings/maintenance')
+      .send({ value: { enabled: true, message: 'Back soon' }, reason: 'deploy' })
+      .expect(200);
+    await superAdmin('put', '/flags/reports.publicProof')
+      .send({ enabled: true, rolloutPercent: 100, reason: 'launch' })
+      .expect(200);
+    // Well within the 15 s cache TTL.
+    await expect
+      .poll(() => other.container.settings.get('maintenance'), { timeout: 2_000 })
+      .toEqual({ enabled: true, message: 'Back soon' });
+    await expect
+      .poll(() => other.container.flags.isSwitchedOn('reports.publicProof'), { timeout: 2_000 })
+      .toBe(true);
   });
 });
 
@@ -406,75 +684,6 @@ describe('system health and queues', () => {
 });
 
 describe('candidate proof (flagged)', () => {
-  async function reported(userId: string, visible = true) {
-    const s = await InterviewSessionModel.create({
-      userId,
-      jobTargetId: new mongoose.Types.ObjectId(),
-      templateId: new mongoose.Types.ObjectId(),
-      state: 'REPORT_READY',
-      mode: 'TEXT',
-    });
-    await InterviewReportModel.create({
-      sessionId: s._id,
-      userId,
-      revision: 0,
-      scoreRevision: 0,
-      visibility: { candidate: visible },
-      generatedAt: new Date(),
-      overall: 72,
-      content: {
-        schemaVersion: 1,
-        header: {
-          title: 'Backend Engineer',
-          companyName: 'Acme',
-          mode: 'TEXT',
-          language: 'en',
-          startedAt: null,
-          endedAt: '2026-09-24T10:25:00.000Z',
-          durationSec: 1500,
-          endReason: 'ROUND_ENDED',
-        },
-        overall: {
-          score: 72,
-          band: 'READY_WITH_GAPS',
-          confidence: {
-            level: 'MEDIUM',
-            value: 0.6,
-            factors: {
-              independentQuestions: 1,
-              practicalEvidence: 1,
-              consistency: 1,
-              completeness: 1,
-            },
-          },
-          assessedWeight: 1,
-        },
-        summary: 'Private summary',
-        dimensions: [
-          {
-            key: 'api',
-            name: 'API design',
-            category: 'TECHNICAL',
-            weight: 100,
-            score: 72,
-            rationale: 'Private rationale',
-            evidence: [],
-            fallback: false,
-          },
-        ],
-        strengths: [],
-        gaps: [],
-        rounds: [],
-        coverage: [],
-        plan: { next24h: [], next3Days: [], next7Days: [] },
-        previous: null,
-        transcript: [{ seq: 1, roundType: 'INTRO', question: 'Q', answer: 'SECRET ANSWER' }],
-        disclaimer: 'AI-generated estimate.',
-      },
-    });
-    return String(s._id);
-  }
-
   it('does not exist while the flag is off', async () => {
     const asha = await candidate();
     const id = await reported(asha.userId);

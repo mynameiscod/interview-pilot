@@ -22,7 +22,10 @@ export function reportsRouter(c: Container): Router {
     res.json({ data: await c.reports.compare(user(req), sessions) });
   });
   router.get('/:sessionId', async (req, res) => {
-    res.json({ data: await c.reports.get(user(req), String(req.params.sessionId)) });
+    const report = await c.reports.get(user(req), String(req.params.sessionId));
+    // The funnel's "viewed report" step is recorded here, not trusted from clients.
+    await c.analytics.recordReportView(user(req));
+    res.json({ data: report });
   });
   router.get('/:sessionId/pdf', async (req, res) => {
     const { body, fileName } = await c.reports.pdf(user(req), String(req.params.sessionId));

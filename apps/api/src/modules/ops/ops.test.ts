@@ -172,3 +172,55 @@ describe('flag and setting cache invalidation', () => {
     expect(localChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('dashboard aggregation pipelines', () => {
+  const start = new Date('2026-09-23T18:30:00Z');
+  const end = new Date('2026-09-24T18:30:00Z');
+  const collections = {
+    created_interview: 'interviewSessions',
+    started_interview: 'interviewSessions',
+    completed_interview: 'interviewSessions',
+    viewed_report: 'analyticsEvents',
+    paid: 'purchases',
+  };
+
+  it('builds the funnel as one pipeline over the candidate cohort', () => {
+    const pipeline = funnelPipeline(start, end, collections);
+    expect(pipeline[0]).toEqual({
+      $match: { adminRoles: { $size: 0 }, createdAt: { $gte: start, $lt: end } },
+    });
+    const lookups = pipeline.flatMap((st) => ('$lookup' in st ? [st.$lookup] : []));
+    expect(lookups.map((l) => [l.from, l.localField, l.foreignField])).toEqual([
+      ['interviewSessions', '_id', 'userId'],
+      ['interviewSessions', '_id', 'userId'],
+      ['interviewSessions', '_id', 'userId'],
+      ['analyticsEvents', '_id', 'userId'],
+      ['purchases', '_id', 'userId'],
+    ]);
+    // Each step needs only one matching record per user.
+    for (const l of lookups) expect(l.pipeline).toContainEqual({ $limit: 1 });
+    expect(lookups.map((l) => l.pipeline[0]?.$match)).toEqual([
+      {},
+      { startedAt: { $ne: null } },
+      { state: { $in: ['PROCESSING', 'REPORT_READY'] } },
+      { name: 'report_viewed' },
+      { 'statusHistory.status': 'PAID' },
+    ]);
+    const last = pipeline.at(-1)!;
+    const group = '$group' in last ? (last.$group as Record<string, unknown>) : {};
+    expect(Object.keys(group).filter((k) => k !== '_id')).toEqual([...FUNNEL_STEPS]);
+    expect(group.registered).toEqual({ $sum: 1 });
+  });
+
+  it('counts active users across events and interviews without returning ids', () => {
+    const pipeline = activeUsersPipeline(start, end, 'interviewSessions');
+    const within = { $gte: start, $lt: end };
+    expect(pipeline[0]).toEqual({ $match: { at: within, userId: { $ne: null } } });
+    const union = pipeline.flatMap((st) => ('$unionWith' in st ? [st.$unionWith] : []));
+    expect(union.map((u) => u?.coll)).toEqual(['interviewSessions']);
+    expect(union[0]?.pipeline[0]).toEqual({
+      $match: { $or: [{ createdAt: within }, { startedAt: within }] },
+    });
+    expect(pipeline.slice(-2)).toEqual([{ $group: { _id: '$userId' } }, { $count: 'users' }]);
+  });
+});

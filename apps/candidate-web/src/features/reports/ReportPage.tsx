@@ -3,7 +3,6 @@ import { ApiClientError } from '@cbi/web-core';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useParams } from 'react-router';
-import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
@@ -89,7 +88,7 @@ export function ReportPage() {
   const location = useLocation();
   const report = useReport(id);
   const loaded = Boolean(report.data);
-  useTrackOnce('report_viewed', loaded);
+  // `report_viewed` is recorded by the API when the report is fetched.
 
   // "Rate your interview" links land on the feedback card once the report has rendered.
   useEffect(() => {
