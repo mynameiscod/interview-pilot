@@ -1,5 +1,7 @@
 import { Difficulty, QuestionSource, RoundType, TurnEvalSufficiency } from '@cbi/shared-types';
 import type {
+  DeliveryMetrics,
+  QuestionFeedbackAi,
   Difficulty as DifficultyT,
   QuestionSource as QuestionSourceT,
   RoundType as RoundTypeT,
@@ -50,6 +52,8 @@ export interface InterviewTurnRecord {
       language: string | null;
       confidence: number | null;
       model: string;
+      /** Pace, fillers, pauses and hedging (coaching only, never scored); absent on older answers. */
+      delivery?: DeliveryMetrics | null;
     } | null;
   } | null;
   turnEval: {
@@ -65,8 +69,23 @@ export interface InterviewTurnRecord {
     fallback: boolean;
   } | null;
   language: string;
+  /**
+   * Report coaching for this answer (evaluation's COACHING stage), cached by
+   * `key` (a hash of the language, question and answer) so a retried or
+   * re-run stage does not ask the model again.
+   */
+  coaching?: TurnCoachingRecord | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface TurnCoachingRecord {
+  key: string;
+  language: string;
+  /** The model's feedback (already checked), or null when it was unavailable. */
+  feedback: QuestionFeedbackAi | null;
+  promptVersion: number | null;
+  at: Date;
 }
 
 const turnSchema = new Schema<InterviewTurnRecord>(
@@ -139,6 +158,7 @@ const turnSchema = new Schema<InterviewTurnRecord>(
       default: null,
     },
     language: { type: String, required: true, default: 'en' },
+    coaching: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true, collection: 'interviewTurns' },
 );

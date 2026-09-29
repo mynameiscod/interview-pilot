@@ -5,6 +5,7 @@ import {
   speechBytes,
   speechFetch,
   speechJson,
+  timedWords,
   type FetchLike,
 } from './http.js';
 
@@ -15,7 +16,21 @@ const INTERVIEWER_STYLE =
 const apiBase = (baseUrl: string | undefined) =>
   (baseUrl ?? 'https://api.openai.com/v1').replace(/\/$/, '');
 
-/** OpenAI transcription (`POST /v1/audio/transcriptions`, e.g. gpt-4o-mini-transcribe). */
+/**
+ * Models that return word timestamps (`verbose_json` with
+ * `timestamp_granularities[]=word`). The gpt-4o transcribe models only accept
+ * `json`/`text`, so they give text without timestamps.
+ */
+export const openAiWordTimestamps = (modelId: string) => modelId.startsWith('whisper');
+
+/** `verbose_json` names the language ("english"); the rest of the platform uses codes. */
+const LANGUAGE_CODES: Record<string, string> = { english: 'en', hindi: 'hi', telugu: 'te' };
+
+/**
+ * OpenAI transcription (`POST /v1/audio/transcriptions`, e.g.
+ * gpt-4o-mini-transcribe). Word timestamps are asked for where the model
+ * supports them (whisper-1), for delivery coaching.
+ */
 export function createOpenAiSttAdapter(opts: { fetchImpl?: FetchLike } = {}): SttAdapter {
   return {
     providerKey: 'openai',
@@ -28,7 +43,9 @@ export function createOpenAiSttAdapter(opts: { fetchImpl?: FetchLike } = {}): St
         `answer.${audioExtension(mime)}`,
       );
       form.append('model', model.modelId);
-      form.append('response_format', 'json');
+      const verbose = openAiWordTimestamps(model.modelId);
+      form.append('response_format', verbose ? 'verbose_json' : 'json');
+      if (verbose) form.append('timestamp_granularities[]', 'word');
       if (request.language) form.append('language', request.language);
       const res = await speechFetch(
         'openai',
@@ -41,16 +58,23 @@ export function createOpenAiSttAdapter(opts: { fetchImpl?: FetchLike } = {}): St
         text?: string;
         language?: string;
         usage?: { type?: string; seconds?: number };
+        duration?: number;
+        words?: { word?: string; start?: number; end?: number }[];
       }>('openai', res);
       return {
         text: (body.text ?? '').trim(),
-        language: body.language ?? request.language,
+        language: body.language
+          ? (LANGUAGE_CODES[body.language.toLowerCase()] ?? body.language)
+          : request.language,
         confidence: null,
         durationSec:
           body.usage?.type === 'duration' && typeof body.usage.seconds === 'number'
             ? body.usage.seconds
-            : null,
+            : typeof body.duration === 'number'
+              ? body.duration
+              : null,
         servedModel: null,
+        words: timedWords(body.words),
       };
     },
   };

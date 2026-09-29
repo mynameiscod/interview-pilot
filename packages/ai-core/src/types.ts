@@ -138,6 +138,17 @@ export interface SttCallResult {
   /** Audio length as billed by the provider, when reported. */
   durationSec: number | null;
   servedModel: string | null;
+  /**
+   * Word-level timestamps (seconds from the start of the recording) when the
+   * provider returns them; used for delivery coaching (pace, long pauses).
+   */
+  words?: SttWord[] | null;
+}
+
+export interface SttWord {
+  word: string;
+  start: number;
+  end: number;
 }
 
 /** Speech-to-text for a complete recording. Same rules as LLM adapters: no retries, no logging of content. */

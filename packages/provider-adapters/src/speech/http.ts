@@ -1,4 +1,4 @@
-import { AiProviderError } from '@cbi/ai-core';
+import { AiProviderError, type SttWord } from '@cbi/ai-core';
 import { statusOutcome } from '../llm/shared.js';
 
 export type FetchLike = typeof fetch;
@@ -76,3 +76,20 @@ const EXTENSIONS: Record<string, string> = {
   'audio/wav': 'wav',
 };
 export const audioExtension = (mime: string) => EXTENSIONS[baseMime(mime)] ?? 'webm';
+
+interface ProviderWord {
+  word?: string;
+  punctuated_word?: string;
+  start?: number;
+  end?: number;
+}
+
+/** Word timestamps from a provider response, keeping only well-formed entries (null when none). */
+export function timedWords(words: readonly ProviderWord[] | undefined | null): SttWord[] | null {
+  const valid = (words ?? []).flatMap((w) =>
+    typeof w.start === 'number' && typeof w.end === 'number' && w.end >= w.start
+      ? [{ word: (w.punctuated_word ?? w.word ?? '').trim(), start: w.start, end: w.end }]
+      : [],
+  );
+  return valid.length ? valid : null;
+}

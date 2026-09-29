@@ -35,7 +35,14 @@ export function createMockSttAdapter(): SttAdapter {
         throw new AiProviderError('mock', 'PROVIDER_ERROR', 'mock_failure', 'simulated outage');
       }
       const marker = decoded.slice(0, 64).indexOf(MOCK_SPEECH_PREFIX);
-      const spoken = marker >= 0 ? decoded.slice(marker + MOCK_SPEECH_PREFIX.length).trim() : null;
+      // Clips padded with zero bytes (to a realistic size) end at the first NUL.
+      const spoken =
+        marker >= 0
+          ? decoded
+              .slice(marker + MOCK_SPEECH_PREFIX.length)
+              .split('\0')[0]!
+              .trim()
+          : null;
       const seconds = Math.round(request.durationSec ?? 0);
       return {
         text: spoken ?? `[mock] Spoken answer of about ${seconds} seconds.`,

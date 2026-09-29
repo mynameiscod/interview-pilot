@@ -45,6 +45,7 @@ export const AiFeature = z.enum([
   'evaluation.extractEvidence',
   'evaluation.scoreDimension',
   'report.recommendations',
+  'report.questionFeedback',
   'stt.live',
   'tts.live',
   'ocr.document',
@@ -64,6 +65,7 @@ export const AI_FEATURE_CAPABILITY: Readonly<Record<AiFeature, AiCapability>> = 
   'evaluation.extractEvidence': 'LLM',
   'evaluation.scoreDimension': 'LLM',
   'report.recommendations': 'LLM',
+  'report.questionFeedback': 'LLM',
   'stt.live': 'STT',
   'tts.live': 'TTS',
   'ocr.document': 'OCR',
@@ -137,6 +139,7 @@ export const DEFAULT_ROUTE_EFFORT: Readonly<Partial<Record<AiFeature, AiEffort>>
   'evaluation.extractEvidence': 'high',
   'evaluation.scoreDimension': 'high',
   'report.recommendations': 'medium',
+  'report.questionFeedback': 'medium',
 };
 
 /**

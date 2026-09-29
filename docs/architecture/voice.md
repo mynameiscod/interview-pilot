@@ -72,14 +72,26 @@ Speech goes through the same AI router as the LLM features. It has fallback chai
 - The `voice` rate limit (150 per 10 minutes per user, fail-closed) covers transcriptions and question audio.
 - Provider error bodies are never logged or returned, only the HTTP status. Adapters never log audio or text.
 
+## Delivery metrics
+
+Each transcribed answer also gets delivery metrics for coaching (`deliveryMetrics` in [`packages/shared-types/src/delivery.ts`](../../packages/shared-types/src/delivery.ts)), stored with the transcript and then on the answer (`answer.voice.delivery`). Only the metrics are kept, never the word timings.
+
+- **Word timestamps** come from the speech model where it supports them: Deepgram's `words` (requested with `filler_words=true`, so "um" and "uh" stay in the transcript), and OpenAI `whisper-1` with `response_format=verbose_json` and `timestamp_granularities[]=word`. The gpt-4o transcribe models only return text, so answers they transcribe have no timestamps (and no pause count).
+- **Pace** is words per minute over the speech (first to last word) when timestamps exist, otherwise over the recording length; answers under 5 words or 3 seconds have none.
+- **Filler words** are counted from per-language lists (English always, plus Hindi or Telugu for answers in those languages): English um, uh, basically, actually, "you know" (not after "do"), "like" only when set off by punctuation, and "so" only at the start of a sentence or before a comma; Hindi matlab/मतलब and yaani/यानी, and haan/हाँ and woh/वो when set off by punctuation; Telugu ante/అంటే, and ala/అలా, aa/ఆ and adi/అది when set off by punctuation. **Hedging phrases** (I think, maybe, probably, kind of, शायद, ఏమో, …) are counted the same way. Every list and target is in that one module.
+- **Long pauses** are silences of 2 s or more between words (timestamps only).
+
+Delivery is coaching only: it never affects a score, and the report says so (pace and filler words vary with accent, language and speech differences). See [evaluation and reports](evaluation-and-reports.md#delivery-spoken-answers).
+
 ## Evaluation
 
-Scoring is unchanged. It is based on the transcript text only: no voice-prosody features (design §33). Spoken answers are labelled "spoken, automatically transcribed" in the evidence-extraction input, so that transcription slips and filler words are not held against the candidate.
+Scoring is unchanged. It is based on the transcript text only: no voice-prosody features (design §33), and the delivery metrics above never reach the scoring steps. Spoken answers are labelled "spoken, automatically transcribed" in the evidence-extraction input, so that transcription slips and filler words are not held against the candidate.
 
 ## Testing
 
 - `packages/ai-core/src/router-speech.test.ts`: speech routing, fallback, metering and route status.
-- `packages/provider-adapters/src/speech/speech.test.ts`: provider request formats, error mapping and the mocks.
+- `packages/provider-adapters/src/speech/speech.test.ts`: provider request formats (including word timestamps), error mapping and the mocks.
+- `packages/shared-types/src/delivery.test.ts`: filler, hedging, pace and pause rules in English, Hindi and Telugu, and the tips.
 - `apps/api/src/modules/voice/audio-duration.test.ts`: container durations (WebM without Duration, Ogg Opus, fragmented MP4, WAV) and the bounded fallback.
 - `apps/api/src/modules/voice/voice.test.ts`: the question-audio cache shared by replicas (one synthesis, a failed holder, an expired wait, Redis down).
 - `apps/candidate-web/src/features/room/voice-hooks.test.ts`: the answer limit finishes the recording once, with fake timers.

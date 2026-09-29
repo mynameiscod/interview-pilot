@@ -39,6 +39,7 @@ import {
   type AiFeature,
   type AnswerTextPayload,
   type BlueprintContent,
+  type DeliveryMetrics,
   type InterviewLanguage,
   type InterviewSnapshot,
   type LiveQuestion,
@@ -965,6 +966,7 @@ export function createLiveInterviewService({
           language: string | null;
           confidence: number | null;
           model: string;
+          delivery: DeliveryMetrics | null;
         } | null = null;
         if (payload.voiceTranscriptId) {
           // A spoken answer: the server's transcript is the answer, whatever the client sent.
@@ -986,6 +988,7 @@ export function createLiveInterviewService({
             language: t.language,
             confidence: t.confidence,
             model: t.model,
+            delivery: t.delivery ?? null,
           };
         }
         const at = now();

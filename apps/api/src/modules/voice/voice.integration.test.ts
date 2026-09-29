@@ -306,6 +306,14 @@ describe('voice interview (mocked speech providers)', () => {
       source: 'VOICE',
       voice: { durationSec: 4.2, model: 'mock-stt', confidence: 0.99 },
     });
+    // Delivery metrics (coaching only) travel with the answer; the mock gives no word timings.
+    expect(turn.answer!.voice!.delivery).toMatchObject({
+      wordCount: 14,
+      wpm: 200,
+      fillerCount: 0,
+      longPauses: null,
+      timestamps: false,
+    });
     const second = await next;
     expect(second.seq).toBe(question.seq + 1);
     expect(

@@ -312,6 +312,8 @@ export function createReviewService(deps: {
           ...d,
           score: changed.get(d.key)?.score ?? d.score,
         })),
+        // The benchmark placed the original score; a reviewed score is not re-ranked.
+        ...(latestReport.content.benchmark ? { benchmark: null } : {}),
       };
       try {
         await transaction(async (tx) => {
@@ -344,6 +346,7 @@ export function createReviewService(deps: {
                 content,
                 visibility: { candidate: latestReport.visibility.candidate },
                 roleKey: latestReport.roleKey,
+                roleFamily: latestReport.roleFamily ?? null,
                 overall: revised.overall,
                 generatedAt: at,
               },

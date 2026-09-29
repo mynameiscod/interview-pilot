@@ -4,6 +4,8 @@ import { CompetencyCategory, InterviewMode, RoundType } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
 import { CodingReportItem } from './coding.js';
 import { IntegritySummary } from './media.js';
+import { PeerBenchmark, QuestionFeedback, StructureInsight } from './coaching.js';
+import { ReportDelivery } from './delivery.js';
 
 /**
  * Evaluation and reports (Phase 5). Evidence comes first: dimension scores
@@ -18,6 +20,7 @@ export const ProcessingStage = z.enum([
   'SCORE_DIMENSIONS',
   'AGGREGATE',
   'RECOMMENDATIONS',
+  'COACHING',
   'BUILD_REPORT',
   'RENDER_PDF',
   'NOTIFY',
@@ -128,6 +131,14 @@ export const ReportContent = z.object({
   integrity: IntegritySummary.nullable().optional(),
   /** Coding problems and their results (Phase 9); absent in older reports. */
   coding: z.array(CodingReportItem).optional(),
+  /** Per-question coaching (feedback, example answer, STAR); absent in older reports. */
+  questions: z.array(QuestionFeedback).optional(),
+  /** STAR structure across behavioural answers; null when there were none. */
+  structure: StructureInsight.nullable().optional(),
+  /** Spoken-answer delivery (coaching only, never scored); null for typed interviews. */
+  delivery: ReportDelivery.nullable().optional(),
+  /** Percentile among other candidates for the role; null when the sample is too small. */
+  benchmark: PeerBenchmark.nullable().optional(),
   /** Set on revisions made by a manual review. */
   review: z
     .object({ revision: z.number().int(), reviewedAt: z.iso.datetime(), note: z.string() })
@@ -256,8 +267,18 @@ export const CompareResult = z.object({
       endedAt: z.iso.datetime().nullable(),
       overall: z.number().int().nullable(),
       confidence: ConfidenceLevel,
+      /** Spoken-answer pace and fillers, when the attempt had spoken answers. */
+      delivery: z
+        .object({ wpm: z.number().int().nullable(), fillerRate: z.number() })
+        .nullable()
+        .optional(),
     }),
   ),
+  /** Last attempt minus first, when both had spoken answers (coaching only). */
+  delivery: z
+    .object({ wpm: z.number().int().nullable(), fillerRate: z.number() })
+    .nullable()
+    .optional(),
   dimensions: z.array(
     z.object({
       key: z.string(),

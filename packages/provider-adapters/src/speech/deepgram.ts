@@ -1,12 +1,16 @@
 import type { SttAdapter } from '@cbi/ai-core';
-import { baseMime, speechFetch, speechJson, type FetchLike } from './http.js';
+import { baseMime, speechFetch, speechJson, timedWords, type FetchLike } from './http.js';
 
 interface DeepgramResponse {
   metadata?: { duration?: number; model_info?: Record<string, { name?: string }> };
   results?: {
     channels?: {
       detected_language?: string;
-      alternatives?: { transcript?: string; confidence?: number }[];
+      alternatives?: {
+        transcript?: string;
+        confidence?: number;
+        words?: { word?: string; punctuated_word?: string; start?: number; end?: number }[];
+      }[];
     }[];
   };
 }
@@ -15,7 +19,8 @@ interface DeepgramResponse {
  * Deepgram pre-recorded transcription (`POST /v1/listen`). A language hint is
  * passed when the interview has one; otherwise Deepgram detects it. A
  * language the model does not support fails with 400, which the router
- * treats as "try the next model".
+ * treats as "try the next model". Filler words ("um", "uh") are kept and
+ * word timestamps are read, for delivery coaching.
  */
 export function createDeepgramSttAdapter(opts: { fetchImpl?: FetchLike } = {}): SttAdapter {
   return {
@@ -26,6 +31,7 @@ export function createDeepgramSttAdapter(opts: { fetchImpl?: FetchLike } = {}): 
         model: model.modelId,
         smart_format: 'true',
         punctuate: 'true',
+        filler_words: 'true',
       });
       if (request.language) params.set('language', request.language);
       else params.set('detect_language', 'true');
@@ -52,6 +58,7 @@ export function createDeepgramSttAdapter(opts: { fetchImpl?: FetchLike } = {}): 
         confidence: typeof best?.confidence === 'number' ? best.confidence : null,
         durationSec: typeof body.metadata?.duration === 'number' ? body.metadata.duration : null,
         servedModel: null,
+        words: timedWords(best?.words),
       };
     },
   };
