@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createLogger } from '@cbi/config';
+import type * as Db from '@cbi/db';
 import {
   hasUnavailableMediaFiles,
   mongoose,
@@ -19,7 +20,7 @@ import {
 } from './media-file.js';
 
 vi.mock('@cbi/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@cbi/db')>()),
+  ...(await importOriginal<typeof Db>()),
   hasUnavailableMediaFiles: vi.fn(async () => true),
   requeueUnavailableMediaFiles: vi.fn(async () => 2),
 }));
