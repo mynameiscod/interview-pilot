@@ -10,6 +10,7 @@ export interface SessionManagerOptions {
 }
 
 type Listener = (session: SessionResponse | null) => void;
+type ErrorListener = (err: ApiClientError) => void;
 
 /**
  * Owns the access token (memory only — never localStorage) and the refresh
@@ -30,6 +31,7 @@ export function createSessionManager(opts: SessionManagerOptions) {
   let inflight: Promise<SessionResponse | null> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<Listener>();
+  const errorListeners = new Set<ErrorListener>();
 
   const bare = createApiClient({ baseUrl: opts.baseUrl, fetchImpl: opts.fetchImpl });
 
@@ -80,6 +82,9 @@ export function createSessionManager(opts: SessionManagerOptions) {
     fetchImpl: opts.fetchImpl,
     getAccessToken: () => session?.accessToken ?? null,
     refreshAccessToken: async () => (await refresh())?.accessToken ?? null,
+    onError: (err) => {
+      for (const l of errorListeners) l(err);
+    },
   });
 
   return {
@@ -94,6 +99,13 @@ export function createSessionManager(opts: SessionManagerOptions) {
     subscribe(listener: Listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    /** Every error an authenticated-client request fails with (e.g. 503 MAINTENANCE). */
+    onApiError(listener: ErrorListener) {
+      errorListeners.add(listener);
+      return () => {
+        errorListeners.delete(listener);
+      };
     },
     async signOut() {
       try {

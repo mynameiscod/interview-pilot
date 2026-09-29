@@ -51,6 +51,30 @@ describe('createApiClient', () => {
     expect(init.headers['Content-Type']).toBe('application/json');
   });
 
+  it('reports the final error to onError once (after a refresh retry), not successes', async () => {
+    const maintenance = json(503, {
+      error: { code: 'MAINTENANCE', message: 'Back soon', requestId: 'r-2' },
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(401, { error: { code: 'UNAUTHENTICATED', message: 'expired' } }))
+      .mockResolvedValueOnce(maintenance)
+      .mockResolvedValueOnce(json(200, { data: { ok: true } }));
+    const onError = vi.fn();
+    const client = createApiClient({
+      baseUrl: '',
+      fetchImpl,
+      getAccessToken: () => 'stale',
+      refreshAccessToken: vi.fn().mockResolvedValue('fresh'),
+      onError,
+    });
+    await expect(client.post('/interviews', {})).rejects.toMatchObject({ code: 'MAINTENANCE' });
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0]![0]).toMatchObject({ code: 'MAINTENANCE', status: 503 });
+    await client.get('/x');
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
   it('sends FormData as-is so the browser sets the multipart boundary', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(json(201, { data: { id: 'r1' } }));
     const client = createApiClient({ baseUrl: '', fetchImpl });

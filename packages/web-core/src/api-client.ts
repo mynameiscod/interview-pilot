@@ -25,6 +25,8 @@ export interface ApiClientOptions {
    * token (the request is retried once) or null (the error propagates).
    */
   refreshAccessToken?: () => Promise<string | null>;
+  /** Sees every error a request finally fails with (e.g. to react to maintenance mode). */
+  onError?: (err: ApiClientError) => void;
 }
 
 export interface RequestOptions {
@@ -91,6 +93,15 @@ export function createApiClient(opts: ApiClientOptions) {
   }
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    try {
+      return await attempt<T>(path, options);
+    } catch (err) {
+      if (err instanceof ApiClientError) opts.onError?.(err);
+      throw err;
+    }
+  }
+
+  async function attempt<T>(path: string, options: RequestOptions): Promise<T> {
     const token = opts.getAccessToken?.() ?? null;
     try {
       return await send<T>(path, options, token);
