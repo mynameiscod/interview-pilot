@@ -1,11 +1,17 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { checkReadiness, type ReadinessOptions } from '@cbi/config';
 
 /**
- * Minimal HTTP health endpoint for Docker/orchestrator probes. Bound inside
- * the private container network only; never published through NGINX.
+ * Minimal HTTP health endpoint for Docker/orchestrator probes, plus the
+ * Prometheus `/metrics` endpoint when a handler is given. Bound inside the
+ * private container network only; never published through NGINX.
  */
-export function createHealthServer(opts: ReadinessOptions & { version: string }): Server {
+export function createHealthServer(
+  opts: ReadinessOptions & {
+    version: string;
+    metrics?: (req: IncomingMessage, res: ServerResponse) => void;
+  },
+): Server {
   return createServer((req, res) => {
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -25,6 +31,10 @@ export function createHealthServer(opts: ReadinessOptions & { version: string })
         (result) => send(result.status === 'ready' ? 200 : 503, result),
         () => send(503, { status: 'not_ready', env: opts.env, checks: {} }),
       );
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/metrics' && opts.metrics) {
+      opts.metrics(req, res);
       return;
     }
     send(404, { error: { code: 'NOT_FOUND', message: 'Not found' } });

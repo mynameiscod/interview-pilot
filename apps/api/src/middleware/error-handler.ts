@@ -1,9 +1,11 @@
 import { AiAbortedError, AiUnavailableError } from '@cbi/ai-core';
+import { disabledErrorTracker, type ErrorTracker } from '@cbi/config';
 import { NotConfiguredError } from '@cbi/provider-adapters';
 import type { ApiErrorBody } from '@cbi/shared-types';
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { AppError } from '../lib/errors.js';
+import { routeLabel } from './metrics.js';
 
 export const notFoundHandler: RequestHandler = (req, _res, next) => {
   next(AppError.notFound(`Route ${req.method} ${req.path} not found`));
@@ -54,23 +56,40 @@ function toAppError(err: unknown): AppError {
   return new AppError(500, 'INTERNAL_ERROR', 'An unexpected error occurred');
 }
 
-/** Converts every error into the standard `{ error: {...} }` envelope. */
-export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
-  const appError = toAppError(err);
-  if (err instanceof AiUnavailableError) {
-    req.log.error({ feature: err.feature, attempts: err.attempts }, 'ai unavailable');
-  } else if (appError.status >= 500) {
-    req.log.error({ err }, 'unhandled error');
-  } else {
-    req.log.info({ code: appError.code, status: appError.status }, 'request rejected');
-  }
-  const body: ApiErrorBody = {
-    error: {
-      code: appError.code,
-      message: appError.message,
-      ...(appError.details !== undefined ? { details: appError.details } : {}),
-      requestId: String(req.id),
-    },
+/**
+ * Converts every error into the standard `{ error: {...} }` envelope. Unexpected
+ * 500s go to error tracking; expected outages (AI, judge, integrations not set up)
+ * are covered by metrics and logs instead.
+ */
+export function createErrorHandler(
+  tracker: ErrorTracker = disabledErrorTracker,
+): ErrorRequestHandler {
+  return (err, req, res, _next) => {
+    const appError = toAppError(err);
+    if (err instanceof AiUnavailableError) {
+      req.log.error({ feature: err.feature, attempts: err.attempts }, 'ai unavailable');
+    } else if (appError.status >= 500) {
+      req.log.error({ err }, 'unhandled error');
+      if (appError.status === 500) {
+        tracker.captureException(err, {
+          tags: { method: req.method, route: routeLabel(req) },
+          extra: { requestId: String(req.id) },
+        });
+      }
+    } else {
+      req.log.info({ code: appError.code, status: appError.status }, 'request rejected');
+    }
+    const body: ApiErrorBody = {
+      error: {
+        code: appError.code,
+        message: appError.message,
+        ...(appError.details !== undefined ? { details: appError.details } : {}),
+        requestId: String(req.id),
+      },
+    };
+    res.status(appError.status).json(body);
   };
-  res.status(appError.status).json(body);
-};
+}
+
+/** The handler without error tracking (tests and tools). */
+export const errorHandler: ErrorRequestHandler = createErrorHandler();

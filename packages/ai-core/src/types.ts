@@ -249,6 +249,27 @@ export interface UsageSink {
   record(record: AiUsageRecord): Promise<void>;
 }
 
+/**
+ * Wraps a usage sink so `observe` (e.g. Prometheus latency/error metrics) sees
+ * every metered call first. The observer runs synchronously and can never fail
+ * the write or the call.
+ */
+export function withUsageObserver(
+  sink: UsageSink,
+  observe: (record: AiUsageRecord) => void,
+): UsageSink {
+  return {
+    async record(record) {
+      try {
+        observe(record);
+      } catch {
+        // Metrics are best-effort; metering to the database is what matters.
+      }
+      await sink.record(record);
+    },
+  };
+}
+
 /** Minimal structured logger (pino-compatible). */
 export interface AiLogger {
   debug(obj: object, msg?: string): void;

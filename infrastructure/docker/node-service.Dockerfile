@@ -21,7 +21,9 @@ RUN pnpm --filter @cbi/${SERVICE} deploy --prod --legacy /out
 FROM ${NODE_IMAGE} AS runtime
 ARG SERVICE
 ARG APP_VERSION=0.0.0-dev
-ENV NODE_ENV=production APP_VERSION=${APP_VERSION}
+# Commit the image was built from: the error-tracking release (SENTRY_RELEASE).
+ARG GIT_SHA=
+ENV NODE_ENV=production APP_VERSION=${APP_VERSION} SENTRY_RELEASE=${GIT_SHA}
 WORKDIR /app
 COPY --from=build --chown=node:node /out ./
 USER node

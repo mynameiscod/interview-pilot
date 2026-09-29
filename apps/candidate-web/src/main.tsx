@@ -1,6 +1,6 @@
 import '@cbi/design-system/styles.scss';
 import 'bootstrap-icons/font/bootstrap-icons.min.css';
-import { AuthProvider, createSessionManager } from '@cbi/web-core';
+import { AuthProvider, createSessionManager, initBrowserErrorTracking } from '@cbi/web-core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -20,6 +20,16 @@ const queryClient = new QueryClient({
 });
 
 async function bootstrap() {
+  // Off unless VITE_SENTRY_DSN was set at build time; the SDK chunk is loaded only then.
+  void initBrowserErrorTracking(
+    {
+      dsn: config.VITE_SENTRY_DSN,
+      environment: config.VITE_APP_ENV,
+      release: config.VITE_SENTRY_RELEASE,
+      app: 'candidate',
+    },
+    () => import('@sentry/react'),
+  );
   const i18n = await initI18n();
   const supported = detectMissingFeatures().length === 0;
   const root = createRoot(document.getElementById('root')!);

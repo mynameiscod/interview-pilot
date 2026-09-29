@@ -1,4 +1,4 @@
-import { apiEnvSchema, createLogger, loadEnv } from '@cbi/config';
+import { apiEnvSchema, createLogger, initErrorTracking, initMetrics, loadEnv } from '@cbi/config';
 import { createServer } from 'node:http';
 import { createApp, SERVICE_NAME } from './app.js';
 import { createRealtime } from './realtime.js';
@@ -26,15 +26,25 @@ const logger = createLogger({
   env: env.APP_ENV,
 });
 
+const errorTracker = initErrorTracking({
+  dsn: env.SENTRY_DSN,
+  service: SERVICE_NAME,
+  environment: env.SENTRY_ENVIRONMENT ?? env.APP_ENV,
+  release: env.SENTRY_RELEASE ?? env.APP_VERSION,
+});
+if (env.METRICS_ENABLED) initMetrics({ service: SERVICE_NAME });
+
 let draining = false;
 
 process.on('unhandledRejection', (reason) => {
   logger.error({ err: reason }, 'unhandled promise rejection');
+  errorTracker.captureException(reason, { tags: { kind: 'unhandledRejection' } });
 });
 
 async function main(): Promise<void> {
-  const redis = createRedis(env.REDIS_URL, logger);
-  const queueRedis = createRedis(env.REDIS_URL, logger, 'queue');
+  const sentinel = { sentinels: env.REDIS_SENTINELS, name: env.REDIS_SENTINEL_MASTER };
+  const redis = createRedis(env.REDIS_URL, logger, 'command', sentinel);
+  const queueRedis = createRedis(env.REDIS_URL, logger, 'queue', sentinel);
   await Promise.all([
     connectMongo({
       uri: env.MONGODB_URI,
@@ -73,6 +83,7 @@ async function main(): Promise<void> {
     logger,
     probes: { mongo: pingMongo, redis: () => pingRedis(redis) },
     isDraining: () => draining,
+    errorTracker,
   });
 
   const server = createServer(app);
@@ -99,6 +110,7 @@ async function main(): Promise<void> {
         await container.jobs.close();
         await container.queueAdmin.close();
         await Promise.allSettled([disconnectMongo(), redis.quit(), queueRedis.quit()]);
+        await errorTracker.flush();
         logger.info('shutdown complete');
       } finally {
         process.exit(0);
@@ -111,7 +123,9 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-main().catch((err: unknown) => {
+main().catch(async (err: unknown) => {
   logger.fatal({ err }, 'api failed to start');
+  errorTracker.captureException(err, { tags: { kind: 'startup' } });
+  await errorTracker.flush();
   process.exit(1);
 });

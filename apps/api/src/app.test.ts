@@ -25,6 +25,27 @@ async function buildApp(
   });
 }
 
+describe('metrics endpoint', () => {
+  it('serves Prometheus metrics outside the CORS/origin checks', async () => {
+    const app = await buildApp();
+    const res = await request(app).get('/metrics').expect(200);
+    expect(res.headers['content-type']).toContain('text/plain');
+    expect(res.text).toContain('cbi_http_request_duration_seconds');
+  });
+
+  it('requires METRICS_TOKEN when one is set', async () => {
+    const token = 'metrics-token-0123456789';
+    const app = await buildApp({ env: { METRICS_TOKEN: token } });
+    await request(app).get('/metrics').expect(401);
+    await request(app).get('/metrics').set('Authorization', `Bearer ${token}`).expect(200);
+  });
+
+  it('is absent when METRICS_ENABLED=false', async () => {
+    const app = await buildApp({ env: { METRICS_ENABLED: 'false' } });
+    await request(app).get('/metrics').expect(404);
+  });
+});
+
 describe('health endpoints', () => {
   it('GET /healthz reports liveness without touching dependencies', async () => {
     const app = await buildApp({

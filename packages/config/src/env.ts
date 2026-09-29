@@ -75,6 +75,35 @@ const isExampleKey = (v: string) =>
 
 // --- Settings shared by the API and the worker ----------------------------------
 
+/** Error tracking and metrics (docs/deployment/observability.md), plus Redis HA discovery. */
+const observabilityShape = {
+  /**
+   * Redis Sentinel addresses (`host:port,host:port`) for the `redis-ha` compose profile.
+   * Unset: connect to REDIS_URL directly. Set: REDIS_URL supplies only the password.
+   */
+  REDIS_SENTINELS: optionalString.refine(
+    (v) => v === undefined || /^[A-Za-z0-9.-]+(:\d{1,5})?(,[A-Za-z0-9.-]+(:\d{1,5})?)*$/.test(v),
+    'must be host:port pairs separated by commas',
+  ),
+  REDIS_SENTINEL_MASTER: z.string().default('cbi'),
+  /** Sentry or GlitchTip DSN. Unset disables error reporting. */
+  SENTRY_DSN: optionalString.refine(
+    (v) => v === undefined || /^https?:\/\/[^/\s]+@[^/\s]+\/\S+$/.test(v),
+    'must be a DSN such as https://<key>@glitchtip.example.com/<project>',
+  ),
+  /** Defaults to APP_ENV. */
+  SENTRY_ENVIRONMENT: optionalString,
+  /** The git sha the image was built from (set by the Dockerfile); defaults to APP_VERSION. */
+  SENTRY_RELEASE: optionalString,
+  /** Serve Prometheus metrics on /metrics (API port; worker health port). */
+  METRICS_ENABLED: booleanString.default(true),
+  /** Optional bearer token required on /metrics (NGINX blocks it publicly either way). */
+  METRICS_TOKEN: optionalString.refine(
+    (v) => v === undefined || v.length >= 16,
+    'must be at least 16 characters',
+  ),
+};
+
 /** AI runtime: both processes make AI calls and decrypt provider keys. */
 const aiRuntimeShape = {
   /** Encrypts provider API keys stored through Admin (AES-256-GCM). */
@@ -285,6 +314,7 @@ const apiObjectSchema = baseEnvSchema.extend({
   ...storageShape,
   ...paymentShape,
   ...judgeShape,
+  ...observabilityShape,
   PORT_API: z.coerce.number().int().min(1).max(65535).default(4000),
   CORS_ALLOWED_ORIGINS: originList,
   /** Number of trusted reverse-proxy hops (NGINX = 1). Needed for correct client IPs. */
@@ -368,6 +398,7 @@ export const workerEnvSchema = baseEnvSchema
     ...storageShape,
     ...paymentShape,
     ...judgeShape,
+    ...observabilityShape,
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
     /** How often AI usage is rolled up into providerHealth. */

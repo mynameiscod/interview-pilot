@@ -1,4 +1,4 @@
-import type { DependencyProbe, Logger } from '@cbi/config';
+import { metricsHandler, type DependencyProbe, type ErrorTracker, type Logger } from '@cbi/config';
 import { API_V1_PREFIX } from '@cbi/shared-types';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
@@ -6,7 +6,8 @@ import { pinoHttp } from 'pino-http';
 import swaggerUi from 'swagger-ui-express';
 import type { Container } from './container.js';
 import { AppError } from './lib/errors.js';
-import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { createErrorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { httpMetrics } from './middleware/metrics.js';
 import { originGuard } from './middleware/origin-guard.js';
 import { resolveRequestId } from './middleware/request-id.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
@@ -41,6 +42,8 @@ export interface AppDependencies {
   logger: Logger;
   probes: Record<string, DependencyProbe>;
   isDraining: () => boolean;
+  /** Unexpected 500s are reported here; omit to disable. */
+  errorTracker?: ErrorTracker;
 }
 
 export function createApp(deps: AppDependencies): Express {
@@ -51,11 +54,15 @@ export function createApp(deps: AppDependencies): Express {
   app.disable('x-powered-by');
   app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
+  if (env.METRICS_ENABLED) app.use(httpMetrics());
+
   app.use(
     pinoHttp({
       logger,
       genReqId: resolveRequestId,
-      autoLogging: { ignore: (req) => req.url === '/healthz' || req.url === '/readyz' },
+      autoLogging: {
+        ignore: (req) => req.url === '/healthz' || req.url === '/readyz' || req.url === '/metrics',
+      },
       customLogLevel: (_req, res, err) =>
         err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
       serializers: {
@@ -79,6 +86,12 @@ export function createApp(deps: AppDependencies): Express {
       isDraining: deps.isDraining,
     }),
   );
+
+  // Prometheus scrape endpoint for the Docker network; NGINX answers 404 for it publicly.
+  if (env.METRICS_ENABLED) {
+    const serveMetrics = metricsHandler({ token: env.METRICS_TOKEN });
+    app.get('/metrics', (req, res) => serveMetrics(req, res));
+  }
 
   if (env.API_DOCS_ENABLED) {
     const document = buildOpenApiDocument(env.APP_VERSION);
@@ -131,7 +144,7 @@ export function createApp(deps: AppDependencies): Express {
   app.use(API_V1_PREFIX, v1);
 
   app.use(notFoundHandler);
-  app.use(errorHandler);
+  app.use(createErrorHandler(deps.errorTracker));
 
   return app;
 }

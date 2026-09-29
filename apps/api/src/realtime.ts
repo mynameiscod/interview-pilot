@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { AccessTokenError } from '@cbi/auth-core';
+import { socketConnections } from '@cbi/config';
 import type { Redis } from '@cbi/db';
 import {
   AnswerTextPayload,
@@ -88,6 +89,8 @@ export async function createRealtime(opts: {
 
   rt.on('connection', (socket: Socket) => {
     const data = socket.data as SocketData;
+    socketConnections.inc();
+    socket.once('disconnect', () => socketConnections.dec());
 
     socket.on(RtEvent.JOIN, async (raw: unknown, ack?: Ack) => {
       try {

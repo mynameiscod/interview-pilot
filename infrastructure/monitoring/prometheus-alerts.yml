@@ -1,0 +1,160 @@
+# Prometheus alert rules for CareerPilot Interview (docs/deployment/observability.md).
+# Load with `rule_files: [prometheus-alerts.yml]`. Metric sources:
+#   cbi_*            API :4000/metrics and worker :4100/metrics (Docker network only)
+#   cbi_backup_*     backup.sh textfile metrics (/srv/cbi/state/metrics, node_exporter)
+#   node_*           node_exporter on the VPS (disk)
+#   probe_*          blackbox_exporter probing the public hostnames (certificates)
+# Thresholds are starting points for the MVP load (200 concurrent interviews); tune them
+# after a few weeks of real traffic.
+groups:
+  - name: cbi-api
+    rules:
+      - alert: CbiApi5xxRateHigh
+        expr: |
+          sum(rate(cbi_http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / clamp_min(sum(rate(cbi_http_request_duration_seconds_count[5m])), 1e-9) > 0.02
+          and sum(rate(cbi_http_request_duration_seconds_count[5m])) > 0.2
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: 'API 5xx rate above 2 % for 5 minutes'
+          description: 'Check error tracking for new issues and runbook-incidents.md. Current ratio: {{ $value | humanizePercentage }}.'
+
+      - alert: CbiApiLatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(cbi_http_request_duration_seconds_bucket{route!~"/healthz|/readyz|/metrics|unmatched"}[5m]))
+          ) > 1.5
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: 'API p95 latency above 1.5 s for 10 minutes'
+          description: 'p95 is {{ $value | humanizeDuration }}. Break it down by route: histogram_quantile(0.95, sum by (le, route) (rate(cbi_http_request_duration_seconds_bucket[5m]))).'
+
+      - alert: CbiApiDown
+        expr: absent(up{job="cbi-api"} == 1)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 'No API process is being scraped successfully'
+          description: 'Both colours down, or the scrape target is wrong after a blue/green swap (scrape api-blue and api-green).'
+
+  - name: cbi-worker
+    rules:
+      - alert: CbiWorkerHeartbeatMissing
+        expr: |
+          time() - max(cbi_worker_heartbeat_timestamp_seconds) > 90
+          or absent(cbi_worker_heartbeat_timestamp_seconds)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: 'No worker has processed a heartbeat job for 90 s'
+          description: 'Workers are down or the system queue is stuck. Admin → System → Health shows the per-worker heartbeat.'
+
+      - alert: CbiQueueStuck
+        expr: |
+          max by (queue) (cbi_queue_jobs{state="waiting"}) > 0
+          unless on (queue) (sum by (queue) (increase(cbi_queue_jobs_completed_total[15m])) > 0)
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has waiting jobs but completed none in 15 minutes'
+          description: 'Check worker logs and Admin → System → Queues.'
+
+      - alert: CbiQueueBacklog
+        expr: max by (queue) (cbi_queue_jobs{state="waiting"}) > 100
+        for: 15m
+        labels: { severity: warn }
+        annotations:
+          summary: 'Queue {{ $labels.queue }} has more than 100 waiting jobs for 15 minutes'
+          description: 'Consider WORKER_REPLICAS or the *_CONCURRENCY settings.'
+
+      - alert: CbiQueueFailuresRising
+        expr: sum by (queue) (increase(cbi_queue_jobs_failed_total[15m])) > 10
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: 'More than 10 failed job attempts on {{ $labels.queue }} in 15 minutes'
+          description: 'Final failures are also reported to error tracking with the job name and id.'
+
+  - name: cbi-providers
+    rules:
+      - alert: CbiAiErrorRateHigh
+        expr: |
+          sum by (provider, feature) (rate(cbi_ai_call_errors_total[10m]))
+            / clamp_min(sum by (provider, feature) (rate(cbi_ai_call_duration_seconds_count[10m])), 1e-9) > 0.2
+          and sum by (provider, feature) (rate(cbi_ai_call_duration_seconds_count[10m])) > 0.05
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: 'AI {{ $labels.provider }} / {{ $labels.feature }}: more than 20 % of calls failing'
+          description: 'The router falls back to the next model; check provider status and Admin → AI → Provider health.'
+
+      - alert: CbiAiLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le, provider, feature) (rate(cbi_ai_call_duration_seconds_bucket{outcome="SUCCESS"}[10m]))) > 30
+        for: 15m
+        labels: { severity: warn }
+        annotations:
+          summary: 'AI {{ $labels.provider }} / {{ $labels.feature }} p95 above 30 s'
+
+      - alert: CbiJudgeFailing
+        expr: sum by (provider) (increase(cbi_judge_failures_total[15m])) > 3
+        for: 5m
+        labels: { severity: warn }
+        annotations:
+          summary: 'Code judge {{ $labels.provider }} unavailable ({{ $value }} failures in 15 minutes)'
+          description: 'Code runs answer 503 and submissions are recorded without a run until the judge host is back.'
+
+  - name: cbi-host
+    rules:
+      - alert: CbiDiskFilling
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint=~"/|/var/lib/docker|/srv.*"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint=~"/|/var/lib/docker|/srv.*"}) < 0.20
+        for: 10m
+        labels: { severity: warn }
+        annotations:
+          summary: 'Less than 20 % free on {{ $labels.mountpoint }}'
+          description: 'MongoDB and Docker logs grow here. cbi-disk-alert also emails at 80 % used.'
+
+      - alert: CbiDiskAlmostFull
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs", mountpoint=~"/|/var/lib/docker|/srv.*"}[6h], 24 * 3600) < 0
+        for: 30m
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $labels.mountpoint }} will be full within 24 hours at the current rate'
+
+      - alert: CbiBackupFullStale
+        expr: |
+          time() - max(cbi_backup_last_success_timestamp_seconds{mode="full"}) > 26 * 3600
+          or absent(cbi_backup_last_success_timestamp_seconds{mode="full"})
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'No successful full backup for more than 26 hours'
+          description: 'journalctl -u cbi-backup.service; runbook-backup-restore.md.'
+
+      - alert: CbiBackupIncrementalStale
+        expr: time() - max(cbi_backup_last_success_timestamp_seconds{mode="incremental"}) > 2 * 3600
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'No successful incremental backup for more than 2 hours (RPO at risk)'
+          description: 'journalctl -u cbi-backup-incremental.service.'
+
+      - alert: CbiCertificateExpiring
+        expr: min by (instance) (probe_ssl_earliest_cert_expiry) - time() < 14 * 86400
+        for: 1h
+        labels: { severity: warn }
+        annotations:
+          summary: 'TLS certificate for {{ $labels.instance }} expires in less than 14 days'
+          description: 'certbot renews at 30 days; check the certbot container logs and certs.sh.'
+
+      - alert: CbiCertificateExpiringSoon
+        expr: min by (instance) (probe_ssl_earliest_cert_expiry) - time() < 3 * 86400
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: 'TLS certificate for {{ $labels.instance }} expires in less than 3 days'

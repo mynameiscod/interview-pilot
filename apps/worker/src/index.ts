@@ -1,6 +1,14 @@
 import { hostname } from 'node:os';
 import { buildAiRuntime, buildIntegrations } from '@cbi/ai-runtime';
-import { createLogger, loadEnv, workerEnvSchema } from '@cbi/config';
+import {
+  createLogger,
+  initErrorTracking,
+  initMetrics,
+  loadEnv,
+  metricsHandler,
+  setQueueDepthSource,
+  workerEnvSchema,
+} from '@cbi/config';
 import { connectMongo, createRedis, disconnectMongo, pingMongo, pingRedis } from '@cbi/db';
 import {
   createEmailProvider,
@@ -9,6 +17,7 @@ import {
   createStorage,
 } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
+import { createQueueDepthReader } from './queue-metrics.js';
 import { startWorkers } from './worker.js';
 
 const env = loadEnv(workerEnvSchema);
@@ -20,15 +29,25 @@ const logger = createLogger({
 });
 const workerId = `${hostname()}:${process.pid}`;
 
+const errorTracker = initErrorTracking({
+  dsn: env.SENTRY_DSN,
+  service: 'worker',
+  environment: env.SENTRY_ENVIRONMENT ?? env.APP_ENV,
+  release: env.SENTRY_RELEASE ?? env.APP_VERSION,
+});
+if (env.METRICS_ENABLED) initMetrics({ service: 'worker' });
+
 let draining = false;
 
 process.on('unhandledRejection', (reason) => {
   logger.error({ err: reason }, 'unhandled promise rejection');
+  errorTracker.captureException(reason, { tags: { kind: 'unhandledRejection' } });
 });
 
 async function main(): Promise<void> {
-  const redis = createRedis(env.REDIS_URL, logger, 'command');
-  const queueConnection = createRedis(env.REDIS_URL, logger, 'queue');
+  const sentinel = { sentinels: env.REDIS_SENTINELS, name: env.REDIS_SENTINEL_MASTER };
+  const redis = createRedis(env.REDIS_URL, logger, 'command', sentinel);
+  const queueConnection = createRedis(env.REDIS_URL, logger, 'queue', sentinel);
   await Promise.all([
     connectMongo({
       uri: env.MONGODB_URI,
@@ -74,6 +93,7 @@ async function main(): Promise<void> {
     queueConnection,
     redis,
     logger,
+    errorTracker,
     documents: {
       concurrency: env.WORKER_DOCUMENT_CONCURRENCY,
       deps: {
@@ -98,11 +118,14 @@ async function main(): Promise<void> {
     },
   });
 
+  const queueDepth = env.METRICS_ENABLED ? createQueueDepthReader(queueConnection) : null;
+  setQueueDepthSource(queueDepth ? () => queueDepth.read() : null);
   const health = createHealthServer({
     env: env.APP_ENV,
     version: env.APP_VERSION,
     probes: { mongo: pingMongo, redis: () => pingRedis(redis) },
     isDraining: () => draining,
+    metrics: env.METRICS_ENABLED ? metricsHandler({ token: env.METRICS_TOKEN }) : undefined,
   });
   health.listen(env.WORKER_HEALTH_PORT, () =>
     logger.info({ port: env.WORKER_HEALTH_PORT, workerId }, 'worker started'),
@@ -119,10 +142,13 @@ async function main(): Promise<void> {
     force.unref();
     try {
       await runtime.close();
+      setQueueDepthSource(null);
+      await queueDepth?.close();
       await stopListening();
       await stopIntegrations();
       await Promise.allSettled([disconnectMongo(), redis.quit(), queueConnection.quit()]);
       health.close();
+      await errorTracker.flush();
       logger.info('shutdown complete');
     } finally {
       process.exit(0);
@@ -133,7 +159,9 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-main().catch((err: unknown) => {
+main().catch(async (err: unknown) => {
   logger.fatal({ err }, 'worker failed to start');
+  errorTracker.captureException(err, { tags: { kind: 'startup' } });
+  await errorTracker.flush();
   process.exit(1);
 });

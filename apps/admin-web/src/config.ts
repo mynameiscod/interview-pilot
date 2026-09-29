@@ -11,6 +11,10 @@ const PublicConfig = z.object({
    * only (the admin prefixes the candidate site address themselves).
    */
   candidateUrl: z.url().optional(),
+  /** Sentry/GlitchTip DSN (public by design). Empty turns error tracking off. */
+  sentryDsn: z.url().optional(),
+  /** Git sha of this build, reported as the error-tracking release. */
+  sentryRelease: z.string().optional(),
 });
 
 /** Public, build-time configuration. Never put secrets in VITE_* variables. */
@@ -19,6 +23,8 @@ export const config = PublicConfig.parse({
   appEnv: import.meta.env.VITE_APP_ENV ?? 'development',
   googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || undefined,
   candidateUrl: import.meta.env.VITE_CANDIDATE_URL?.replace(/\/+$/, '') || undefined,
+  sentryDsn: import.meta.env.VITE_SENTRY_DSN || undefined,
+  sentryRelease: import.meta.env.VITE_SENTRY_RELEASE || undefined,
 });
 
 export type AdminAppEnv = z.infer<typeof AppEnv>;
