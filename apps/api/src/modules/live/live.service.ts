@@ -146,6 +146,8 @@ export function fallbackQuestion(target: QuestionTarget): string {
       return 'We are nearly done. Is there anything about your experience that we have not covered and you would like to add?';
     case 'BEHAVIORAL':
       return `Tell me about a specific situation where you showed ${target.competencyName ?? 'ownership'}. What did you do, and what was the outcome?`;
+    case 'SYSTEM_DESIGN':
+      return 'Looking at your design, which part would struggle first if traffic grew ten times, and what would you change?';
     default:
       return target.probeTopic
         ? `Let's talk about ${target.probeTopic}. What was your role, what decisions did you make, and why?`
@@ -171,6 +173,16 @@ interface Deps {
     s: InterviewSessionRecord,
     target: QuestionTarget,
   ) => Promise<{ _id: Types.ObjectId; title: string; text: string } | null>;
+  /** System design rounds: a prompt from the design bank for the round's first question. */
+  pickDesignPrompt?: (
+    s: InterviewSessionRecord,
+    target: QuestionTarget,
+  ) => Promise<{ _id: Types.ObjectId; title: string; text: string } | null>;
+  /** The design already submitted (or saved) in a system design round, as text for the probes. */
+  designContext?: (
+    s: InterviewSessionRecord,
+    roundIdx: number,
+  ) => Promise<{ title: string; prompt: string; design: string } | null>;
   /** Maintenance mode refuses new starts (running interviews continue). */
   maintenance?: () => Promise<MaintenanceSetting>;
   now?: () => Date;
@@ -189,6 +201,8 @@ export function createLiveInterviewService({
   consent,
   onQuestion,
   pickCodingProblem,
+  pickDesignPrompt,
+  designContext,
   maintenance,
   now = () => new Date(),
 }: Deps) {
@@ -218,8 +232,9 @@ export function createLiveInterviewService({
     schema: z.ZodType<T>,
     values: Record<string, PromptValue>,
     s: Session,
+    promptKey: string = feature,
   ): Promise<{ data: T; model: string; promptVersion: number } | null> {
-    const prompt = await ai.prompts.getActive(feature);
+    const prompt = await ai.prompts.getActive(promptKey);
     if (!prompt) {
       logger.error({ feature }, 'no active prompt');
       return null;
@@ -259,6 +274,7 @@ export function createLiveInterviewService({
     model: string | null;
     promptVersion: number | null;
     coding?: { problemId: Types.ObjectId; title: string };
+    design?: { promptId: Types.ObjectId; title: string };
   }> {
     // A coding round opens with a problem from the bank; its follow-ups are ordinary questions.
     if (target.roundType === 'CODING' && !target.followUpOf && pickCodingProblem) {
@@ -274,6 +290,31 @@ export function createLiveInterviewService({
           coding: { problemId: problem._id, title: problem.title },
         };
       }
+    }
+    // A system design round opens with a prompt from the design bank; every later question
+    // in the round probes the design the candidate submitted.
+    if (target.roundType === 'SYSTEM_DESIGN') {
+      const context = designContext
+        ? await designContext(s, target.roundIdx).catch((err: unknown) => {
+            logger.error({ err, sessionId: String(s._id) }, 'design context failed');
+            return null;
+          })
+        : null;
+      if (!context && !target.followUpOf && pickDesignPrompt) {
+        const prompt = await pickDesignPrompt(s, target).catch((err: unknown) => {
+          logger.error({ err, sessionId: String(s._id) }, 'design prompt selection failed');
+          return null;
+        });
+        if (prompt) {
+          return {
+            text: prompt.text,
+            model: null,
+            promptVersion: null,
+            design: { promptId: prompt._id, title: prompt.title },
+          };
+        }
+      }
+      if (context) return designProbe(s, target, blueprint, context);
     }
     const previous = await InterviewTurnModel.find(
       { sessionId: s._id },
@@ -312,6 +353,44 @@ export function createLiveInterviewService({
         ),
       },
       s,
+    );
+    return result
+      ? { text: result.data.question, model: result.model, promptVersion: result.promptVersion }
+      : { text: fallbackQuestion(target), model: null, promptVersion: null };
+  }
+
+  /** A probe about the candidate's design (the design and the round's earlier probes are data). */
+  async function designProbe(
+    s: Session,
+    target: QuestionTarget,
+    blueprint: BlueprintContent,
+    context: { title: string; prompt: string; design: string },
+  ) {
+    const round = await InterviewTurnModel.find(
+      { sessionId: s._id, roundIdx: target.roundIdx, 'question.design': null },
+      { question: 1, answer: 1 },
+    )
+      .sort({ seq: 1 })
+      .limit(MAX_ASKED_IN_PROMPT)
+      .lean();
+    const result = await runAi(
+      'interview.question',
+      InterviewQuestionAi,
+      {
+        language: LANGUAGE_NAMES[questionLanguage(s)],
+        role: `${blueprint.role.title} (${blueprint.role.seniority.toLowerCase()})`,
+        prompt: `${context.title}. ${context.prompt}`.slice(0, 2000),
+        objective: target.followUpAngle ? `Follow up: ${target.followUpAngle}` : target.objective,
+        difficulty: target.difficulty,
+        design: untrusted(context.design),
+        thread: untrusted(
+          round
+            .map((t) => `Question: ${t.question.text}\nAnswer: ${t.answer?.text ?? '(no answer)'}`)
+            .join('\n\n') || '-',
+        ),
+      },
+      s,
+      'interview.designProbe',
     );
     return result
       ? { text: result.data.question, model: result.model, promptVersion: result.promptVersion }
@@ -388,18 +467,28 @@ export function createLiveInterviewService({
       coding: t.question.coding
         ? { problemId: String(t.question.coding.problemId), title: t.question.coding.title }
         : null,
+      design: t.question.design
+        ? { promptId: String(t.question.design.promptId), title: t.question.design.title }
+        : null,
     };
   }
 
   async function snapshot(s: Session, lastSeq = 0): Promise<InterviewSnapshot> {
     const at = now();
-    const [turns, current, template] = await Promise.all([
+    const roundIdx = s.planner?.roundIdx ?? -1;
+    const [turns, current, template, designTurn] = await Promise.all([
       InterviewTurnModel.find({ sessionId: s._id, seq: { $gt: lastSeq } })
         .sort({ seq: 1 })
         .limit(200)
         .lean(),
       InterviewTurnModel.findOne({ sessionId: s._id, seq: s.lastSeq, answer: null }).lean(),
       InterviewTemplateModel.findById(s.templateId, { content: 1 }).lean(),
+      s.planner?.rounds[roundIdx]?.type === 'SYSTEM_DESIGN'
+        ? InterviewTurnModel.findOne(
+            { sessionId: s._id, roundIdx, 'question.design': { $ne: null } },
+            { questionId: 1 },
+          ).lean()
+        : null,
     ]);
     const liveNow = s.state === 'ACTIVE' || s.state === 'ROUND_TRANSITION';
     return {
@@ -422,6 +511,7 @@ export function createLiveInterviewService({
       clockRunning: Boolean(s.clock?.runningSince),
       answeredCount: s.planner?.answeredCount ?? 0,
       currentQuestion: current && liveNow ? liveQuestion(current) : null,
+      designQuestionId: designTurn?.questionId ?? null,
       thinking: liveNow && !current,
       turns: turns.map((t) => ({
         seq: t.seq,
@@ -623,6 +713,7 @@ export function createLiveInterviewService({
                 promptVersion: question.promptVersion,
                 model: question.model,
                 coding: question.coding ?? null,
+                design: question.design ?? null,
               },
               askedAt: now(),
               language: questionLanguage(s),
@@ -929,7 +1020,7 @@ export function createLiveInterviewService({
     async answer(
       userId: string,
       payload: AnswerTextPayload,
-      opts: { coding?: true } = {},
+      opts: { coding?: true; design?: true } = {},
     ): Promise<{ duplicate: boolean }> {
       if (await answerSaved(userId, payload)) return { duplicate: true };
       const result = await locked(payload.sessionId, async () => {
@@ -958,6 +1049,10 @@ export function createLiveInterviewService({
         // A coding question is answered by submitting code in the editor.
         if (turn.question.coding && !opts.coding) {
           throw new LiveError('INVALID_STATE', 'Submit your solution in the code editor.');
+        }
+        // A design question is answered by submitting the design (whiteboard and notes).
+        if (turn.question.design && !opts.design) {
+          throw new LiveError('INVALID_STATE', 'Submit your design on the whiteboard.');
         }
         let text = payload.text.trim();
         let voice: {

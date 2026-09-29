@@ -547,7 +547,8 @@
       "PROBLEM_SOLVING": "Problem solving",
       "BEHAVIORAL": "Behavioural",
       "CODING": "Coding",
-      "WRAP_UP": "Wrap-up"
+      "WRAP_UP": "Wrap-up",
+      "SYSTEM_DESIGN": "System design"
     },
     "resume": {
       "title": "Your resume against this role",
@@ -1710,5 +1711,88 @@
       "scoring": "How AI scoring works"
     },
     "loading": "Loading…"
+  },
+  "design": {
+    "loading": "Loading the design question…",
+    "loadError": "We could not load this design question.",
+    "retry": "Try again",
+    "promptLabel": "System design",
+    "focus": "Think about",
+    "intro": "Sketch the main parts on the whiteboard and fill in your notes. Your work is saved as you go.",
+    "save": {
+      "saved": "Saved",
+      "dirty": "Unsaved changes",
+      "saving": "Saving…",
+      "retrying": "Not saved — retrying",
+      "closed": "Submitted"
+    },
+    "board": {
+      "title": "Whiteboard",
+      "region": "Design whiteboard",
+      "boxName": "Box name",
+      "kind": "Kind",
+      "addBox": "Add box",
+      "full": "The board holds up to {{max}} boxes.",
+      "boxLabel": "{{label}} ({{kind}})",
+      "help": "Drag a box to move it, or select it and use the arrow keys (Shift moves further). Select a box to rename it, connect it to another box or remove it.",
+      "helpReadOnly": "Your submitted design.",
+      "selected": "Selected: {{label}}",
+      "rename": "Name",
+      "connectTo": "Arrow to",
+      "chooseBox": "Choose a box",
+      "arrowLabel": "Arrow label (optional)",
+      "connect": "Add arrow",
+      "removeBox": "Remove box",
+      "listTitle": "Boxes and arrows as a list ({{boxes}} boxes, {{arrows}} arrows)",
+      "removeArrow": "Remove the arrow from {{from}} to {{to}}",
+      "noArrows": "No arrows yet."
+    },
+    "kinds": {
+      "client": "Client",
+      "service": "Service",
+      "database": "Database",
+      "cache": "Cache",
+      "queue": "Queue",
+      "storage": "File storage",
+      "external": "External system",
+      "other": "Other"
+    },
+    "notes": {
+      "title": "Notes",
+      "requirements": {
+        "label": "Requirements",
+        "hint": "What the system must do, and numbers: users, requests per second, data size, latency."
+      },
+      "api": {
+        "label": "API",
+        "hint": "The main endpoints or messages, with their inputs and outputs."
+      },
+      "dataModel": {
+        "label": "Data model",
+        "hint": "The main records, how they are stored, and which database fits and why."
+      },
+      "scaling": {
+        "label": "Scaling and reliability",
+        "hint": "Caching, partitioning, queues, and what happens when a part fails."
+      },
+      "tradeOffs": {
+        "label": "Trade-offs",
+        "hint": "The choices you made, what you gave up, and what you would do differently at larger scale."
+      }
+    },
+    "problems": {
+      "submitFailed": "We could not submit your design. It is still here — please try again.",
+      "closed": "This question is closed, so the design could not be submitted."
+    },
+    "submit": "Submit design",
+    "submitting": "Submitting…",
+    "submitted": "Design submitted. The interviewer will now ask you about it.",
+    "confirm": {
+      "title": "Submit your design? You can't change it afterwards.",
+      "body": "The interviewer will ask follow-up questions about your whiteboard and notes.",
+      "yes": "Yes, submit",
+      "no": "Keep working"
+    },
+    "reference": "Your design (for reference)"
   }
 }

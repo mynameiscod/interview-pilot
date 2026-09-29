@@ -1,4 +1,9 @@
-import type { BlueprintSummary, ProblemSummary, RoleSummary } from '@cbi/shared-types';
+import type {
+  BlueprintSummary,
+  DesignPromptSummary,
+  ProblemSummary,
+  RoleSummary,
+} from '@cbi/shared-types';
 import { useQuery } from '@tanstack/react-query';
 import { useAdminAuth } from '../../app/session';
 
@@ -26,5 +31,16 @@ export function useProblems() {
   return useQuery({
     queryKey: problemKeys.all,
     queryFn: () => manager.api.get<ProblemSummary[]>('/admin/problems'),
+  });
+}
+
+export const designPromptKeys = { all: ['library', 'design-prompts'] as const };
+
+/** Every version of every system design prompt, with its rubric. */
+export function useDesignPrompts() {
+  const { manager } = useAdminAuth();
+  return useQuery({
+    queryKey: designPromptKeys.all,
+    queryFn: () => manager.api.get<DesignPromptSummary[]>('/admin/design-prompts'),
   });
 }

@@ -3,6 +3,7 @@ import { deleteMediaAsset, type MediaStorage } from './media.js';
 import { AuthIdentityModel } from './models/auth-identity.js';
 import { CampaignApplicationModel, ReviewRevisionModel } from './models/campaign.js';
 import { CodeSimilarityFlagModel, CodingAttemptModel } from './models/coding.js';
+import { DesignAttemptModel } from './models/design.js';
 import {
   FeedbackModel,
   InterviewEvidenceModel,
@@ -134,6 +135,7 @@ export async function eraseAccount(
     codeSimilarityFlags: await hardDelete(CodeSimilarityFlagModel, {
       $or: [{ 'a.userId': uid }, { 'b.userId': uid }],
     }),
+    designAttempts: await hardDelete(DesignAttemptModel, { userId: uid }),
     integrityEvents: await hardDelete(IntegrityEventModel, { userId: uid }),
     mediaAssets: await hardDelete(MediaAssetModel, { userId: uid }),
     reviewRevisions: await hardDelete(ReviewRevisionModel, bySession),

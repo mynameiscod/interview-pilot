@@ -11,6 +11,7 @@ import {
   ensureCommerceCatalog,
   ensureConsentTexts,
   ensureOpsDefaults,
+  ensureDesignPromptBank,
   ensureProblemBank,
   ensureIndexes,
   ensureLibraryCatalog,
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
   logger.info({ created: await ensureCommerceCatalog() }, 'plan catalogue checked');
   logger.info({ created: await ensureConsentTexts() }, 'consent texts checked');
   logger.info({ created: await ensureProblemBank() }, 'coding problems checked');
+  logger.info({ created: await ensureDesignPromptBank() }, 'design prompts checked');
   logger.info(await ensureOpsDefaults(), 'feature flags and settings checked');
   const stopAiListener = await container.ai.listenForChanges();
   await container.integrations.start();

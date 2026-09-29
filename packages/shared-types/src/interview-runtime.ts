@@ -63,6 +63,8 @@ export const LiveQuestion = z.object({
   askedAt: z.iso.datetime(),
   /** A coding problem: answered in the editor with Run/Submit (Phase 9). */
   coding: z.object({ problemId: z.string(), title: z.string() }).nullable(),
+  /** A system design prompt: answered on the whiteboard and notes, then probed. */
+  design: z.object({ promptId: z.string(), title: z.string() }).nullable().optional(),
 });
 export type LiveQuestion = z.infer<typeof LiveQuestion>;
 
@@ -109,6 +111,8 @@ export const InterviewSnapshot = z.object({
   answeredCount: z.number().int(),
   /** The question waiting for an answer, if any. */
   currentQuestion: LiveQuestion.nullable(),
+  /** The design question of the current system design round (its design stays viewable). */
+  designQuestionId: z.string().nullable().optional(),
   /** The server is preparing the next question. */
   thinking: z.boolean(),
   turns: z.array(LiveTurn),

@@ -10,6 +10,7 @@ import { JudgeUnavailableError, runOnJudge, type JudgeAdapter } from '@cbi/provi
 import {
   CODING_LIMITS,
   codingStrength,
+  designAnswerText,
   judgeTestsFor,
   roundAiAssist,
   submissionAnswerText,
@@ -20,6 +21,7 @@ import {
   type TemplateRound,
 } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
+import { hasDesign, type DesignContext } from './design.js';
 
 /**
  * Coding in evaluation (Phase 9): judge-derived evidence merged with the AI's
@@ -104,15 +106,26 @@ export async function judgeUnsubmitted(
   return judged;
 }
 
-/** Turns of a round with the answer text evaluation should read (unanswered coding turns use the saved code). */
+/**
+ * Turns of a round with the answer text evaluation should read: unanswered
+ * coding turns use the saved code, and unanswered design turns the saved
+ * design (both labelled as not submitted).
+ */
 export function answeredWithCode(
   turns: readonly InterviewTurnRecord[],
   coding: CodingContext,
+  design: DesignContext = { attempts: [], prompts: new Map() },
 ): { turn: InterviewTurnRecord; text: string; spoken: boolean }[] {
   const byQuestion = new Map(coding.attempts.map((a) => [a.questionId, a]));
+  const designs = new Map(design.attempts.map((a) => [a.questionId, a]));
   return turns.flatMap((t) => {
     if (t.answer?.text.trim()) {
       return [{ turn: t, text: t.answer.text, spoken: t.answer.source === 'VOICE' }];
+    }
+    const saved = t.question.design ? designs.get(t.questionId) : undefined;
+    if (saved && hasDesign(saved)) {
+      const text = designAnswerText(saved.notes, saved.diagram);
+      return [{ turn: t, text: `(Not submitted before time ran out.) ${text}`, spoken: false }];
     }
     const a = t.question.coding ? byQuestion.get(t.questionId) : undefined;
     if (a?.submission) {

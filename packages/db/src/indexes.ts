@@ -26,6 +26,7 @@ import {
   SystemSettingModel,
 } from './models/ops.js';
 import { CodeSimilarityFlagModel, CodingAttemptModel, ProblemModel } from './models/coding.js';
+import { DesignAttemptModel, DesignPromptModel } from './models/design.js';
 import { ConsentModel, ConsentTextModel } from './models/consent.js';
 import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
@@ -100,6 +101,8 @@ const MODELS = [
   ProblemModel,
   CodingAttemptModel,
   CodeSimilarityFlagModel,
+  DesignPromptModel,
+  DesignAttemptModel,
   CampaignModel,
   CampaignApplicationModel,
   CampaignExportModel,

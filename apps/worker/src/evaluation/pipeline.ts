@@ -51,7 +51,8 @@ import {
   loadCoding,
   mergeCodingEvidence,
 } from './coding.js';
-import { aiCollaborationPanel } from './panels.js';
+import { loadDesign } from './design.js';
+import { aiCollaborationPanel, systemDesignPanel } from './panels.js';
 
 export interface EvaluationDeps {
   ai: AiRuntime;
@@ -118,10 +119,11 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   const keys = new Set(blueprint.competencies.map((c) => c.key));
   const rounds = [...new Set(turns.map((t) => t.roundIdx))].sort((a, b) => a - b);
   const coding = await loadCoding(s._id);
+  const design = await loadDesign(s._id);
 
   for (const roundIdx of rounds) {
     const roundTurns = turns.filter((t) => t.roundIdx === roundIdx);
-    const answered = answeredWithCode(roundTurns, coding);
+    const answered = answeredWithCode(roundTurns, coding, design);
     // Idempotent per run and round: a retried job replaces its own previous output.
     await InterviewEvidenceModel.deleteMany({ sessionId: s._id, run, roundIdx });
     if (answered.length === 0) continue;
@@ -181,10 +183,15 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   }
 
   // Panels scored beside the role's dimensions (never part of the overall score).
+  const systemDesign = await systemDesignPanel(
+    deps,
+    { role: roleOf(blueprint), design, turns },
+    ctxOf(s),
+  );
   const aiCollaboration = await aiCollaborationPanel(deps, coding, ctxOf(s));
   await InterviewSessionModel.updateOne(
     { _id: s._id },
-    { $set: { 'processing.draft.panels': { systemDesign: null, aiCollaboration } } },
+    { $set: { 'processing.draft.panels': { systemDesign, aiCollaboration } } },
   );
 }
 

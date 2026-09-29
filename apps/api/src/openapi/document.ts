@@ -67,7 +67,11 @@ import {
   UpdateCampaignBody,
   AssistBody,
   CodingWorkspace,
+  CreateDesignPromptVersionBody,
   CustomRunBody,
+  DesignPromptSummary,
+  DesignWorkspace,
+  SaveDesignBody,
   CustomRunResult,
   CreateProblemVersionBody,
   ProblemActivationBody,
@@ -1118,6 +1122,50 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Stop asking this problem (library.manage)',
     body: ProblemActivationBody,
     response: ProblemSummary,
+  });
+
+  // ---- System design rounds ----------------------------------------------------------------------
+  candidate('get', '/interviews/{id}/design/{questionId}', {
+    tag: 'Design',
+    summary:
+      'The design workspace: the prompt (without its rubric), your notes and diagram, and whether it was submitted',
+    response: DesignWorkspace,
+    errors: [401, 404],
+  });
+  candidate('put', '/interviews/{id}/design/{questionId}', {
+    tag: 'Design',
+    summary: 'Autosave the whiteboard and notes (every few seconds while you work)',
+    body: SaveDesignBody,
+    response: DesignWorkspace,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/design/{questionId}/submit', {
+    tag: 'Design',
+    summary:
+      'Submit the design: it becomes read-only and answers the design question; the interviewer then asks probes about it',
+    body: SaveDesignBody,
+    response: DesignWorkspace,
+    errors: [400, 401, 404, 409, 429],
+  });
+  lib('get', '/admin/design-prompts', {
+    summary: 'System design prompt versions, with their rubric (library.read)',
+    response: z.array(DesignPromptSummary),
+  });
+  lib('post', '/admin/design-prompts', {
+    summary: 'Add the next version of a design prompt, inactive (library.manage)',
+    body: CreateDesignPromptVersionBody,
+    response: DesignPromptSummary,
+    status: 201,
+  });
+  lib('post', '/admin/design-prompts/{id}/activate', {
+    summary: 'Make this version the one asked for its key (library.manage)',
+    body: ProblemActivationBody,
+    response: DesignPromptSummary,
+  });
+  lib('post', '/admin/design-prompts/{id}/deactivate', {
+    summary: 'Stop asking this design prompt (library.manage)',
+    body: ProblemActivationBody,
+    response: DesignPromptSummary,
   });
 
   // ---- Consent, recordings and integrity (Phase 8) ------------------------------------------

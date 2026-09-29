@@ -106,6 +106,8 @@ export interface RoomState {
   turns: LiveTurn[];
   /** Coding questions seen in this tab, by question id. */
   coding: Record<string, CodingTurnInfo>;
+  /** The current system design round's design question (its design stays viewable). */
+  designQuestionId: string | null;
   sending: boolean;
   ending: boolean;
   problem: RoomProblem | null;
@@ -159,6 +161,7 @@ export const initialRoomState: RoomState = {
   thinking: false,
   turns: [],
   coding: {},
+  designQuestionId: null,
   sending: false,
   ending: false,
   problem: null,
@@ -255,6 +258,8 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         clockRunning: s.clockRunning,
         question,
         coding: withCoding(state.coding, s.currentQuestion),
+        designQuestionId:
+          s.designQuestionId ?? (question?.design ? question.questionId : state.designQuestionId),
         thinking: pushedIsNewer ? false : s.thinking,
         turns: [...merged.values()].sort(bySeq),
       };
@@ -272,6 +277,9 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
         syncedAt: action.at,
         question: action.question,
         coding: withCoding(state.coding, action.question),
+        designQuestionId: action.question.design
+          ? action.question.questionId
+          : state.designQuestionId,
         thinking: false,
         roundIdx: Math.max(state.roundIdx, action.question.roundIdx),
         turns: withTurn(state.turns, questionTurn(action.question)),
@@ -281,6 +289,8 @@ export function roomReducer(state: RoomState, action: Action): RoomState {
       return {
         ...state,
         roundIdx: toRoundIdx,
+        // A new round: the previous round's design is no longer the reference.
+        designQuestionId: null,
         rounds: state.rounds.map((round, idx) => {
           if (idx === fromRoundIdx && round.state === 'ACTIVE')
             return { ...round, state: 'COMPLETED' };

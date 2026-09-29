@@ -37,6 +37,8 @@ export const RoundType = z.enum([
   'BEHAVIORAL',
   'CODING',
   'WRAP_UP',
+  /** A design prompt worked on a whiteboard with structured notes, then probed. */
+  'SYSTEM_DESIGN',
 ]);
 export type RoundType = z.infer<typeof RoundType>;
 

@@ -35,6 +35,8 @@ export interface InterviewTurnRecord {
     model: string | null;
     /** Coding rounds: the problem asked (answered in the editor). */
     coding: { problemId: Types.ObjectId; title: string } | null;
+    /** System design rounds: the design prompt asked (answered on the whiteboard and notes). */
+    design?: { promptId: Types.ObjectId; title: string } | null;
   };
   askedAt: Date;
   answer: {
@@ -94,6 +96,16 @@ const turnSchema = new Schema<InterviewTurnRecord>(
             type: new Schema(
               {
                 problemId: { type: Schema.Types.ObjectId, ref: 'Problem', required: true },
+                title: { type: String, required: true },
+              },
+              { _id: false },
+            ),
+            default: null,
+          },
+          design: {
+            type: new Schema(
+              {
+                promptId: { type: Schema.Types.ObjectId, ref: 'DesignPrompt', required: true },
                 title: { type: String, required: true },
               },
               { _id: false },

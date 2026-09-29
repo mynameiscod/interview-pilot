@@ -1,6 +1,8 @@
 import { ANSWER_LIMITS, type CodingSubmission } from '@cbi/shared-types';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -25,6 +27,14 @@ import { VoiceAnswer } from './VoiceAnswer';
 import { SelfView } from './SelfView';
 import { useQuestionAudio } from './voice-hooks';
 import '../voice/voice.scss';
+
+// The whiteboard loads only when a system design round needs it.
+const DesignWorkspace = lazy(() =>
+  import('../design/DesignWorkspace').then((m) => ({ default: m.DesignWorkspace })),
+);
+const DesignReference = lazy(() =>
+  import('../design/DesignWorkspace').then((m) => ({ default: m.DesignReference })),
+);
 
 type QuestionAudio = ReturnType<typeof useQuestionAudio>;
 
@@ -451,6 +461,15 @@ export function RoomPage() {
   const codingPending = Boolean(
     room.question?.coding && !room.coding[room.question.questionId]?.submitted,
   );
+  // A design question is answered on the whiteboard; the probes that follow show the design.
+  const designId = room.question?.design ? room.question.questionId : null;
+  const referenceDesignId =
+    !designId &&
+    room.designQuestionId &&
+    room.rounds[room.roundIdx]?.type === 'SYSTEM_DESIGN' &&
+    room.question
+      ? room.designQuestionId
+      : null;
   const shownId = codingId ?? room.question?.questionId;
   const earlier = room.turns.filter((turn) => turn.questionId !== shownId);
   const problemKey =
@@ -497,7 +516,28 @@ export function RoomPage() {
         </div>
       )}
 
-      {codingId ? (
+      {designId ? (
+        <div className="d-flex flex-column gap-4">
+          {voiceMode && room.degraded.TTS && <TtsDownBanner room={room} />}
+          <InterviewerPanel
+            question={room.question}
+            thinking={room.thinking}
+            questionTextId="room-question-text"
+            speaking={voiceMode && audio.status === 'playing'}
+            controls={
+              voiceMode ? <QuestionAudioControls audio={audio} recording={false} /> : undefined
+            }
+          />
+          <Suspense fallback={<RouteLoading />}>
+            <DesignWorkspace key={designId} sessionId={id} questionId={designId} />
+          </Suspense>
+          <p className="small cb-text-secondary mb-0">
+            <i className="bi bi-shield-check me-1" aria-hidden="true" />
+            {t('room.noScoresNote')}
+          </p>
+          <Transcript turns={earlier} coding={room.coding} />
+        </div>
+      ) : codingId ? (
         <div className="d-flex flex-column gap-4">
           {voiceMode && room.degraded.TTS && <TtsDownBanner room={room} />}
           <InterviewerPanel
@@ -548,6 +588,11 @@ export function RoomPage() {
               <p className="visually-hidden" aria-live="polite">
                 {t(`voice.room.modeNow.${room.mode}`)}
               </p>
+            )}
+            {referenceDesignId && (
+              <Suspense fallback={null}>
+                <DesignReference sessionId={id} questionId={referenceDesignId} />
+              </Suspense>
             )}
             {voiceMode ? (
               <VoiceAnswer

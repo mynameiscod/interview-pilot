@@ -62,6 +62,8 @@ export const DataExportBundle = z.object({
   transcripts: z.array(loose),
   reports: z.array(loose),
   codingAttempts: z.array(loose),
+  /** System design notes and diagrams. */
+  designAttempts: z.array(loose),
   feedback: z.array(loose),
   recordings: z.array(loose),
   shareLinks: z.array(loose),

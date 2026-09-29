@@ -106,7 +106,7 @@ export const SEED_ROLES: SeedRole[] = [
             'Makes explicit trade-offs rather than listing technologies',
           ],
           difficulty: 'HARD',
-          roundTypes: ['PROBLEM_SOLVING'],
+          roundTypes: ['PROBLEM_SOLVING', 'SYSTEM_DESIGN'],
         }),
         c({
           key: 'reliability-debugging',
@@ -592,6 +592,51 @@ export const SEED_TEMPLATES: SeedTemplate[] = [
         {
           type: 'WRAP_UP',
           durationSec: 60,
+          questionCount: 1,
+          difficulty: 'EASY',
+          followUpDepth: 0,
+          minEvidence: 0,
+        },
+      ],
+      ...commonPolicies,
+    },
+  },
+  {
+    key: 'system-design-practice',
+    content: {
+      name: 'System design practice interview',
+      description:
+        'A 45-minute session for experienced engineers: a short technical round, then a system design round on a whiteboard with follow-up questions about the design.',
+      modes: ['TEXT', 'VOICE', 'VIDEO'],
+      rounds: [
+        {
+          type: 'INTRO',
+          durationSec: 120,
+          questionCount: 1,
+          difficulty: 'EASY',
+          followUpDepth: 0,
+          minEvidence: 0,
+        },
+        {
+          type: 'TECHNICAL',
+          durationSec: 480,
+          questionCount: 2,
+          difficulty: 'ADAPTIVE',
+          followUpDepth: 1,
+          minEvidence: 1,
+        },
+        {
+          // The design prompt, then probes about the candidate's design.
+          type: 'SYSTEM_DESIGN',
+          durationSec: 1800,
+          questionCount: 3,
+          difficulty: 'MEDIUM',
+          followUpDepth: 2,
+          minEvidence: 2,
+        },
+        {
+          type: 'WRAP_UP',
+          durationSec: 120,
           questionCount: 1,
           difficulty: 'EASY',
           followUpDepth: 0,

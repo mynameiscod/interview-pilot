@@ -45,6 +45,7 @@ import { createTranscriptStore, createVoiceService } from './modules/voice/voice
 import { createConsentService } from './modules/consent/consent.service.js';
 import { createMediaService } from './modules/media/media.service.js';
 import { codingQuestionText, createCodingService } from './modules/coding/coding.service.js';
+import { createDesignService, designQuestionText } from './modules/design/design.service.js';
 import { createCampaignService } from './modules/campaigns/campaigns.service.js';
 import { createReviewService } from './modules/review/review.service.js';
 import { createQueueAdmin, type QueueAdmin } from './lib/queue-admin.js';
@@ -243,6 +244,11 @@ export function buildContainer(opts: ContainerOptions) {
     ai,
     answer: (userId, payload, o) => liveRef!.answer(userId, payload, o),
   });
+  const design = createDesignService({
+    audit,
+    logger,
+    answer: (userId, payload, o) => liveRef!.answer(userId, payload, o),
+  });
   const live = createLiveInterviewService({
     ai,
     redis,
@@ -258,6 +264,11 @@ export function buildContainer(opts: ContainerOptions) {
       const p = await coding.pickProblem(s, target);
       return p ? { _id: p._id, title: p.content.title, text: codingQuestionText(p) } : null;
     },
+    pickDesignPrompt: async (s, target) => {
+      const p = await design.pickPrompt(s, target);
+      return p ? { _id: p._id, title: p.content.title, text: designQuestionText(p) } : null;
+    },
+    designContext: (s, roundIdx) => design.designContext(s, roundIdx),
   });
   liveRef = live;
   const reports = createReportsService({ storage, jobs, audit });
@@ -332,6 +343,7 @@ export function buildContainer(opts: ContainerOptions) {
     consent,
     media,
     coding,
+    design,
     judge,
     reports,
     campaigns,

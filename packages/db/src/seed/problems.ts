@@ -4,8 +4,10 @@ import {
   type CodingLanguage,
   type ProblemContent,
 } from '@cbi/shared-types';
-import { ProblemModel, type ProblemRecord } from '../models/coding.js';
+import type { Model } from 'mongoose';
+import { ProblemModel } from '../models/coding.js';
 import { PROBLEM_BANK, type SeedProblem } from './problem-bank/index.js';
+import { ensureVersionedSeed, type VersionedDoc } from './versioned.js';
 
 const DEFAULT_LIMITS = { cpuMs: 2000, memoryMb: 256 };
 
@@ -67,52 +69,10 @@ export const SEED_PROBLEMS: { key: string; revision: number; content: ProblemCon
     }).content,
   }));
 
-/** Seeded before revisions were recorded: version 1 of a key, created by nobody. */
-const seededRevision = (v: Pick<ProblemRecord, 'seedRevision' | 'createdBy'>) =>
-  v.createdBy ? null : (v.seedRevision ?? 1);
-
 /**
- * Idempotent, versioned seed of the problem bank. A key with no versions
- * gets its seed as version 1 (active). A key whose versions all came from an
- * older seed revision gets the new revision as the next version, which takes
- * over as the active one if the key had an active version. A key with any
- * admin-created version is left alone. Returns the versions created.
+ * Idempotent, versioned seed of the problem bank (see ensureVersionedSeed:
+ * an admin's version of a key is never replaced). Returns the versions created.
  */
-export async function ensureProblemBank(): Promise<number> {
-  let created = 0;
-  for (const seed of SEED_PROBLEMS) {
-    const versions = await ProblemModel.find(
-      { key: seed.key },
-      { version: 1, active: 1, seedRevision: 1, createdBy: 1 },
-    )
-      .sort({ version: 1 })
-      .lean<ProblemRecord[]>();
-    const revisions = versions.map(seededRevision);
-    if (revisions.includes(null)) continue; // an admin owns this key now
-    const latest = Math.max(0, ...(revisions as number[]));
-    if (latest >= seed.revision) continue;
-    const wasActive = versions.length === 0 || versions.some((v) => v.active);
-    try {
-      const doc = await ProblemModel.create({
-        key: seed.key,
-        version: (versions[versions.length - 1]?.version ?? 0) + 1,
-        active: false,
-        content: seed.content,
-        reason: versions.length ? `Seeded update (revision ${seed.revision})` : 'Seeded default',
-        seedRevision: seed.revision,
-      });
-      if (wasActive) {
-        await ProblemModel.updateMany(
-          { key: seed.key, active: true, _id: { $ne: doc._id } },
-          { $set: { active: false } },
-        );
-        await ProblemModel.updateOne({ _id: doc._id }, { $set: { active: true } });
-      }
-      created++;
-    } catch (err) {
-      // Another replica seeded this version first (unique {key, version}).
-      if ((err as { code?: number }).code !== 11000) throw err;
-    }
-  }
-  return created;
+export function ensureProblemBank(): Promise<number> {
+  return ensureVersionedSeed(ProblemModel as unknown as Model<VersionedDoc>, SEED_PROBLEMS);
 }

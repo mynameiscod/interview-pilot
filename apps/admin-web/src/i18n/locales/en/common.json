@@ -50,7 +50,8 @@
     "settings": "Settings",
     "integrations": "Integrations",
     "account": "Your account",
-    "candidates": "Candidates"
+    "candidates": "Candidates",
+    "designPrompts": "System design prompts"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -511,7 +512,8 @@
       "PROBLEM_SOLVING": "Problem solving",
       "BEHAVIORAL": "Behavioral",
       "CODING": "Coding",
-      "WRAP_UP": "Wrap-up"
+      "WRAP_UP": "Wrap-up",
+      "SYSTEM_DESIGN": "System design"
     },
     "difficulty": {
       "EASY": "Easy",
@@ -865,6 +867,26 @@
       "sqlSetup": "Schema script",
       "sqlSetupHint": "CREATE TABLE statements, run on SQLite before each test. Each test's input holds its rows (INSERT statements); the candidate's query runs after them and its rows are compared with the expected output (columns separated by |, one row per line). SQL problems use the SQL language only.",
       "orderInsensitive": "Rows may come back in any order (compare after sorting the lines)"
+    },
+    "designPrompts": {
+      "title": "System design prompts",
+      "subtitle": "The prompts for system design rounds. Candidates see the prompt and the focus areas; the considerations are the rubric evaluation uses and are never shown to them. Versions are immutable: editing creates a new inactive version, and activating it makes it the one new interviews get.",
+      "new": "New design prompt",
+      "newTitle": "New system design prompt",
+      "newVersionTitle": "New version of {{key}} from v{{version}}",
+      "key": "Prompt key",
+      "titleField": "Title",
+      "prompt": "Prompt",
+      "difficulty": "Difficulty",
+      "tags": "Tags",
+      "focusAreas": "Focus areas (shown to candidates)",
+      "focusHint": "One per line, up to 8: what to think about, such as scale numbers or constraints.",
+      "considerations": "Considerations (the rubric)",
+      "considerationsHint": "One per line, 1–12: what a strong design covers. Never shown to candidates.",
+      "viewerLabel": "Design prompt {{label}}",
+      "activateExplain": "New system design rounds will get {{version}} of {{key}}. Interviews that already have it keep the version they started with.",
+      "deactivateExplain": "New system design rounds will not get {{key}} until another version is activated.",
+      "empty": "No design prompts yet."
     }
   },
   "payments": {

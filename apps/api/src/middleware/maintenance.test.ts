@@ -91,6 +91,7 @@ describe('which requests maintenance mode refuses', () => {
       '/interviews/abc/mode',
       '/interviews/abc/voice/transcribe',
       '/interviews/abc/coding/q1/submit',
+      '/interviews/abc/design/q1/submit',
       '/interviews/abc/media/segments/3',
       '/interviews/abc/media/finalize',
     ]) {

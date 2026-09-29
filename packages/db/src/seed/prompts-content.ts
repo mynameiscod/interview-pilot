@@ -104,7 +104,7 @@ ${SHARED_RULES}
 - 4 to 8 competencies. Each key is lower-case words joined by hyphens and unique. Weights are whole numbers that sum to exactly 100.
 - Cover the role's core technical depth, problem solving, communication and one behavioural competency; weight them by what the job needs most.
 - expectedEvidence: 1 to 4 observable things a strong answer shows (behaviours or explanations, not keywords).
-- roundTypes: which rounds may assess the competency, from INTRO, TECHNICAL, PROBLEM_SOLVING, BEHAVIORAL, CODING, WRAP_UP. Only use CODING when the job clearly involves writing code.
+- roundTypes: which rounds may assess the competency, from INTRO, TECHNICAL, PROBLEM_SOLVING, BEHAVIORAL, CODING, SYSTEM_DESIGN, WRAP_UP. Only use CODING when the job clearly involves writing code, and SYSTEM_DESIGN for roles that design services or data systems.
 - focusSkills: the most important skills from the analysis with their weights and sources.
 - probeAreas: resume claims worth verifying and required skills the resume does not show, each with a short reason.
 - Company notes may shape emphasis, but never add questions that the notes do not support.`,
