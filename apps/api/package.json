@@ -28,6 +28,7 @@
     "@cbi/db": "workspace:*",
     "@cbi/documents": "workspace:*",
     "@cbi/interview-engine": "workspace:*",
+    "@cbi/pdf-fonts": "workspace:*",
     "@cbi/provider-adapters": "workspace:*",
     "@cbi/scoring-core": "workspace:*",
     "@cbi/shared-types": "workspace:*",

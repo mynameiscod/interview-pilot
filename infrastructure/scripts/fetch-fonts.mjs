@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-// Downloads the fonts the worker embeds in report PDFs: Noto Sans (Latin), Noto Sans
+// Downloads the fonts @cbi/pdf-fonts ships (report PDFs, receipts and credit notes): Noto Sans (Latin), Noto Sans
 // Devanagari (Hindi) and Hind Guntur (Telugu).
 //
-//   node infrastructure/scripts/fetch-fonts.mjs          -> fetches missing files into apps/worker/assets/fonts
+//   node infrastructure/scripts/fetch-fonts.mjs          -> fetches missing files into packages/pdf-fonts/fonts
 //   node infrastructure/scripts/fetch-fonts.mjs --force  -> re-downloads every file
 //
-// The fonts are committed, so this is only needed to restore or refresh them. Without them the
-// worker falls back to the standard PDF fonts and non-Latin text prints as "?".
+// The fonts are committed, so this is only needed to restore or refresh them. Without them PDFs
+// fall back to the standard PDF fonts and non-Latin text prints as "?".
 // Static (non-variable) TTFs; all are SIL OFL 1.1.
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const target = join(root, 'apps/worker/assets/fonts');
+const target = join(root, 'packages/pdf-fonts/fonts');
 const force = process.argv.includes('--force');
 
 const NOTO = 'https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts';
