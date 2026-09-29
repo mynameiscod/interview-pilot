@@ -6,6 +6,7 @@ How CareerPilot Interview runs on a VPS, and how to set up a new staging or prod
 - [Backup and restore](runbook-backup-restore.md) (including the restore drill)
 - [Incidents](runbook-incidents.md)
 - [Key rotation](runbook-key-rotation.md)
+- [Observability](observability.md) (error tracking, Prometheus metrics, alert rules, Uptime Kuma)
 - [Launch checklist](launch-checklist.md) (the staging → production gate)
 
 Design background: [design proposal §14](../architecture/00-mvp-design-proposal.md#14-deployment-architecture), decision D3 (self-hosted single-node MongoDB replica set) and §19 (secrets).
@@ -61,11 +62,53 @@ The web images (`candidate-web`, `admin-web`) are not run as containers. On each
 
 - **TLS:** one Let's Encrypt SAN certificate (`/etc/letsencrypt/live/cbi`) per host, TLS 1.2/1.3 with Mozilla "intermediate" ECDHE ciphers and HTTP/2. HSTS is 2 years on production (`includeSubDomains`) and 1 day on staging. Unknown hostnames get `444` on port 80 and a rejected TLS handshake on 443. OCSP stapling is configured, but Let's Encrypt stopped publishing OCSP URLs in 2025, so NGINX logs `"ssl_stapling" ignored` for LE certificates. This is expected (`deploy.sh` filters the warning).
 - **SPAs:** `/assets/*` gets `Cache-Control: public, max-age=31536000, immutable`, `index.html` and client routes get `no-cache`, and `/brand/*` returns 404 when a file is missing. Dotfiles and `.map` files are never served.
-- **API:** `/socket.io/` supports WebSocket upgrade (120 s read timeout; long-polling fallback made sticky with `ip_hash`). Body limits: 2 MB by default and 12 MB on the upload routes (resumes 8 MB, media segments 8 MB, voice clips 10 MB, plus multipart overhead). The app enforces the exact limits. `/healthz` is public and `/readyz` is internal only. The Razorpay webhook route has its own location.
+- **API:** `/socket.io/` supports WebSocket upgrade (120 s read timeout; long-polling fallback made sticky with `ip_hash`). Body limits: 2 MB by default and 12 MB on the upload routes (resumes 8 MB, media segments 8 MB, voice clips 10 MB, plus multipart overhead). The app enforces the exact limits. `/healthz` is public; `/readyz` and the Prometheus `/metrics` endpoint are internal only (NGINX answers 404). The Razorpay webhook route has its own location.
 - **Request ids:** a well-formed incoming `X-Request-Id` is kept (else NGINX generates one), forwarded to the API, returned on static responses and written to NGINX's JSON access log. The API logs and returns the same id.
-- **Security headers:** each site gets its own CSP. The candidate site allows Razorpay Checkout (script `checkout.razorpay.com`, frames `api.razorpay.com` + `checkout.razorpay.com`), Google Identity Services, `connect-src` to the API origin including `wss://`, and `blob:` media for recordings. The admin site gets a stricter one (`default-src 'none'`, no payment frames, camera/microphone denied). All sites also send `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy`. `X-Robots-Tag: noindex, nofollow` goes on the admin host, the API host, every staging host and `/proof/` pages.
+- **Security headers:** each site gets its own CSP. The candidate site allows Razorpay Checkout (script `checkout.razorpay.com`, frames `api.razorpay.com` + `checkout.razorpay.com`), Google Identity Services, `connect-src` to the API origin including `wss://`, and `blob:` media for recordings. The admin site gets a stricter one (`default-src 'none'`, no payment frames, camera/microphone denied). All sites also send `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy`. `X-Robots-Tag: noindex, nofollow` goes on the admin host, the API host, every staging host and `/proof/` pages. Extra `connect-src` origins (the browser error tracker's DSN host) come from `/srv/cbi/nginx/csp-connect.conf`, which `deploy.sh` writes from `CSP_CONNECT_SRC_EXTRA` or the origin of `SENTRY_DSN` ([observability.md](observability.md#browser-errors-and-the-csp)).
 - **Staging access:** the SPAs require an IP from `/srv/cbi/nginx/staging-allowlist.conf` or HTTP basic auth (`/srv/cbi/nginx/htpasswd`). The API allows allowlisted IPs only, because browsers don't send basic-auth credentials on cross-origin calls. `/healthz` and the Razorpay webhook are exempt.
 - **Level-1 rate limits:** 30 r/s per IP (burst 60) on the API, and 5 r/s (burst 20) on upload routes. The limits are generous because many candidates can share one campus NAT; the API applies finer limits in Redis.
+
+### CDN in front of the SPAs (optional: Cloudflare or Bunny CDN)
+
+The candidate and admin sites are static files with content-hashed assets, so a CDN can serve almost all of their bytes from the edge. The API host (`api.*`) must **not** be cached: keep it DNS-only / unproxied, or proxy it with caching bypassed and WebSockets enabled.
+
+What NGINX sends, and what the CDN must respect (verified in `infrastructure/nginx/snippets/spa-locations.conf` and the web image's `infrastructure/docker/spa.nginx.conf`):
+
+| Path                                         | `Cache-Control`                                           | CDN behaviour                                                                            |
+| -------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `/assets/*` (hashed JS/CSS/fonts)            | `public, max-age=31536000, immutable`                     | Cache for a year at the edge and in browsers. Never needs purging (new name = new file). |
+| `/index.html`, `/` and client routes         | `no-cache` (`no-cache, must-revalidate` on `/index.html`) | Revalidate on every request, so a deploy is live on the next navigation.                 |
+| `/brand/*`                                   | `public, max-age=3600`                                    | Cache up to an hour; purge `/brand/*` after replacing brand files.                       |
+| other root files (favicon, manifest, robots) | `no-cache`                                                | Revalidate.                                                                              |
+
+**Cloudflare** (orange-cloud the candidate and admin records only):
+
+1. SSL/TLS mode **Full (strict)**: the origin keeps its Let's Encrypt certificate. Leave **Always Use HTTPS** off (NGINX already redirects everything to HTTPS except `/.well-known/acme-challenge/`); in Full mode Cloudflare forwards plain-HTTP requests to port 80, so HTTP-01 renewals keep working.
+2. Caching → **Respect existing headers** (the default "Standard" cache level honours `Cache-Control`). Do not add a "Cache Everything" rule for HTML: `index.html` must stay `no-cache`.
+3. Turn off Rocket Loader, Auto Minify and Email Obfuscation: they rewrite HTML/JS and break the CSP (`script-src 'self'`) and subresource hashes.
+4. NGINX sees Cloudflare's addresses as the client. For correct per-IP rate limits and logs, restore the visitor address with `set_real_ip_from <Cloudflare ranges>; real_ip_header CF-Connecting-IP;` in `nginx.conf` (the ranges are published at `https://www.cloudflare.com/ips/`), and lock ports 80/443 on the VPS to those ranges with ufw.
+5. HSTS stays at the origin (NGINX sends it); Cloudflare's own HSTS setting can stay off.
+
+**Bunny CDN** (a pull zone per site):
+
+1. Origin URL `https://interview.codebegun.com` (admin: `https://admin.interview.codebegun.com`), with "Forward host header" on so NGINX picks the right server block, and a custom hostname plus Bunny's free certificate on the pull zone.
+2. Caching: **Respect origin Cache-Control**, "Cache error responses" **off** (a missing `/assets/*` chunk or `/brand/*` file must not be cached as a 404), query-string sorting on.
+3. Point the site's DNS at the pull zone (CNAME). As with Cloudflare, restore the client address from Bunny's `X-Real-IP`/`X-Forwarded-For` (`set_real_ip_from` Bunny's edge list) if per-IP limits matter for the SPAs.
+
+After switching a site to a CDN, check `curl -sI https://interview.codebegun.com/assets/<file>.js` shows the year-long `Cache-Control` and a CDN hit header on the second request, and that `curl -sI https://interview.codebegun.com/` still shows `no-cache` and the CSP/HSTS headers. No purge is needed on deploys: the old `index.html` is never cached and old assets stay valid.
+
+### Optional compose profiles (high availability, uptime monitoring)
+
+Off by default. Enable them per host with `COMPOSE_PROFILES` in `/srv/cbi/sizing.env`; `deploy.sh` then starts the extra data-store members before `mongo-init`, which adds them to the replica set:
+
+| Profile       | Adds                                       | Also set in `sizing.env` / `.env.<env>`                                                                                                   |
+| ------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `mongo-psa`   | `mongo-2` (secondary) + `mongo-arbiter`    | `MONGO_RS_MEMBERS=mongo:27017,mongo-2:27017`, `MONGO_RS_ARBITER=mongo-arbiter:27017`; `MONGODB_URI` host list `mongo:27017,mongo-2:27017` |
+| `mongo-3node` | `mongo-2` + `mongo-3` (three data-bearing) | `MONGO_RS_MEMBERS=mongo:27017,mongo-2:27017,mongo-3:27017`; `MONGODB_URI` lists all three                                                 |
+| `redis-ha`    | `redis-replica` + `redis-sentinel-1..3`    | `.env.<env>`: `REDIS_SENTINELS=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379` (the apps then follow failovers)     |
+| `uptime-kuma` | Uptime Kuma on `127.0.0.1:3001`            | Start it once: `$DC --profile uptime-kuma up -d uptime-kuma` ([observability.md](observability.md#uptime-kuma))                           |
+
+Example: `COMPOSE_PROFILES=mongo-3node,redis-ha`. On one VPS these profiles protect against a crashed or corrupted process and allow rolling restarts of a member; they do not survive the loss of the host (backups do, see [RPO/RTO](runbook-backup-restore.md#5-point-in-time-rpo-and-rto)). Each extra data-bearing member (`mongo-2`, `mongo-3`) gets the same `MONGO_*` limits as `mongo`, so lower `MONGO_MEM`, `MONGO_MEM_RESERVED` and `MONGO_WT_CACHE_GB` in `sizing.env` first (on a KVM 8, e.g. `6g`/`2g`/`3` for `mongo-psa` and `4g`/`1g`/`2` for `mongo-3node`); the arbiter needs 512 MB and the Redis HA services about 3.5 GB more. Prefer `mongo-3node` over `mongo-psa`: with an arbiter, `mongo-init` sets the default write concern to `w:1`, so a write acknowledged just before a failover can be rolled back. Members are only ever added automatically; remove one with `rs.remove()` by hand.
 
 ### Sizing (Hostinger KVM 8: 8 vCPU / 32 GB)
 
@@ -88,8 +131,9 @@ Steady-state limits add up to about 24 GB, which leaves headroom for the page ca
   .env.datastores              Mongo/Redis secrets (root:deploy 0640; template datastores.env.example)
   .env.backup                  backup settings     (root:deploy 0640; template backup.env.example)
   secrets/mongo-keyfile        replica-set keyfile (0400)
-  state/                       deploy.state (tags, colour), compose.env, history.log, deploy.lock
-  nginx/                       upstream-api.conf (blue/green), staging-allowlist.conf, htpasswd
+  state/                       deploy.state (tags, colour), compose.env, history.log, deploy.lock,
+                               backup-chain.state (incremental backups), metrics/ (backup textfile metrics)
+  nginx/                       upstream-api.conf (blue/green), csp-connect.conf, staging-allowlist.conf, htpasswd
   www/<app>/releases/<tag>/    SPA files; current -> releases/<tag>, previous -> releases/<old>
   letsencrypt/  certbot-www/   certificates, ACME webroot
   backup/age-recipients.txt    age public key(s) for backups
@@ -170,7 +214,8 @@ After that, renewals run automatically (certbot service every 12 h, NGINX reload
    - `SSH_KNOWN_HOSTS`: `ssh-keyscan -t ed25519 <host>`, verified out of band
    - optionally `GHCR_PULL_TOKEN`, a PAT with `read:packages`. Without it the workflow token is used, and it expires after the job, so later manual pulls fall back to images already on the host.
    - staging only: `STAGING_BASIC_AUTH` (`user:password`)
-3. Optional repository variables: `VITE_GOOGLE_CLIENT_ID_STAGING` and `VITE_GOOGLE_CLIENT_ID`.
+3. Optional repository variables: `VITE_GOOGLE_CLIENT_ID_STAGING` and `VITE_GOOGLE_CLIENT_ID`; `VITE_SENTRY_DSN_STAGING` and `VITE_SENTRY_DSN` for browser error tracking ([observability.md](observability.md)). Images carry the commit sha as their error-tracking release (`GIT_SHA` build argument).
+   The workflow's **brand gate** job runs `pnpm brand:check` (no `--report`) and the production job needs it, so production deploys are blocked until every official brand asset is in the repository ([brand-assets-required.md](../product/brand-assets-required.md#4-release-gate)). Staging only reports the gap.
 4. Protect the default branch (`master`) so the CI workflow must pass. The deploy workflow's `ci-gate` job also refuses a commit without a successful CI run. **Note:** `ci.yml` currently runs on pushes to `main` only, so it must also trigger on `master`. Otherwise tagged `master` commits have no CI run and the gate fails.
 
 ### 3.6 First deploy
@@ -228,7 +273,8 @@ Then, in a browser:
 2. Run the device check and one practice interview.
 3. Make a ₹1 test purchase on staging (Razorpay test keys), and confirm the webhook arrives (Admin → Purchases).
 4. Check Admin → System → Health, Queues and AI provider health.
-5. Enable backups: `sudo systemctl enable --now cbi-backup.timer`, run one backup by hand, and run a restore drill ([runbook](runbook-backup-restore.md)).
+5. Enable backups: `sudo systemctl enable --now cbi-backup.timer cbi-backup-incremental.timer`, run one full and one incremental backup by hand, and run a restore drill ([runbook](runbook-backup-restore.md)).
+6. Set up monitoring and alerts ([observability.md](observability.md)).
 
 Finish with the [launch checklist](launch-checklist.md).
 

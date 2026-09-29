@@ -10,6 +10,12 @@
 #   IMAGE_REGISTRY    e.g. ghcr.io/codebegun/interview-pilot
 #   IMAGE_TAG         default tag; API_BLUE_TAG / API_GREEN_TAG / WORKER_TAG override it
 #   WORKER_REPLICAS   number of worker containers (default 2)
+#   COMPOSE_PROFILES  optional profiles (set in ${CBI_HOME}/sizing.env; all off by default):
+#                       mongo-psa     + mongo-2 (secondary) and mongo-arbiter
+#                       mongo-3node   + mongo-2 and mongo-3 (three data-bearing members)
+#                       redis-ha      + redis-replica and three redis-sentinel-N
+#                       uptime-kuma   Uptime Kuma status/uptime monitor on 127.0.0.1:3001
+#   MONGO_RS_MEMBERS / MONGO_RS_ARBITER   replica-set members for mongo-init (HA profiles)
 #   *_CPUS / *_MEM    resource limits per service (defaults below fit a KVM 8); a host
 #                     overrides them in ${CBI_HOME}/sizing.env (see infrastructure/env/sizing-*.env)
 #
@@ -234,7 +240,8 @@ services:
   # ------------------------------------------------------------ MongoDB -----
   # Single-node replica set (transactions, design D3) with authentication and a
   # keyfile. No host port: reach it with `docker compose exec mongo mongosh`.
-  mongo:
+  # The HA profiles below add members to the same replica set (rs0).
+  mongo: &mongo-node
     image: mongo:8.0
     env_file:
       - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
@@ -301,6 +308,11 @@ services:
     env_file:
       - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
         required: true
+    environment:
+      # Members of rs0 (host:port, comma-separated). The HA profiles need every member here,
+      # e.g. mongo:27017,mongo-2:27017 (+ MONGO_RS_ARBITER=mongo-arbiter:27017) for mongo-psa.
+      MONGO_RS_MEMBERS: ${MONGO_RS_MEMBERS:-mongo:27017}
+      MONGO_RS_ARBITER: ${MONGO_RS_ARBITER:-}
     command:
       - bash
       - -c
@@ -324,10 +336,49 @@ services:
     restart: 'no'
     logging: *logging
 
+  # ------------------------------------------------------ MongoDB HA (opt) -
+  # Off by default. On one VPS these protect against a crashed or corrupted mongod, not
+  # against losing the host: for that, run the extra members on a second VPS (same
+  # keyfile, reachable over a private network). docs/deployment/runbook-backup-restore.md.
+  mongo-2:
+    <<: *mongo-node
+    profiles: [mongo-psa, mongo-3node]
+    volumes:
+      - mongo-2-data:/data/db
+      - mongo-2-config:/data/configdb
+
+  mongo-3:
+    <<: *mongo-node
+    profiles: [mongo-3node]
+    volumes:
+      - mongo-3-data:/data/db
+      - mongo-3-config:/data/configdb
+
+  # Votes in elections, holds no data (PSA). Prefer mongo-3node when disk allows:
+  # with an arbiter, majority writes stall while the secondary is down.
+  mongo-arbiter:
+    <<: *mongo-node
+    profiles: [mongo-psa]
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        install -m 400 -o mongodb -g mongodb /run/secrets/mongo_keyfile /tmp/mongo-keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all \
+          --keyFile /tmp/mongo-keyfile --wiredTigerCacheSizeGB 0.25
+    volumes:
+      - mongo-arbiter-data:/data/db
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
   # ------------------------------------------------------------ Redis -------
   # BullMQ queues + Socket.IO adapter + locks. AOF persistence and noeviction:
   # BullMQ must never have keys evicted (infrastructure/redis/redis.conf).
-  redis:
+  redis: &redis-node
     image: redis:8-alpine
     env_file:
       - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
@@ -367,6 +418,97 @@ services:
           memory: ${REDIS_MEM:-3g}
     logging: *logging
 
+  # -------------------------------------------------------- Redis HA (opt) -
+  # Off by default (profile redis-ha). A replica plus three sentinels that promote it
+  # when the master fails. The API and workers follow the master through the sentinels
+  # when REDIS_SENTINELS is set in .env.<env> (see production.env.example).
+  redis-replica:
+    <<: *redis-node
+    profiles: [redis-ha]
+    command:
+      - sh
+      - -c
+      - >-
+        exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD"
+        --masterauth "$$REDIS_PASSWORD" --replicaof redis 6379
+        --replica-announce-ip redis-replica --maxmemory "$${REDIS_MAXMEMORY:-2gb}"
+    volumes:
+      - ./infrastructure/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-replica-data:/data
+
+  redis-sentinel-1: &redis-sentinel
+    image: redis:8-alpine
+    profiles: [redis-ha]
+    env_file:
+      - path: ${CBI_HOME:-/srv/cbi}/.env.datastores
+        required: true
+    # Sentinel rewrites its config file, so it is generated on the tmpfs at start.
+    command:
+      - sh
+      - -c
+      - |
+        cat >/tmp/sentinel.conf <<EOF
+        port 26379
+        sentinel resolve-hostnames yes
+        sentinel announce-hostnames yes
+        requirepass $$REDIS_PASSWORD
+        sentinel monitor cbi redis 6379 2
+        sentinel auth-pass cbi $$REDIS_PASSWORD
+        sentinel down-after-milliseconds cbi 5000
+        sentinel failover-timeout cbi 60000
+        sentinel parallel-syncs cbi 1
+        EOF
+        exec redis-sentinel /tmp/sentinel.conf
+    user: 'redis'
+    <<: *hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    networks:
+      - internal
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli -p 26379 ping | grep -q PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128m
+    logging: *logging
+
+  redis-sentinel-2: *redis-sentinel
+  redis-sentinel-3: *redis-sentinel
+
+  # ------------------------------------------------------ Uptime Kuma (opt) -
+  # Off by default (profile uptime-kuma). External-style checks from inside the host:
+  # public URLs, certificate expiry, /readyz over the Docker network. Bound to localhost
+  # only; open it through an SSH tunnel (ssh -L 3001:127.0.0.1:3001 <host>).
+  # Start: docker compose ... --profile uptime-kuma up -d uptime-kuma
+  uptime-kuma:
+    image: louislam/uptime-kuma:1.23.16
+    profiles: [uptime-kuma]
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - '127.0.0.1:3001:3001'
+    volumes:
+      - uptime-kuma-data:/app/data
+    networks:
+      - edge
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+    logging: *logging
+
 networks:
   edge:
     driver: bridge
@@ -378,6 +520,14 @@ volumes:
   mongo-data:
   mongo-config:
   redis-data:
+  # Optional profiles (created only when the profile is used).
+  mongo-2-data:
+  mongo-2-config:
+  mongo-3-data:
+  mongo-3-config:
+  mongo-arbiter-data:
+  redis-replica-data:
+  uptime-kuma-data:
 
 secrets:
   mongo_keyfile:

@@ -1,0 +1,12 @@
+# Every hour at :15 (RPO ≈ 1 h). The nightly full backup (cbi-backup.timer, 20:30 UTC)
+# starts a new chain; an incremental that finds a running full backup waits for it.
+[Unit]
+Description=CareerPilot Interview - hourly incremental MongoDB backup
+
+[Timer]
+OnCalendar=*-*-* *:15:00 UTC
+RandomizedDelaySec=2m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

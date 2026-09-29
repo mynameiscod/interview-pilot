@@ -3,6 +3,8 @@
 #
 # Usage:
 #   restore.sh <archive.gz.age> --identity <age-identity-file> [options]
+#   restore.sh <full.archive.gz.age> --incremental <inc1.oplog.bson.gz.age> \
+#              --incremental <inc2...> --identity <file>          # full + hourly oplog slices
 #
 # Always restores into a throwaway "scratch" mongo container with no network first. The
 # archive is decrypted to a private temp dir (age authenticates every chunk, so a
@@ -11,6 +13,10 @@
 # and infrastructure/mongo/verify-restore.js checks collection counts and indexes
 # against the manifest, plus sanity queries (users / auditLogs / interviewSessions
 # non-empty, users email index present). The scratch container is removed afterwards.
+# With --incremental, each oplog slice from backup.sh --mode incremental is then
+# replayed on top of the full restore, in the order given (name order = time order;
+# they must all belong to that full backup and none may be skipped), and the manifest
+# of the last slice is used for verification.
 #
 # Options:
 #   --identity FILE        age identity (private key). Or BACKUP_AGE_IDENTITY_FILE.
@@ -21,6 +27,10 @@
 #   --require-nonempty "a b c"   collections that must not be empty
 #   --require-super-admin  also require at least one SUPER_ADMIN user
 #   --mongo-image IMAGE    scratch image (default mongo:8.0)
+#   --incremental FILE     an encrypted oplog slice to replay after the full restore
+#                          (repeatable; give them in name order)
+#   --oplog-limit T[:I]    point-in-time: stop replaying the LAST slice before this oplog
+#                          timestamp (seconds since the epoch, e.g. $(date -u -d '2026-09-29 10:15' +%s))
 #
 # DISASTER RECOVERY into the live stack (overwrites the app database!):
 #   --into-compose --i-understand-this-overwrites-data
@@ -48,6 +58,8 @@ REQUIRE_NONEMPTY="${RESTORE_REQUIRE_NONEMPTY:-users auditLogs interviewSessions}
 REQUIRE_SUPER_ADMIN=0
 MONGO_IMAGE="${RESTORE_MONGO_IMAGE:-mongo:8.0}"
 INTO_COMPOSE=0
+INCREMENTALS=()
+OPLOG_LIMIT=""
 CONFIRMED=0
 VERIFY_JS="$APP_DIR/infrastructure/mongo/verify-restore.js"
 
@@ -85,6 +97,14 @@ while [ $# -gt 0 ]; do
       REQUIRE_SUPER_ADMIN=1
       shift
       ;;
+    --incremental)
+      INCREMENTALS+=("${2:-}")
+      shift 2
+      ;;
+    --oplog-limit)
+      OPLOG_LIMIT="${2:-}"
+      shift 2
+      ;;
     --mongo-image)
       MONGO_IMAGE="${2:-}"
       shift 2
@@ -121,9 +141,31 @@ if [ "$INTO_COMPOSE" -eq 1 ] && [ "$CONFIRMED" -eq 0 ]; then
 fi
 require_cmd docker age
 
+for inc in "${INCREMENTALS[@]}"; do
+  [ -f "$inc" ] || die "incremental not found: $inc"
+  base="$(basename "${ARCHIVE%.archive.gz.age}")"
+  [[ "$(basename "$inc")" == "$base".inc-*.oplog.bson.gz.age ]] ||
+    die "$(basename "$inc") does not belong to $(basename "$ARCHIVE")"
+done
+if [ -n "$OPLOG_LIMIT" ]; then
+  [[ "$OPLOG_LIMIT" =~ ^[0-9]+(:[0-9]+)?$ ]] || die "--oplog-limit must be <seconds>[:<increment>]"
+  [ "${#INCREMENTALS[@]}" -gt 0 ] || die "--oplog-limit needs at least one --incremental"
+  [[ "$OPLOG_LIMIT" == *:* ]] || OPLOG_LIMIT="$OPLOG_LIMIT:0"
+fi
+
 if [ -z "$MANIFEST" ]; then
-  candidate="${ARCHIVE%.archive.gz.age}.manifest.json.age"
+  # After incrementals, the counts to compare against are those of the last slice.
+  if [ "${#INCREMENTALS[@]}" -gt 0 ] && [ -z "$OPLOG_LIMIT" ]; then
+    last="${INCREMENTALS[${#INCREMENTALS[@]}-1]}"
+    candidate="${last%.oplog.bson.gz.age}.manifest.json.age"
+  else
+    candidate="${ARCHIVE%.archive.gz.age}.manifest.json.age"
+  fi
   [ -f "$candidate" ] && MANIFEST="$candidate"
+  if [ -n "$OPLOG_LIMIT" ]; then
+    # A point-in-time restore matches no manifest: only the sanity checks run.
+    MANIFEST=""
+  fi
 fi
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cbi-restore.XXXXXX")"
@@ -181,6 +223,32 @@ fi
 tail -n 1 "$WORK_DIR/mongorestore.log" | sed 's/^/    /'
 docker exec "$SCRATCH" rm -f /tmp/dump.archive.gz
 
+# 3b. Incremental oplog slices -------------------------------------------------------------------------
+# Each slice is the raw local.oplog.rs entries after the previous backup; mongorestore
+# replays an oplog.bson at the top of an otherwise empty dump directory.
+n=0
+for inc in "${INCREMENTALS[@]}"; do
+  n=$((n + 1))
+  dir="$WORK_DIR/inc-$n"
+  mkdir -p "$dir"
+  log "decrypting and replaying $(basename "$inc") ($n/${#INCREMENTALS[@]})"
+  age -d -i "$IDENTITY" "$inc" | gzip -dc >"$dir/oplog.bson" ||
+    die "incremental $(basename "$inc") failed to decrypt or decompress (wrong key, corrupted or truncated)"
+  limit_args=()
+  if [ -n "$OPLOG_LIMIT" ] && [ "$n" -eq "${#INCREMENTALS[@]}" ]; then
+    limit_args=(--oplogLimit "$OPLOG_LIMIT")
+    log "point-in-time: replaying up to oplog timestamp $OPLOG_LIMIT"
+  fi
+  docker cp "$dir" "$SCRATCH:/tmp/inc-$n" >/dev/null
+  if ! docker exec "$SCRATCH" mongorestore --host 127.0.0.1 --oplogReplay "${limit_args[@]}" \
+    --stopOnError --dir "/tmp/inc-$n" >"$WORK_DIR/mongorestore-inc.log" 2>&1; then
+    tail -n 20 "$WORK_DIR/mongorestore-inc.log" >&2
+    die "oplog replay failed for $(basename "$inc")"
+  fi
+  docker exec "$SCRATCH" rm -rf "/tmp/inc-$n"
+  rm -rf "$dir"
+done
+
 # 4. Verify -------------------------------------------------------------------------------------------------
 # Streamed through `docker exec` rather than `docker cp`: the live mongo has a read-only
 # root filesystem and only its /tmp tmpfs is writable (from inside the container).
@@ -200,7 +268,7 @@ log "verifying the scratch restore"
 verify "$SCRATCH" || die "verification failed"
 
 if [ "$INTO_COMPOSE" -eq 0 ]; then
-  log "restore OK: $(basename "$ARCHIVE") verified in scratch container $SCRATCH"
+  log "restore OK: $(basename "$ARCHIVE") + ${#INCREMENTALS[@]} incremental(s) verified in scratch container $SCRATCH"
   exit 0
 fi
 

@@ -1,6 +1,7 @@
-# Nightly encrypted MongoDB backup (infrastructure/scripts/backup.sh).
+# Nightly FULL encrypted MongoDB backup (infrastructure/scripts/backup.sh --mode full).
+# Hourly incrementals on top of it: cbi-backup-incremental.timer.
 # Installed by provision.sh; enable once /srv/cbi/.env.backup is filled in:
-#   sudo systemctl enable --now cbi-backup.timer
+#   sudo systemctl enable --now cbi-backup.timer cbi-backup-incremental.timer
 #   journalctl -u cbi-backup.service      # logs
 #   sudo systemctl start cbi-backup.service   # run now
 [Unit]
@@ -12,7 +13,7 @@ After=network-online.target docker.service
 Type=oneshot
 User=deploy
 Environment=CBI_HOME=/srv/cbi
-ExecStart=/bin/bash /srv/cbi/app/infrastructure/scripts/backup.sh --config /srv/cbi/.env.backup
+ExecStart=/bin/bash /srv/cbi/app/infrastructure/scripts/backup.sh --config /srv/cbi/.env.backup --mode full
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

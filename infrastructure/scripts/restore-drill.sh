@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Automated restore test (design §14: monthly restore into a scratch container).
-# Fetches the newest backup from the backup target, decrypts it, restores it into a
-# throwaway mongo container, verifies counts/indexes/sanity queries, tears it down.
+# Fetches the newest full backup from the backup target together with its hourly
+# incremental oplog slices, decrypts them, restores the full dump into a throwaway
+# mongo container, replays the slices, verifies counts/indexes/sanity queries against
+# the last slice's manifest and tears the container down. This exercises the whole
+# chain a real disaster recovery would use.
 #
 # Usage:
 #   restore-drill.sh [--config /srv/cbi/.env.backup] [--kind daily|weekly] [--archive FILE]
@@ -11,7 +14,12 @@
 #                              that may hold it (recommended: the staging VPS or an ops
 #                              machine, with the backup zone's READ-ONLY password),
 #                              not the production VPS.
-#   BACKUP_MAX_AGE_HOURS       fail if the newest backup is older than this (default 30)
+#   BACKUP_MAX_AGE_HOURS       fail if the newest FULL backup is older than this (default 30)
+#   BACKUP_MAX_INCREMENTAL_AGE_HOURS
+#                              fail if the newest restore point (full or incremental) is
+#                              older than this (default 0 = not checked; 3 with hourly
+#                              incrementals enabled)
+#   BACKUP_DRILL_INCREMENTALS  0 = restore the full backup only (default 1)
 # Optional: RESTORE_REQUIRE_NONEMPTY, RESTORE_TOLERANCE_PCT (see restore.sh).
 #
 # Exit: 0 on a passing drill; non-zero (and BACKUP_ALERT_URL notified) otherwise.
@@ -49,12 +57,16 @@ done
 
 read_env_keys "$CONFIG" BACKUP_TARGET BUNNY_BACKUP_ZONE BUNNY_BACKUP_REGION_HOST \
   BUNNY_BACKUP_ACCESS_KEY BUNNY_BACKUP_READONLY_KEY BUNNY_BACKUP_PREFIX \
-  BACKUP_AGE_IDENTITY_FILE BACKUP_ALERT_URL BACKUP_MAX_AGE_HOURS
+  BACKUP_AGE_IDENTITY_FILE BACKUP_ALERT_URL BACKUP_MAX_AGE_HOURS \
+  BACKUP_MAX_INCREMENTAL_AGE_HOURS BACKUP_DRILL_INCREMENTALS
 BACKUP_TARGET="${BACKUP_TARGET:-bunny}"
 BUNNY_BACKUP_REGION_HOST="${BUNNY_BACKUP_REGION_HOST:-storage.bunnycdn.com}"
 BUNNY_BACKUP_PREFIX="${BUNNY_BACKUP_PREFIX:-default}"
 BACKUP_ALERT_URL="${BACKUP_ALERT_URL:-}"
 BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-30}"
+BACKUP_MAX_INCREMENTAL_AGE_HOURS="${BACKUP_MAX_INCREMENTAL_AGE_HOURS:-0}"
+BACKUP_DRILL_INCREMENTALS="${BACKUP_DRILL_INCREMENTALS:-1}"
+INCREMENTALS=()
 : "${BACKUP_AGE_IDENTITY_FILE:?BACKUP_AGE_IDENTITY_FILE is required for the drill}"
 READ_KEY="${BUNNY_BACKUP_READONLY_KEY:-${BUNNY_BACKUP_ACCESS_KEY:-}}"
 
@@ -87,6 +99,24 @@ if [ -z "$ARCHIVE" ]; then
       curl -fsS -m 300 -H "AccessKey: $READ_KEY" -o "$WORK_DIR/$stamp.manifest.json.age" \
         "$(bunny_url "$KIND/$stamp.manifest.json.age")" || warn "manifest missing for $latest"
       ARCHIVE="$WORK_DIR/$latest"
+      if [ "$KIND" = daily ] && [ "$BACKUP_DRILL_INCREMENTALS" != 0 ]; then
+        # Name order is time order; every slice of this chain is needed, none may be skipped.
+        incs="$(curl -fsS -m 60 -H "AccessKey: $READ_KEY" -H 'Accept: application/json' "$(bunny_url "incremental/")" |
+          jq -r '.[] | select(.IsDirectory | not) | .ObjectName' |
+          { grep -E "^${stamp//./\\.}\.inc-[0-9]{8}T[0-9]{6}Z\.oplog\.bson\.gz\.age$" || true; } | sort)" ||
+          die "could not list incremental/"
+        for inc in $incs; do
+          curl -fsS -m 1800 -H "AccessKey: $READ_KEY" -o "$WORK_DIR/$inc" "$(bunny_url "incremental/$inc")"
+          INCREMENTALS+=("$WORK_DIR/$inc")
+        done
+        if [ "${#INCREMENTALS[@]}" -gt 0 ]; then
+          last="${INCREMENTALS[${#INCREMENTALS[@]}-1]}"
+          name="$(basename "${last%.oplog.bson.gz.age}").manifest.json.age"
+          curl -fsS -m 300 -H "AccessKey: $READ_KEY" -o "$WORK_DIR/$name" "$(bunny_url "incremental/$name")" ||
+            warn "manifest missing for $(basename "$last")"
+          log "downloaded ${#INCREMENTALS[@]} incremental slice(s)"
+        fi
+      fi
       ;;
     local:?*)
       dir="${BACKUP_TARGET#local:}/$BUNNY_BACKUP_PREFIX/$KIND"
@@ -97,6 +127,12 @@ if [ -z "$ARCHIVE" ]; then
       done
       [ -n "$latest" ] || die "no archives found in $dir"
       ARCHIVE="$dir/$latest"
+      if [ "$KIND" = daily ] && [ "$BACKUP_DRILL_INCREMENTALS" != 0 ]; then
+        base="${latest%.archive.gz.age}"
+        for f in "${BACKUP_TARGET#local:}/$BUNNY_BACKUP_PREFIX/incremental/$base".inc-*.oplog.bson.gz.age; do
+          if [ -e "$f" ]; then INCREMENTALS+=("$f"); fi
+        done
+      fi
       ;;
     *) die "BACKUP_TARGET must be bunny or local:<dir>" ;;
   esac
@@ -113,8 +149,22 @@ if [ -n "$stamp_part" ]; then
     [ "$age_h" -le "$BACKUP_MAX_AGE_HOURS" ] || die "newest backup is ${age_h}h old: nightly backups are not running"
   fi
 fi
+if [ "$BACKUP_MAX_INCREMENTAL_AGE_HOURS" -gt 0 ]; then
+  newest="$ARCHIVE"
+  [ "${#INCREMENTALS[@]}" -eq 0 ] || newest="${INCREMENTALS[${#INCREMENTALS[@]}-1]}"
+  point="$(basename "$newest" | grep -Eo '[0-9]{8}T[0-9]{6}Z' | tail -n 1 || true)"
+  iso="${point:0:4}-${point:4:2}-${point:6:2}T${point:9:2}:${point:11:2}:${point:13:2}Z"
+  if [ -n "$point" ] && created="$(date -u -d "$iso" +%s 2>/dev/null)"; then
+    age_h=$((($(date -u +%s) - created) / 3600))
+    log "newest restore point: $point (${age_h}h old, limit ${BACKUP_MAX_INCREMENTAL_AGE_HOURS}h)"
+    [ "$age_h" -le "$BACKUP_MAX_INCREMENTAL_AGE_HOURS" ] ||
+      die "newest restore point is ${age_h}h old: hourly incremental backups are not running"
+  fi
+fi
 
 # 3. Restore into scratch + verify --------------------------------------------------------------------
 started=$SECONDS
-bash "$(dirname "${BASH_SOURCE[0]}")/restore.sh" "$ARCHIVE" --identity "$BACKUP_AGE_IDENTITY_FILE"
-log "restore drill PASSED in $((SECONDS - started))s: $(basename "$ARCHIVE")"
+inc_args=()
+for inc in "${INCREMENTALS[@]}"; do inc_args+=(--incremental "$inc"); done
+bash "$(dirname "${BASH_SOURCE[0]}")/restore.sh" "$ARCHIVE" "${inc_args[@]}" --identity "$BACKUP_AGE_IDENTITY_FILE"
+log "restore drill PASSED in $((SECONDS - started))s: $(basename "$ARCHIVE") + ${#INCREMENTALS[@]} incremental(s)"

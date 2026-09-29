@@ -24,7 +24,8 @@
 # upgrades; Docker Engine + compose plugin from Docker's apt repo with log rotation and
 # live-restore; swap; sysctl/ulimit tuning for many WebSocket connections and
 # MongoDB/Redis; /srv/cbi layout, MongoDB keyfile, env templates; disk alert timer;
-# backup/restore-drill systemd units (enabled later, once .env.backup is filled in).
+# backup (nightly full + hourly incremental) and restore-drill systemd units (enabled
+# later, once .env.backup is filled in).
 set -euo pipefail
 
 CBI_SCRIPT=provision
@@ -310,6 +311,8 @@ for f in staging-allowlist.conf htpasswd; do
 done
 [ -f "$CBI_HOME/nginx/upstream-api.conf" ] ||
   install -m 644 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$TARGET_APP_DIR/infrastructure/nginx/upstream-api.conf" "$CBI_HOME/nginx/upstream-api.conf"
+[ -f "$CBI_HOME/nginx/csp-connect.conf" ] ||
+  install -m 644 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$TARGET_APP_DIR/infrastructure/nginx/csp-connect.conf" "$CBI_HOME/nginx/csp-connect.conf"
 [ -f "$CBI_HOME/state/deploy.state" ] ||
   install -m 640 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /dev/stdin "$CBI_HOME/state/deploy.state" <<<"CBI_ENV_STATE=$ENV_NAME"
 
@@ -325,6 +328,7 @@ ALERT_EMAIL=$ALERT_EMAIL
 EOF
 fi
 for unit in cbi-disk-alert.service cbi-disk-alert.timer cbi-backup.service cbi-backup.timer \
+  cbi-backup-incremental.service cbi-backup-incremental.timer \
   cbi-restore-drill.service cbi-restore-drill.timer; do
   sed -e "s#/srv/cbi#$CBI_HOME#g" -e "s#^User=deploy#User=$DEPLOY_USER#" \
     "$TARGET_APP_DIR/infrastructure/systemd/$unit" >"/etc/systemd/system/$unit"
@@ -341,5 +345,5 @@ Next steps (docs/deployment/production.md):
      (replace every REPLACE_WITH_* value) and $CBI_HOME/backup/age-recipients.txt.
   3. As $DEPLOY_USER: $TARGET_APP_DIR/infrastructure/scripts/certs.sh issue --env $ENV_NAME --email <ops email>
   4. As $DEPLOY_USER: docker login ghcr.io, then $TARGET_APP_DIR/infrastructure/scripts/deploy.sh <tag> --env $ENV_NAME
-  5. Seed the first super admin, then: systemctl enable --now cbi-backup.timer
+  5. Seed the first super admin, then: systemctl enable --now cbi-backup.timer cbi-backup-incremental.timer
 EOF

@@ -138,6 +138,10 @@ write_compose_env() {
     if [ -f "$SIZING_FILE" ]; then
       # Resource limits only: KEY=value with simple values; WORKER_REPLICAS is set above.
       grep -E '^[A-Z][A-Z0-9_]*_(CPUS|MEM|MEM_RESERVED|GB|MAXMEMORY)=[A-Za-z0-9.]+$' "$SIZING_FILE" || true
+      # Optional compose profiles (HA data stores, uptime-kuma) and the replica-set
+      # members mongo-init must configure for them. Off unless the host sets them.
+      grep -E '^COMPOSE_PROFILES=[a-z0-9,-]*$' "$SIZING_FILE" || true
+      grep -E '^MONGO_RS_(MEMBERS|ARBITER)=[A-Za-z0-9.,:-]*$' "$SIZING_FILE" || true
     fi
   } >"$tmp"
   mv -f "$tmp" "$COMPOSE_ENV_FILE"
@@ -149,6 +153,13 @@ dc() {
   local files=(-f "$COMPOSE_FILE_PATH")
   if [ -n "${COMPOSE_OVERRIDE_FILE:-}" ]; then files+=(-f "$COMPOSE_OVERRIDE_FILE"); fi
   docker compose "${files[@]}" --env-file "$COMPOSE_ENV_FILE" "$@"
+}
+
+# MongoDB/Redis services of the active compose profiles: mongo and redis, plus
+# mongo-2/mongo-3/mongo-arbiter and redis-replica/redis-sentinel-N when enabled.
+datastore_services() {
+  dc config --services 2>/dev/null | grep -E '^(mongo|redis)(-[0-9]+|-arbiter|-replica|-sentinel-[0-9]+)?$' |
+    sort | tr '\n' ' '
 }
 
 other_color() {
