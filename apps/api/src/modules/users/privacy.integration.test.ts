@@ -122,9 +122,14 @@ describe('signed-in devices', () => {
     const list = (await as(b.accessToken).get('/auth/sessions').expect(200)).body.data;
     expect(list).toHaveLength(2);
     const other = list.find((s: { current: boolean }) => !s.current);
+    await as(a.accessToken).get('/users/me').expect(200);
     await as(b.accessToken).delete(`/auth/sessions/${other.id}`).expect(204);
     await refresh(a.agent).expect(401);
+    // Its access token is refused at once, not only when it expires.
+    const res = await as(a.accessToken).get('/users/me').expect(401);
+    expect(res.body.error.message).toBe('Your session has ended. Please sign in again.');
     await refresh(b.agent).expect(200);
+    await as(b.accessToken).get('/users/me').expect(200);
   });
 
   it('ends a session at its absolute lifetime however often it refreshes', async () => {

@@ -34,6 +34,7 @@ import { createMfaService } from './modules/auth/mfa.service.js';
 import { createCandidateAdminService } from './modules/admin/candidates.service.js';
 import { createPrivacyService } from './modules/users/privacy.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
+import { createRevokedSessions } from './modules/auth/revoked-sessions.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
 import { createLibraryAdminService } from './modules/library/library-admin.service.js';
@@ -145,10 +146,12 @@ export function buildContainer(opts: ContainerOptions) {
   });
   const audit = createAuditService({ hashSecret: env.OTP_HMAC_SECRET, logger });
   const userState = createUserStateCache(redis);
+  const revokedSessions = createRevokedSessions(redis, env.JWT_ACCESS_TTL_SEC, logger);
   const accounts = createAccountService();
   const sessions = createSessionService({
     tokens,
     userState,
+    revoked: revokedSessions,
     audit,
     hashSecret: env.OTP_HMAC_SECRET,
     refreshTtlMs: {
@@ -309,6 +312,7 @@ export function buildContainer(opts: ContainerOptions) {
     tokens,
     audit,
     userState,
+    revokedSessions,
     accounts,
     sessions,
     otp,

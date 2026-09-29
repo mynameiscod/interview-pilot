@@ -7,6 +7,7 @@ import type { ClientSession, Types } from 'mongoose';
 import type { AuditService } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import type { ClientContext } from '../../lib/request-context.js';
+import type { RevokedSessions } from './revoked-sessions.js';
 import type { UserStateCache } from './user-state.js';
 
 type RevokeReason =
@@ -35,6 +36,8 @@ export interface SessionSubject {
 export interface SessionServiceOptions {
   tokens: AccessTokenIssuer;
   userState: UserStateCache;
+  /** Revoked sessions' access tokens are refused until they expire (see RevokedSessions). */
+  revoked?: RevokedSessions;
   audit: AuditService;
   hashSecret: string;
   refreshTtlMs: Record<SessionAudience, number>;
@@ -112,6 +115,7 @@ export function createSessionService(opts: SessionServiceOptions) {
       { familyId, revokedAt: { $exists: false } },
       { $set: { revokedAt: new Date(), revokedReason: reason } },
     );
+    await opts.revoked?.revoke([familyId]);
   }
 
   return {
@@ -227,14 +231,15 @@ export function createSessionService(opts: SessionServiceOptions) {
     },
 
     /**
-     * Signs one of the person's devices out. Its access token (at most a few
-     * minutes old) expires on its own; it can no longer refresh.
+     * Signs one of the person's devices out: it can no longer refresh, and its
+     * current access token is refused from now on (revoked-session check).
      */
     async revokeFamilyOf(userId: string, audience: SessionAudience, familyId: string) {
       const res = await RefreshTokenModel.updateMany(
         { userId, audience, familyId, revokedAt: { $exists: false } },
         { $set: { revokedAt: new Date(), revokedReason: 'DEVICE_REVOKED' } },
       );
+      if (res.modifiedCount > 0) await opts.revoked?.revoke([familyId]);
       return res.modifiedCount > 0;
     },
 
@@ -258,15 +263,24 @@ export function createSessionService(opts: SessionServiceOptions) {
       reason: RevokeReason,
       opts2: { audience?: SessionAudience; session?: ClientSession } = {},
     ) {
+      const filter = {
+        userId,
+        revokedAt: { $exists: false },
+        ...(opts2.audience ? { audience: opts2.audience } : {}),
+      };
+      // An audience-only revocation keeps tokenVersion: its sessions' access tokens are
+      // refused through the revoked-session check instead.
+      const families: string[] = await RefreshTokenModel.distinct(
+        'familyId',
+        filter,
+        opts2.session ? { session: opts2.session } : {},
+      );
       await RefreshTokenModel.updateMany(
-        {
-          userId,
-          revokedAt: { $exists: false },
-          ...(opts2.audience ? { audience: opts2.audience } : {}),
-        },
+        filter,
         { $set: { revokedAt: new Date(), revokedReason: reason } },
         opts2.session ? { session: opts2.session } : {},
       );
+      await opts.revoked?.revoke(families);
       if (!opts2.audience) {
         await UserModel.updateOne(
           { _id: userId },
