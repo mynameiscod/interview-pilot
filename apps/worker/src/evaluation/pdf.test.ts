@@ -159,6 +159,74 @@ describe('renderReportPdf', () => {
   });
 });
 
+describe('coaching sections', () => {
+  it('renders compact question cards, STAR, delivery and the benchmark', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    const coached = ReportContent.parse({
+      ...content,
+      questions: [
+        {
+          questionId: 'q1',
+          seq: 1,
+          roundType: 'BEHAVIORAL',
+          question: 'Tell me about a conflict.',
+          answer: 'I talked to him.',
+          spoken: true,
+          behavioural: true,
+          verdict: 'WEAK',
+          whatWorked: ['Acted quickly.'],
+          missing: ['The outcome.'],
+          improvedAnswer: 'I talked to my teammate privately and we agreed on [the change].',
+          star: { situation: false, task: false, action: true, result: false, source: 'AI' },
+          fallback: false,
+        },
+      ],
+      structure: {
+        behaviouralAnswers: 1,
+        complete: 0,
+        counts: { situation: 0, task: 0, action: 1, result: 0 },
+        weakest: 'result',
+      },
+      delivery: {
+        summary: {
+          answers: 1,
+          durationSec: 60,
+          wordCount: 180,
+          wpm: 180,
+          fillerCount: 9,
+          fillerRate: 5,
+          topFillers: [{ text: 'um', count: 9 }],
+          longPauses: 2,
+          hedgeCount: 0,
+          topHedges: [],
+        },
+        tips: ['PACE_FAST', 'FILLERS'],
+        answers: [],
+      },
+      benchmark: {
+        percentile: 64,
+        sampleSize: 41,
+        basis: 'ROLE',
+        roleTitle: 'Backend Engineer',
+        family: null,
+        windowDays: 180,
+      },
+    });
+    const empty = mkdtempSync(join(tmpdir(), 'no-fonts-'));
+    const pdf = await renderReportPdf(coached, { fontDir: empty, compress: false });
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    const written = text.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(written).toContain('Better than 64% of 41 candidates practising for Backend Engineer');
+    expect(written).toContain('Answer by answer');
+    expect(written).toContain('Verdict: Needs work');
+    expect(written).toContain('Structure (STAR): Action - missing Situation, Task, Result');
+    expect(written).toContain('Example answer (built from your own answer)');
+    expect(written).toContain('Most often missing: result');
+    expect(written).toContain('Pace: 180 words per minute (target 120-160)');
+    expect(written).toContain('never affects your scores');
+  });
+});
+
 describe('pdfSafe', () => {
   it('maps typographic punctuation and replaces non-Latin-1 text with "?"', () => {
     expect(pdfSafe('“Hi” – ok…')).toBe('"Hi" - ok...');

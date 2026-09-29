@@ -3,6 +3,8 @@ import type { AiRuntime } from '@cbi/ai-runtime';
 import type { Logger } from '@cbi/config';
 import {
   ExtractEvidenceAi,
+  IMPROVED_ANSWER_PLACEHOLDERS,
+  QuestionFeedbackAi,
   RecommendationsAi,
   ScoreDimensionAi,
   type AiFeature,
@@ -10,6 +12,7 @@ import {
   type RoundType,
 } from '@cbi/shared-types';
 import type { z } from 'zod';
+import { groundImprovedAnswer } from './improved-answer.js';
 import { LANGUAGE_NAMES, type OutputLanguage } from './language.js';
 import { verifyQuotes } from './quotes.js';
 
@@ -219,4 +222,93 @@ export async function recommendationsWithAi(
     },
     ctx,
   );
+}
+
+export interface QuestionFeedbackInput {
+  language: OutputLanguage;
+  role: string;
+  roundType: RoundType;
+  behavioural: boolean;
+  competency: string | null;
+  expectedEvidence: readonly string[];
+  question: string;
+  answer: string;
+  spoken?: boolean;
+  /** Evidence already extracted for this answer (claims are model output about untrusted text). */
+  evidence: readonly { claim: string; strength: number }[];
+}
+
+/**
+ * Coaching for one answer: verdict, what worked, what was missing, an example
+ * answer rewritten from the candidate's own content and (behavioural
+ * questions) STAR coverage. The example is checked against the answer:
+ * invented numbers become placeholders and an invented name withholds it
+ * (`improved-answer.ts`). Null when the model is unavailable.
+ */
+export async function questionFeedbackWithAi(
+  deps: AiStepDeps,
+  input: QuestionFeedbackInput,
+  ctx?: AiCallContext,
+): Promise<{
+  data: QuestionFeedbackAi;
+  promptVersion: number;
+  /** What the check found in the model's example answer (before it was repaired or withheld). */
+  grounding: { replacedNumbers: number; ungroundedNames: number };
+} | null> {
+  const placeholders = IMPROVED_ANSWER_PLACEHOLDERS[input.language];
+  const result = await runAiStep(
+    deps,
+    'report.questionFeedback',
+    QuestionFeedbackAi,
+    {
+      language: LANGUAGE_NAMES[input.language],
+      role: input.role,
+      roundType: input.roundType,
+      behavioural: input.behavioural ? 'yes' : 'no',
+      competency: input.competency ?? 'general',
+      expectedEvidence: bullets(input.expectedEvidence),
+      question: input.question,
+      answer: untrusted(input.spoken ? `(${SPOKEN_ANSWER_LABEL})\n${input.answer}` : input.answer),
+      assessment: untrusted(
+        input.evidence.map((e) => `${e.claim} | ${e.strength}`).join('\n') || '-',
+      ),
+      placeholderMetric: placeholders.metric,
+      placeholderName: placeholders.name,
+    },
+    ctx,
+  );
+  if (!result) return null;
+  const grounded = groundImprovedAnswer(
+    result.data.improvedAnswer,
+    { answer: input.answer, question: input.question, role: input.role },
+    input.language,
+  );
+  if (grounded.replacedNumbers > 0 || grounded.ungroundedNames.length > 0) {
+    // Metric: evaluation.improved_answer_ungrounded (counts only, never the text).
+    deps.logger.warn(
+      {
+        metric: 'evaluation.improved_answer_ungrounded',
+        replacedNumbers: grounded.replacedNumbers,
+        ungroundedNames: grounded.ungroundedNames.length,
+        withheld: grounded.text === null,
+        promptVersion: result.promptVersion,
+        model: result.model,
+        sessionId: ctx?.sessionId,
+      },
+      'example answer used facts the candidate did not state',
+    );
+  }
+  return {
+    data: {
+      ...result.data,
+      improvedAnswer: grounded.text,
+      // STAR applies to behavioural questions only, whatever the model returned.
+      star: input.behavioural ? result.data.star : null,
+    },
+    promptVersion: result.promptVersion,
+    grounding: {
+      replacedNumbers: grounded.replacedNumbers,
+      ungroundedNames: grounded.ungroundedNames.length,
+    },
+  };
 }

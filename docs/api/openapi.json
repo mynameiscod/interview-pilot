@@ -20152,6 +20152,7 @@
                               "evaluation.extractEvidence",
                               "evaluation.scoreDimension",
                               "report.recommendations",
+                              "report.questionFeedback",
                               "stt.live",
                               "tts.live",
                               "ocr.document",
@@ -20616,6 +20617,7 @@
                             "evaluation.extractEvidence",
                             "evaluation.scoreDimension",
                             "report.recommendations",
+                            "report.questionFeedback",
                             "stt.live",
                             "tts.live",
                             "ocr.document",
@@ -21478,6 +21480,7 @@
                 "evaluation.extractEvidence",
                 "evaluation.scoreDimension",
                 "report.recommendations",
+                "report.questionFeedback",
                 "stt.live",
                 "tts.live",
                 "ocr.document",
@@ -21564,6 +21567,7 @@
                                   "evaluation.extractEvidence",
                                   "evaluation.scoreDimension",
                                   "report.recommendations",
+                                  "report.questionFeedback",
                                   "stt.live",
                                   "tts.live",
                                   "ocr.document",
@@ -22455,6 +22459,7 @@
                               "evaluation.extractEvidence",
                               "evaluation.scoreDimension",
                               "report.recommendations",
+                              "report.questionFeedback",
                               "stt.live",
                               "tts.live",
                               "ocr.document",
@@ -22872,6 +22877,7 @@
                       "evaluation.extractEvidence",
                       "evaluation.scoreDimension",
                       "report.recommendations",
+                      "report.questionFeedback",
                       "stt.live",
                       "tts.live",
                       "ocr.document",
@@ -22956,6 +22962,7 @@
                             "evaluation.extractEvidence",
                             "evaluation.scoreDimension",
                             "report.recommendations",
+                            "report.questionFeedback",
                             "stt.live",
                             "tts.live",
                             "ocr.document",
@@ -23398,6 +23405,7 @@
                             "evaluation.extractEvidence",
                             "evaluation.scoreDimension",
                             "report.recommendations",
+                            "report.questionFeedback",
                             "stt.live",
                             "tts.live",
                             "ocr.document",
@@ -39114,6 +39122,7 @@
                             "SCORE_DIMENSIONS",
                             "AGGREGATE",
                             "RECOMMENDATIONS",
+                            "COACHING",
                             "BUILD_REPORT",
                             "RENDER_PDF",
                             "NOTIFY",
@@ -39143,6 +39152,7 @@
                               "SCORE_DIMENSIONS",
                               "AGGREGATE",
                               "RECOMMENDATIONS",
+                              "COACHING",
                               "BUILD_REPORT",
                               "RENDER_PDF",
                               "NOTIFY"
@@ -39927,6 +39937,27 @@
                                   "MEDIUM",
                                   "LOW"
                                 ]
+                              },
+                              "delivery": {
+                                "type": [
+                                  "object",
+                                  "null"
+                                ],
+                                "properties": {
+                                  "wpm": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "fillerRate": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "wpm",
+                                  "fillerRate"
+                                ]
                               }
                             },
                             "required": [
@@ -39936,6 +39967,27 @@
                               "confidence"
                             ]
                           }
+                        },
+                        "delivery": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "wpm": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "fillerRate": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "wpm",
+                            "fillerRate"
+                          ]
                         },
                         "dimensions": {
                           "type": "array",
@@ -40470,6 +40522,460 @@
                                   "judgeUnavailable"
                                 ]
                               }
+                            },
+                            "questions": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "questionId": {
+                                    "type": "string"
+                                  },
+                                  "seq": {
+                                    "type": "integer"
+                                  },
+                                  "roundType": {
+                                    "type": "string",
+                                    "enum": [
+                                      "INTRO",
+                                      "TECHNICAL",
+                                      "PROBLEM_SOLVING",
+                                      "BEHAVIORAL",
+                                      "CODING",
+                                      "WRAP_UP"
+                                    ]
+                                  },
+                                  "question": {
+                                    "type": "string"
+                                  },
+                                  "answer": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "spoken": {
+                                    "type": "boolean"
+                                  },
+                                  "behavioural": {
+                                    "type": "boolean"
+                                  },
+                                  "verdict": {
+                                    "type": "string",
+                                    "enum": [
+                                      "STRONG",
+                                      "ADEQUATE",
+                                      "WEAK",
+                                      "UNASSESSED"
+                                    ]
+                                  },
+                                  "whatWorked": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "missing": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "improvedAnswer": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "star": {
+                                    "type": [
+                                      "object",
+                                      "null"
+                                    ],
+                                    "properties": {
+                                      "situation": {
+                                        "type": "boolean"
+                                      },
+                                      "task": {
+                                        "type": "boolean"
+                                      },
+                                      "action": {
+                                        "type": "boolean"
+                                      },
+                                      "result": {
+                                        "type": "boolean"
+                                      },
+                                      "source": {
+                                        "type": "string",
+                                        "enum": [
+                                          "AI",
+                                          "HEURISTIC"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "situation",
+                                      "task",
+                                      "action",
+                                      "result",
+                                      "source"
+                                    ]
+                                  },
+                                  "fallback": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "questionId",
+                                  "seq",
+                                  "roundType",
+                                  "question",
+                                  "answer",
+                                  "spoken",
+                                  "behavioural",
+                                  "verdict",
+                                  "whatWorked",
+                                  "missing",
+                                  "improvedAnswer",
+                                  "star",
+                                  "fallback"
+                                ]
+                              }
+                            },
+                            "structure": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "behaviouralAnswers": {
+                                  "type": "integer"
+                                },
+                                "complete": {
+                                  "type": "integer"
+                                },
+                                "counts": {
+                                  "type": "object",
+                                  "properties": {
+                                    "situation": {
+                                      "type": "integer"
+                                    },
+                                    "task": {
+                                      "type": "integer"
+                                    },
+                                    "action": {
+                                      "type": "integer"
+                                    },
+                                    "result": {
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "situation",
+                                    "task",
+                                    "action",
+                                    "result"
+                                  ]
+                                },
+                                "weakest": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "enum": [
+                                    "situation",
+                                    "task",
+                                    "action",
+                                    "result",
+                                    null
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "behaviouralAnswers",
+                                "complete",
+                                "counts",
+                                "weakest"
+                              ]
+                            },
+                            "delivery": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "summary": {
+                                  "type": "object",
+                                  "properties": {
+                                    "answers": {
+                                      "type": "integer"
+                                    },
+                                    "durationSec": {
+                                      "type": "number"
+                                    },
+                                    "wordCount": {
+                                      "type": "integer"
+                                    },
+                                    "wpm": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "fillerCount": {
+                                      "type": "integer"
+                                    },
+                                    "fillerRate": {
+                                      "type": "number"
+                                    },
+                                    "topFillers": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "text",
+                                          "count"
+                                        ]
+                                      },
+                                      "maxItems": 3
+                                    },
+                                    "longPauses": {
+                                      "type": [
+                                        "integer",
+                                        "null"
+                                      ]
+                                    },
+                                    "hedgeCount": {
+                                      "type": "integer"
+                                    },
+                                    "topHedges": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "text": {
+                                            "type": "string"
+                                          },
+                                          "count": {
+                                            "type": "integer"
+                                          }
+                                        },
+                                        "required": [
+                                          "text",
+                                          "count"
+                                        ]
+                                      },
+                                      "maxItems": 3
+                                    }
+                                  },
+                                  "required": [
+                                    "answers",
+                                    "durationSec",
+                                    "wordCount",
+                                    "wpm",
+                                    "fillerCount",
+                                    "fillerRate",
+                                    "topFillers",
+                                    "longPauses",
+                                    "hedgeCount",
+                                    "topHedges"
+                                  ]
+                                },
+                                "tips": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "PACE_FAST",
+                                      "PACE_SLOW",
+                                      "FILLERS",
+                                      "PAUSES",
+                                      "HEDGING"
+                                    ]
+                                  }
+                                },
+                                "answers": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "questionId": {
+                                        "type": "string"
+                                      },
+                                      "seq": {
+                                        "type": "integer"
+                                      },
+                                      "metrics": {
+                                        "type": "object",
+                                        "properties": {
+                                          "durationSec": {
+                                            "type": "number"
+                                          },
+                                          "wordCount": {
+                                            "type": "integer"
+                                          },
+                                          "wpm": {
+                                            "type": [
+                                              "integer",
+                                              "null"
+                                            ]
+                                          },
+                                          "fillerCount": {
+                                            "type": "integer"
+                                          },
+                                          "fillerRate": {
+                                            "type": "number"
+                                          },
+                                          "topFillers": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "text": {
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer"
+                                                }
+                                              },
+                                              "required": [
+                                                "text",
+                                                "count"
+                                              ]
+                                            },
+                                            "maxItems": 3
+                                          },
+                                          "longPauses": {
+                                            "type": [
+                                              "integer",
+                                              "null"
+                                            ]
+                                          },
+                                          "longestPauseSec": {
+                                            "type": [
+                                              "number",
+                                              "null"
+                                            ]
+                                          },
+                                          "hedgeCount": {
+                                            "type": "integer"
+                                          },
+                                          "topHedges": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "text": {
+                                                  "type": "string"
+                                                },
+                                                "count": {
+                                                  "type": "integer"
+                                                }
+                                              },
+                                              "required": [
+                                                "text",
+                                                "count"
+                                              ]
+                                            },
+                                            "maxItems": 3
+                                          },
+                                          "timestamps": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "durationSec",
+                                          "wordCount",
+                                          "wpm",
+                                          "fillerCount",
+                                          "fillerRate",
+                                          "topFillers",
+                                          "longPauses",
+                                          "longestPauseSec",
+                                          "hedgeCount",
+                                          "topHedges",
+                                          "timestamps"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "questionId",
+                                      "seq",
+                                      "metrics"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "summary",
+                                "tips",
+                                "answers"
+                              ]
+                            },
+                            "benchmark": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "percentile": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                },
+                                "sampleSize": {
+                                  "type": "integer"
+                                },
+                                "basis": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ROLE",
+                                    "FAMILY"
+                                  ]
+                                },
+                                "roleTitle": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "family": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "enum": [
+                                    "ENGINEERING",
+                                    "DATA",
+                                    "QUALITY",
+                                    "INFRASTRUCTURE",
+                                    "PRODUCT",
+                                    "DESIGN",
+                                    "BUSINESS",
+                                    "OTHER",
+                                    null
+                                  ]
+                                },
+                                "windowDays": {
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "percentile",
+                                "sampleSize",
+                                "basis",
+                                "roleTitle",
+                                "family",
+                                "windowDays"
+                              ]
                             },
                             "review": {
                               "type": "object",
