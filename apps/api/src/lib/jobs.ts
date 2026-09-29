@@ -1,11 +1,14 @@
 import { beginEvaluation, FIRST_STAGE, type Redis } from '@cbi/db';
 import {
   AnalysisJob,
+  campaignPackageJobId,
   DocumentJob,
   EvaluationJob,
   evaluationJobId,
+  ExportJob,
   jobId,
   QueueName,
+  type CampaignPackageJobData,
   type EvaluationStageJobData,
   type InterviewAnalyzeJobData,
   type JdExtractJobData,
@@ -27,6 +30,8 @@ export interface JobQueues {
   evaluateInterview(sessionId: string, opts?: { rerun?: boolean }): Promise<number | null>;
   /** Renders the PDF of a report revision created by a manual review. */
   renderReportPdf(sessionId: string, revision: number): Promise<void>;
+  /** Builds a campaign package ZIP for a campaignExports record. */
+  exportCampaignPackage(exportId: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -43,6 +48,11 @@ export function createBullJobQueues(connection: Redis): JobQueues {
   const evaluation = new Queue(QueueName.EVALUATION, {
     connection,
     defaultJobOptions: { ...DEFAULTS, backoff: { type: 'exponential', delay: 10_000 } },
+  });
+  // A failed package build is retried once: it restarts from scratch and can be requested again.
+  const exportsQueue = new Queue(QueueName.EXPORTS, {
+    connection,
+    defaultJobOptions: { ...DEFAULTS, attempts: 2, backoff: { type: 'fixed', delay: 30_000 } },
   });
   return {
     async extractResume(resumeId) {
@@ -78,8 +88,19 @@ export function createBullJobQueues(connection: Redis): JobQueues {
         jobId: `report-pdf-${sessionId}-${revision}`,
       });
     },
+    async exportCampaignPackage(exportId) {
+      const data: CampaignPackageJobData = { exportId };
+      await exportsQueue.add(ExportJob.CAMPAIGN_PACKAGE, data, {
+        jobId: campaignPackageJobId(exportId),
+      });
+    },
     async close() {
-      await Promise.all([documents.close(), analysis.close(), evaluation.close()]);
+      await Promise.all([
+        documents.close(),
+        analysis.close(),
+        evaluation.close(),
+        exportsQueue.close(),
+      ]);
     },
   };
 }

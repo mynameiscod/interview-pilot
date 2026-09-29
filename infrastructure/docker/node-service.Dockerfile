@@ -24,6 +24,8 @@ ARG APP_VERSION=0.0.0-dev
 ENV NODE_ENV=production APP_VERSION=${APP_VERSION}
 WORKDIR /app
 COPY --from=build --chown=node:node /out ./
+# Spool directory for campaign export packages (a disk volume in production; the root is read-only).
+RUN mkdir -p /var/cbi/exports && chown node:node /var/cbi/exports
 USER node
 # SIGTERM goes straight to node, which drains connections/jobs before exiting.
 STOPSIGNAL SIGTERM

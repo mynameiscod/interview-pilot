@@ -18,6 +18,7 @@ import { loadAdminUser } from '../../app/session';
 import { initI18n } from '../../i18n';
 import {
   campaign,
+  campaignPage,
   CAMPAIGN_ID,
   interviewDetail,
   interviewRow,
@@ -78,7 +79,7 @@ const interviewQueries = (api: ReturnType<typeof fakeApi>) =>
 describe('interviews list', () => {
   it('lists interviews and filters by state, campaign, flag and search', async () => {
     const { api, router } = await renderAt('/interviews', ['SUPPORT_ADMIN'], {
-      'GET /admin/campaigns': () => ok([campaign()]),
+      'GET /admin/campaigns': () => ok(campaignPage([campaign()])),
       'GET /admin/interviews': () =>
         ok([
           interviewRow(),

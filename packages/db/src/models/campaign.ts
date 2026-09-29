@@ -1,5 +1,11 @@
-import { CampaignStatus, InterviewLanguagePreference, InterviewMode } from '@cbi/shared-types';
+import {
+  CampaignExportStatus,
+  CampaignStatus,
+  InterviewLanguagePreference,
+  InterviewMode,
+} from '@cbi/shared-types';
 import type {
+  CampaignExportStatus as CampaignExportStatusT,
   CampaignProctoring,
   CampaignStatus as CampaignStatusT,
   InterviewLanguagePreference as InterviewLanguagePreferenceT,
@@ -128,6 +134,72 @@ applicationSchema.index({ campaignId: 1, joinedAt: -1 });
 export const CampaignApplicationModel = model<CampaignApplicationRecord>(
   'CampaignApplication',
   applicationSchema,
+);
+
+// ---- campaignExports (package ZIPs built by the worker) -----------------------------------------
+
+export interface CampaignExportRecord {
+  _id: Types.ObjectId;
+  campaignId: Types.ObjectId;
+  requestedBy: Types.ObjectId;
+  status: CampaignExportStatusT;
+  progress: { done: number; total: number };
+  /** Object storage key of the ZIP (READY only; cleared when the file is deleted). */
+  storageKey: string | null;
+  fileName: string;
+  sizeBytes: number | null;
+  error: string | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  /**
+   * While QUEUED or RUNNING: when the export is given up as stuck. When READY:
+   * when the file is deleted. The record itself is removed by a TTL index a
+   * week later, so recent history stays visible.
+   */
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** A queued or running export not finished by then is marked FAILED by the worker's sweep. */
+export const CAMPAIGN_EXPORT_STUCK_AFTER_MS = 6 * 3600_000;
+
+/** Export records outlive their file by this long before MongoDB removes them. */
+export const CAMPAIGN_EXPORT_RECORD_GRACE_SEC = 7 * 24 * 3600;
+
+const campaignExportSchema = new Schema<CampaignExportRecord>(
+  {
+    campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', required: true },
+    requestedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    status: { type: String, enum: CampaignExportStatus.options, required: true },
+    progress: {
+      type: new Schema(
+        { done: { type: Number, required: true }, total: { type: Number, required: true } },
+        { _id: false },
+      ),
+      required: true,
+    },
+    storageKey: { type: String, default: null },
+    fileName: { type: String, required: true },
+    sizeBytes: { type: Number, default: null },
+    error: { type: String, default: null },
+    startedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true, collection: 'campaignExports' },
+);
+campaignExportSchema.index({ campaignId: 1, createdAt: -1 });
+// The sweep: files past retention, and exports stuck in the queue.
+campaignExportSchema.index({ status: 1, expiresAt: 1 });
+campaignExportSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: CAMPAIGN_EXPORT_RECORD_GRACE_SEC },
+);
+
+export const CampaignExportModel = model<CampaignExportRecord>(
+  'CampaignExport',
+  campaignExportSchema,
 );
 
 // ---- reviewRevisions (append-only log of manual reviews) -----------------------------------------

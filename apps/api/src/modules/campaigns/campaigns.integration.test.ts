@@ -1,6 +1,7 @@
 import {
   AuditLogModel,
   CampaignApplicationModel,
+  CampaignExportModel,
   CampaignModel,
   ensureLibraryCatalog,
   getCreditBalance,
@@ -15,6 +16,8 @@ import {
 } from '@cbi/db';
 import {
   AdminInterviewDetail,
+  CampaignExport,
+  CampaignListPage,
   CampaignResults,
   CampaignSummary,
   CampaignWithInvite,
@@ -33,7 +36,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { buildTestApp, TEST_ORIGIN } from '../../test-support/harness.js';
 import { signInWithEmail, useIntegrationServices } from '../../test-support/integration.js';
 import { bootstrapAi } from '../ai/ai-bootstrap.js';
-import { readZip } from '../../lib/zip.js';
 
 const { redis } = useIntegrationServices();
 
@@ -297,7 +299,7 @@ describe('campaign administration', () => {
       .expect(403);
     await support('post', `/campaigns/${id}/rotate-invite`).send({ reason: 'try' }).expect(403);
     await support('get', `/campaigns/${id}/results.csv`).expect(403);
-    await support('get', `/campaigns/${id}/package.zip`).expect(403);
+    await support('post', `/campaigns/${id}/exports`).expect(403);
 
     // Candidates' tokens do not open admin routes.
     const asha = await candidate();
@@ -343,6 +345,26 @@ describe('campaign administration', () => {
       (a) => a.action,
     );
     expect(actions).toEqual(['campaign.created', 'campaign.status_changed']);
+  });
+
+  it('lists campaigns newest first, a page at a time', async () => {
+    const ops = await adminAs(['OPERATIONS_ADMIN']);
+    const first = await campaign(ops, { name: 'First campaign' });
+    const second = await campaign(ops, { name: 'Second campaign' }, false);
+    const page1 = CampaignListPage.parse(
+      (await ops('get', '/campaigns?pageSize=1').expect(200)).body.data,
+    );
+    expect(page1).toMatchObject({ total: 2, page: 1, pageSize: 1 });
+    expect(page1.items.map((c) => c.id)).toEqual([second.id]);
+    const page2 = CampaignListPage.parse(
+      (await ops('get', '/campaigns?pageSize=1&page=2').expect(200)).body.data,
+    );
+    expect(page2.items.map((c) => c.id)).toEqual([first.id]);
+    const drafts = CampaignListPage.parse(
+      (await ops('get', '/campaigns?status=DRAFT').expect(200)).body.data,
+    );
+    expect(drafts.items.map((c) => c.id)).toEqual([second.id]);
+    await ops('get', '/campaigns?pageSize=1000').expect(400);
   });
 
   it('allows only forward status changes; closed is final', async () => {
@@ -637,6 +659,25 @@ describe('results and exports', () => {
       [r, 70, 'COMPLETED'],
       [expect.any(String), null, 'JOINED'],
     ]);
+    expect(all).toMatchObject({ total: 3, page: 1, pageSize: 50 });
+    expect(all.rows[0]!.candidate).toMatchObject({ email: 'asha@example.com' });
+
+    // Pages come from the server, in the same order.
+    const page2 = CampaignResults.parse(
+      (await ops('get', `/campaigns/${id}/results?pageSize=2&page=2`).expect(200)).body.data,
+    );
+    expect(page2).toMatchObject({ total: 3, page: 2, pageSize: 2 });
+    expect(page2.rows.map((x) => x.status)).toEqual(['JOINED']);
+    const newest = CampaignResults.parse(
+      (await ops('get', `/campaigns/${id}/results?sort=joined_desc`).expect(200)).body.data,
+    );
+    expect(newest.rows.map((x) => x.interviewId).slice(1)).toEqual([r, a]);
+    // Unscored candidates stay last in either score order.
+    const lowest = CampaignResults.parse(
+      (await ops('get', `/campaigns/${id}/results?sort=overall_asc`).expect(200)).body.data,
+    );
+    expect(lowest.rows.at(-1)!.overall).toBeNull();
+
     const byDim = CampaignResults.parse(
       (await ops('get', `/campaigns/${id}/results?dimension=${k2}:80`).expect(200)).body.data,
     );
@@ -645,7 +686,14 @@ describe('results and exports', () => {
       (await ops('get', `/campaigns/${id}/results?status=JOINED`).expect(200)).body.data,
     );
     expect(joined.rows).toHaveLength(1);
+    expect(joined.total).toBe(1);
+    const unknown = CampaignResults.parse(
+      (await ops('get', `/campaigns/${id}/results?dimension=cooking:10`).expect(200)).body.data,
+    );
+    expect(unknown.total).toBe(0);
     await ops('get', `/campaigns/${id}/results?minOverall=200`).expect(400);
+    await ops('get', `/campaigns/${id}/results?pageSize=500`).expect(400);
+    await ops('get', `/campaigns/${id}/results?sort=name`).expect(400);
   });
 
   it('hides the report from candidates when the company keeps it', async () => {
@@ -657,18 +705,77 @@ describe('results and exports', () => {
     expect(summary.campaign?.reportVisible).toBe(false);
   });
 
-  it('exports CSV and a package, neutralising formulas and auditing both', async () => {
-    const { ops, id, a } = await scored();
+  it('streams the CSV with the grid filters, neutralising formulas', async () => {
+    const { ops, id, r, k2 } = await scored();
     const csv = await ops('get', `/campaigns/${id}/results.csv`).expect(200);
     expect(csv.headers['content-type']).toContain('text/csv');
     // Starts with a BOM so spreadsheets read UTF-8.
     expect(csv.text.charCodeAt(0)).toBe(0xfeff);
     const text = csv.text.slice(1);
-    const [header, first] = text.split('\r\n');
-    expect(header).toContain('Overall');
-    expect(first).toMatch(/^"'=HYPERLINK\(""x""\)",asha@example.com,COMPLETED/);
+    const lines = text.split('\r\n');
+    expect(lines[0]).toContain('Overall');
+    expect(lines[1]).toMatch(/^"'=HYPERLINK\(""x""\)",asha@example.com,COMPLETED/);
+    // Header, three candidates and the final line break.
+    expect(lines).toHaveLength(5);
 
-    const zip = await ops('get', `/campaigns/${id}/package.zip`)
+    const filtered = await ops('get', `/campaigns/${id}/results.csv?dimension=${k2}:80`).expect(
+      200,
+    );
+    const rows = filtered.text.slice(1).split('\r\n').filter(Boolean);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toContain(r);
+
+    const audit = await AuditLogModel.find({ action: 'campaign.results_exported' }).lean();
+    expect(audit.map((e) => e.details)).toEqual([
+      expect.objectContaining({ format: 'csv', rows: 3 }),
+      expect.objectContaining({ format: 'csv', rows: 1 }),
+    ]);
+  });
+
+  it('builds packages in the worker: start, poll, then download while ready', async () => {
+    const { ops, id } = await scored();
+    const started = await ops('post', `/campaigns/${id}/exports`).expect(202);
+    const exp = CampaignExport.parse(started.body.data);
+    expect(exp).toMatchObject({
+      campaignId: id,
+      status: 'QUEUED',
+      progress: { done: 0, total: 3 },
+      downloadPath: null,
+    });
+    expect(t.jobs.jobs).toContainEqual({ kind: 'campaignPackage', id: exp.id });
+    // A second request while it is queued returns the same export.
+    const again = CampaignExport.parse(
+      (await ops('post', `/campaigns/${id}/exports`).expect(202)).body.data,
+    );
+    expect(again.id).toBe(exp.id);
+    expect(t.jobs.jobs.filter((j) => j.kind === 'campaignPackage')).toHaveLength(1);
+
+    const statusPath = `/campaigns/${id}/exports/${exp.id}`;
+    await ops('get', `${statusPath}/download`).expect(409);
+
+    // Stands in for the worker: the file is in storage and the export is READY.
+    const key = `exports/campaigns/${id}/${exp.id}.zip`;
+    const zip = Buffer.from('PK\x03\x04 package bytes');
+    await t.storage.storage.put(key, zip, 'application/zip');
+    await CampaignExportModel.updateOne(
+      { _id: exp.id },
+      {
+        $set: {
+          status: 'READY',
+          storageKey: key,
+          sizeBytes: zip.length,
+          progress: { done: 3, total: 3 },
+          completedAt: new Date(),
+          expiresAt: new Date(Date.now() + HOUR),
+        },
+      },
+    );
+    const ready = CampaignExport.parse((await ops('get', statusPath).expect(200)).body.data);
+    expect(ready).toMatchObject({
+      status: 'READY',
+      downloadPath: `/admin/campaigns/${id}/exports/${exp.id}/download`,
+    });
+    const download = await ops('get', `${statusPath}/download`)
       .buffer(true)
       .parse((res, cb) => {
         const chunks: Buffer[] = [];
@@ -676,15 +783,35 @@ describe('results and exports', () => {
         res.on('end', () => cb(null, Buffer.concat(chunks)));
       })
       .expect(200);
-    const files = readZip(zip.body as Buffer);
-    expect([...files.keys()]).toEqual(
-      expect.arrayContaining(['results.csv', 'campaign.json', expect.stringContaining(a)]),
+    expect(download.headers['content-type']).toBe('application/zip');
+    expect(download.headers['content-disposition']).toContain(`campaign-${id}-package.zip`);
+    expect(download.body).toEqual(zip);
+
+    // Past retention it can no longer be downloaded.
+    await CampaignExportModel.updateOne(
+      { _id: exp.id },
+      { $set: { expiresAt: new Date(Date.now() - 1000) } },
     );
-    const exports = await AuditLogModel.find({ action: 'campaign.results_exported' }).lean();
-    expect(exports.map((e) => (e.details as { format: string }).format).sort()).toEqual([
-      'csv',
-      'package',
-    ]);
+    await ops('get', `${statusPath}/download`).expect(409);
+    // Exports belong to their campaign.
+    const other = await campaign(ops, { name: 'Another campaign' });
+    await ops('get', `/campaigns/${other.id}/exports/${exp.id}`).expect(404);
+
+    const actions = (await AuditLogModel.find({ resourceId: id }).lean()).map((a) => a.action);
+    expect(actions.filter((a) => a === 'campaign.results_exported')).toHaveLength(1);
+    expect(actions.filter((a) => a === 'campaign.export_downloaded')).toHaveLength(1);
+  });
+
+  it('marks the export failed when it cannot be queued', async () => {
+    const { ops, id } = await scored();
+    t.jobs.state.fail = true;
+    const res = await ops('post', `/campaigns/${id}/exports`).expect(503);
+    expect(res.body.error.code).toBe('SERVICE_UNAVAILABLE');
+    t.jobs.state.fail = false;
+    const [failed] = await CampaignExportModel.find({ campaignId: id }).lean();
+    expect(failed!.status).toBe('FAILED');
+    // A new request is not blocked by the failed one.
+    await ops('post', `/campaigns/${id}/exports`).expect(202);
   });
 });
 

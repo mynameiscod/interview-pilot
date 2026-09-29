@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { ProviderError } from '../errors.js';
 import { assertStorageKey, StorageNotFoundError, type StorageProvider } from './types.js';
 
@@ -9,6 +13,8 @@ export interface BunnyStorageOptions {
   /** Region endpoint host, e.g. `storage.bunnycdn.com` or `sg.storage.bunnycdn.com`. */
   regionHost: string;
   timeoutMs?: number;
+  /** Timeout for streamed uploads and downloads (large files). */
+  streamTimeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -20,6 +26,7 @@ export interface BunnyStorageOptions {
 export function createBunnyStorage(opts: BunnyStorageOptions): StorageProvider {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? 30_000;
+  const streamTimeoutMs = opts.streamTimeoutMs ?? 15 * 60_000;
   const url = (key: string) => {
     assertStorageKey(key);
     return `https://${opts.regionHost}/${encodeURIComponent(opts.zone)}/${key
@@ -28,13 +35,18 @@ export function createBunnyStorage(opts: BunnyStorageOptions): StorageProvider {
       .join('/')}`;
   };
 
-  async function call(method: string, key: string, init: RequestInit = {}): Promise<Response> {
+  async function call(
+    method: string,
+    key: string,
+    init: RequestInit & { duplex?: 'half' } = {},
+    timeout = timeoutMs,
+  ): Promise<Response> {
     try {
       return await fetchImpl(url(key), {
         ...init,
         method,
         headers: { AccessKey: opts.accessKey, ...(init.headers as Record<string, string>) },
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(timeout),
       });
     } catch (err) {
       if (err instanceof Error && err.message === 'invalid storage key') throw err;
@@ -62,6 +74,33 @@ export function createBunnyStorage(opts: BunnyStorageOptions): StorageProvider {
         },
       });
       if (!res.ok) throw fail('PUT', res);
+    },
+    async putFile(key, filePath, contentType) {
+      // Hash first (one streaming pass), then stream the body: memory stays flat.
+      const hash = createHash('sha256');
+      for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
+      const { size } = await stat(filePath);
+      const res = await call(
+        'PUT',
+        key,
+        {
+          body: Readable.toWeb(createReadStream(filePath)) as ReadableStream,
+          duplex: 'half',
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(size),
+            Checksum: hash.digest('hex').toUpperCase(),
+          },
+        },
+        streamTimeoutMs,
+      );
+      if (!res.ok) throw fail('PUT', res);
+    },
+    async getStream(key) {
+      const res = await call('GET', key, {}, streamTimeoutMs);
+      if (res.status === 404) throw new StorageNotFoundError('bunny-storage');
+      if (!res.ok || !res.body) throw fail('GET', res);
+      return Readable.fromWeb(res.body as WebReadableStream);
     },
     async get(key) {
       const res = await call('GET', key);

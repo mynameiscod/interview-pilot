@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { assertStorageKey, StorageNotFoundError, type StorageProvider } from './types.js';
 
@@ -22,6 +23,22 @@ export function createLocalStorage(rootDir: string): StorageProvider {
       const path = pathOf(key);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, body);
+    },
+    async putFile(key, filePath) {
+      const path = pathOf(key);
+      await mkdir(dirname(path), { recursive: true });
+      await copyFile(filePath, path);
+    },
+    async getStream(key) {
+      const path = pathOf(key);
+      try {
+        await stat(path);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new StorageNotFoundError('local');
+        throw err;
+      }
+      return createReadStream(path);
     },
     async get(key) {
       try {

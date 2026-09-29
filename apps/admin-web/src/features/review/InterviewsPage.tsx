@@ -5,7 +5,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useCan } from '../../app/session';
 import { ErrorAlert, LoadingRow } from '../ai/shared';
 import { campaignError } from '../campaigns/format';
-import { useCampaigns } from '../campaigns/queries';
+import { useCampaignOptions } from '../campaigns/queries';
 import { formatDateTime } from '../library/format';
 import { useAdminInterviews } from './queries';
 import { BandLabel, FlagBadge, InterviewStateBadge } from './shared';
@@ -25,7 +25,7 @@ function CampaignSelect({
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
-  const campaigns = useCampaigns();
+  const campaigns = useCampaignOptions();
   return (
     <>
       <label htmlFor={id} className="form-label small">

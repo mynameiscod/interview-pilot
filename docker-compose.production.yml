@@ -200,10 +200,14 @@ services:
       WORKER_HEALTH_PORT: '4100'
       # Maximum allowed by env.ts: lets an evaluation stage finish before exit.
       SHUTDOWN_GRACE_MS: '120000'
+      # Campaign packages are spooled on disk, not in the RAM-backed /tmp.
+      EXPORT_SPOOL_DIR: /var/cbi/exports
     user: 'node'
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
+    volumes:
+      - export-spool:/var/cbi/exports
     networks:
       - edge
       - internal
@@ -375,6 +379,8 @@ networks:
     internal: true
 
 volumes:
+  # Temporary campaign export ZIPs (each deleted once uploaded to storage).
+  export-spool:
   mongo-data:
   mongo-config:
   redis-data:

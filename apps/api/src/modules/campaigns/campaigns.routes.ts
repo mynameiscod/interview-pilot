@@ -1,5 +1,9 @@
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   AdminInterviewQuery,
+  CampaignListQuery,
+  CampaignResultsExportQuery,
   CampaignResultsQuery,
   CampaignStatusBody,
   CreateCampaignBody,
@@ -15,6 +19,21 @@ import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
 
 const noStore = (res: Response) => res.set('Cache-Control', 'no-store');
+
+/**
+ * Streams a download. Errors before the first byte reach the error handler
+ * as usual; after that the status is already sent, so the connection is cut
+ * (the client sees an incomplete download rather than a truncated "success").
+ */
+async function streamTo(res: Response, source: Readable) {
+  try {
+    await pipeline(source, res);
+  } catch (err) {
+    if (!res.headersSent) throw err;
+    res.req.log.warn({ err }, 'download interrupted');
+    res.destroy();
+  }
+}
 
 /**
  * `/campaigns/:token`: the invite landing page (public; a signed-in
@@ -53,8 +72,9 @@ export function campaignsAdminRouter(c: Container): Router {
   const id = (value: unknown) => String(value);
 
   // ---- Campaigns ------------------------------------------------------------------------------
-  router.get('/campaigns', requirePermission('campaigns.read'), async (_req, res) => {
-    res.json({ data: await c.campaigns.list() });
+  router.get('/campaigns', requirePermission('campaigns.read'), async (req, res) => {
+    const query = CampaignListQuery.parse(req.query);
+    res.json({ data: await c.campaigns.list(query) });
   });
   router.post('/campaigns', requirePermission('campaigns.manage'), async (req, res) => {
     const body = CreateCampaignBody.parse(req.body);
@@ -101,8 +121,8 @@ export function campaignsAdminRouter(c: Container): Router {
     '/campaigns/:id/results.csv',
     requirePermission('campaigns.manage'),
     async (req, res) => {
-      const query = CampaignResultsQuery.parse(req.query);
-      const { body, fileName } = await c.campaigns.exportCsv(
+      const query = CampaignResultsExportQuery.parse(req.query);
+      const { chunks, fileName } = await c.campaigns.exportCsv(
         id(req.params.id),
         query,
         actor(req),
@@ -110,23 +130,43 @@ export function campaignsAdminRouter(c: Container): Router {
       );
       noStore(res)
         .set('Content-Type', 'text/csv; charset=utf-8')
-        .set('Content-Disposition', `attachment; filename="${fileName}"`)
-        .send(body);
+        .set('Content-Disposition', `attachment; filename="${fileName}"`);
+      // Rows are written as the cursor yields them, never built up in memory.
+      await streamTo(res, Readable.from(chunks));
+    },
+  );
+  // Packages are built by the worker: start one, poll it, then download the file.
+  router.post('/campaigns/:id/exports', requirePermission('campaigns.manage'), async (req, res) => {
+    noStore(res)
+      .status(202)
+      .json({
+        data: await c.campaigns.startExport(id(req.params.id), actor(req), clientContext(req)),
+      });
+  });
+  router.get(
+    '/campaigns/:id/exports/:exportId',
+    requirePermission('campaigns.manage'),
+    async (req, res) => {
+      noStore(res).json({
+        data: await c.campaigns.exportStatus(id(req.params.id), id(req.params.exportId)),
+      });
     },
   );
   router.get(
-    '/campaigns/:id/package.zip',
+    '/campaigns/:id/exports/:exportId/download',
     requirePermission('campaigns.manage'),
     async (req, res) => {
-      const { body, fileName } = await c.campaigns.exportPackage(
+      const { stream, fileName, sizeBytes } = await c.campaigns.openExport(
         id(req.params.id),
+        id(req.params.exportId),
         actor(req),
         clientContext(req),
       );
       noStore(res)
         .set('Content-Type', 'application/zip')
-        .set('Content-Disposition', `attachment; filename="${fileName}"`)
-        .send(body);
+        .set('Content-Disposition', `attachment; filename="${fileName}"`);
+      if (sizeBytes !== null) res.set('Content-Length', String(sizeBytes));
+      await streamTo(res, stream);
     },
   );
 

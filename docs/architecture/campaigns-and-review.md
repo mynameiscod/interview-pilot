@@ -5,7 +5,8 @@ A **campaign** is a company's interview that every candidate takes on the same t
 **Manual review** lets staff flag an interview and revise its scores. Each revision is a new score and report. The AI original is never changed.
 
 - Contracts: [`packages/shared-types/src/campaign.ts`](../../packages/shared-types/src/campaign.ts), [`review.ts`](../../packages/shared-types/src/review.ts)
-- Models: [`packages/db/src/models/campaign.ts`](../../packages/db/src/models/campaign.ts)
+- Models: [`packages/db/src/models/campaign.ts`](../../packages/db/src/models/campaign.ts); results queries: [`packages/db/src/campaign-results.ts`](../../packages/db/src/campaign-results.ts)
+- Package exports: [`apps/worker/src/processors/campaign-export.ts`](../../apps/worker/src/processors/campaign-export.ts)
 - API: [`apps/api/src/modules/campaigns/`](../../apps/api/src/modules/campaigns/), [`apps/api/src/modules/review/`](../../apps/api/src/modules/review/)
 - Authorization tests: [`campaigns.integration.test.ts`](../../apps/api/src/modules/campaigns/campaigns.integration.test.ts)
 
@@ -76,21 +77,38 @@ When `candidateSeesReport` is false:
 
 The candidate's interview summary carries `campaign.reportVisible`, so the UI shows a "submitted" message instead of a report link.
 
-### Results and exports
+### Campaign list
 
-`GET /admin/campaigns/:id/results` returns one row per application. Each row has:
+`GET /admin/campaigns` is paginated: `page` (from 1) and `pageSize` (1–100, default 25), with an optional `status` filter. The response is `{ items, total, page, pageSize }`, newest first. The admin list page shows previous/next controls and keeps the page in the URL. The interview review filter loads the 100 most recent campaigns for its dropdown; a campaign id from the URL stays selectable.
+
+### Results
+
+`GET /admin/campaigns/:id/results` returns one page of rows, one per application. Each row has:
 
 - the candidate's name and email;
-- a status derived from the session: `JOINED` (before start), `IN_PROGRESS`, `COMPLETED` (`PROCESSING` or `REPORT_READY`) or `DID_NOT_FINISH` (cancelled, expired or failed);
+- a status derived from the session: `JOINED` (before start), `IN_PROGRESS`, `COMPLETED` (`PROCESSING` or `REPORT_READY`) or `DID_NOT_FINISH` (cancelled, expired or failed; also an application whose interview is missing);
 - the latest score revision (reviews included), with one column per pinned-blueprint dimension;
 - the review flag.
 
-Filters are `status`, `minOverall` and `dimension=key:min`. Rows are sorted best first, with unscored rows last.
+Filters are `status`, `minOverall` and `dimension=key:min` (a key outside the pinned blueprint matches nothing). `sort` is `overall_desc` (the default: best first), `overall_asc`, `joined_asc` or `joined_desc`; in both score orders unscored rows come last, and ties keep the order candidates joined. `page` and `pageSize` (1–200, default 50) select the page, and the response carries `total`, the number of matching rows across pages.
 
-Exports need `campaigns.manage`, because they carry personal data. Every export is audited with its format and row count.
+**Everything runs in MongoDB.** A single aggregation over `campaignApplications` (index `{campaignId, joinedAt}`) joins each application with its interview (`$lookup` by `_id`) and its latest score (`$lookup` on `{sessionId, revision}`, sorted by revision, limit 1), derives the status with a `$switch` that mirrors `applicationStatus`, then filters, sorts and pages. A `$facet` returns the page and the total together; candidate names and emails are looked up only for the rows on the page. No request loads a whole campaign into memory. The pipeline builder is a pure function with unit tests ([`campaign-results.test.ts`](../../packages/db/src/campaign-results.test.ts)); the API and the worker share it.
 
-- **CSV.** UTF-8 with a BOM, so spreadsheets read Hindi and Telugu names correctly. Cells that a spreadsheet would run as formulas (`= + - @`, tab, CR) are prefixed with `'`.
-- **Package** (`.zip`). It holds `results.csv`, `campaign.json`, and each candidate's latest report as JSON, plus the PDF when it is ready. There is a limit of 500 candidates; beyond that, use the CSV. The archive is written by a small in-house ZIP writer (deflate, UTF-8 names): [`apps/api/src/lib/zip.ts`](../../apps/api/src/lib/zip.ts).
+### Exports
+
+Exports need `campaigns.manage`, because they carry personal data. Every export is audited (`campaign.results_exported`) with its format and row count.
+
+- **CSV** (`GET /admin/campaigns/:id/results.csv`). The same filters and order as the grid, without paging. It is **streamed**: rows are read from an aggregation cursor and written to the response in batches as they arrive, so memory stays flat for any campaign size. If the connection fails part-way, the response is cut rather than ended cleanly. UTF-8 with a BOM, so spreadsheets read Hindi and Telugu names correctly. Cells that a spreadsheet would run as formulas (`= + - @`, tab, CR) are prefixed with `'`.
+- **Package** (`.zip`). It holds `results.csv`, `campaign.json`, and each candidate's latest report as JSON, plus the PDF when it is ready. Packages are built by the worker, not the API:
+
+  1. `POST /admin/campaigns/:id/exports` creates a `campaignExports` record (`QUEUED`) and enqueues `campaign.package` on the `exports` queue; it answers `202` with the export. While an export for the campaign is queued or running, the same one is returned. Campaigns over 5,000 candidates are refused (use the CSV). If the job cannot be queued, the record is marked `FAILED` and the request answers `503`.
+  2. The worker marks it `RUNNING` and writes the ZIP entry by entry with a streaming ZIP writer ([`zip-writer.ts`](../../apps/worker/src/exports/zip-writer.ts): deflate, UTF-8 names, data descriptors, no ZIP64). The CSV comes from a cursor; reports are loaded 100 candidates at a time and PDFs are streamed from storage one by one. The archive is spooled to a temporary file (never held in memory), then streamed to object storage at `exports/campaigns/<campaignId>/<exportId>.zip` (`putFile`), and the spool file is deleted. `progress.done`/`progress.total` are saved after each batch. A failed build is retried once from scratch; after the last attempt the record is `FAILED` with a short reason.
+  3. `GET /admin/campaigns/:id/exports/:exportId` returns the status and progress. When `READY`, it carries `sizeBytes`, `expiresAt` and a `downloadPath`.
+  4. `GET /admin/campaigns/:id/exports/:exportId/download` streams the file from storage (`campaigns.manage`; each download is audited as `campaign.export_downloaded`). The storage providers have no signed URLs for private objects, so downloads go through the API with the admin's bearer token; it answers `409` when the export is not ready or has expired.
+
+  The admin console starts an export, polls it every 2 seconds while it is queued or running (with a progress bar), and then shows a download button.
+
+  **Retention.** A finished package can be downloaded for `CAMPAIGN_EXPORT_RETENTION_HOURS` (default 24). The worker's `export-sweep` job (every `WORKER_EXPORT_SWEEP_INTERVAL_MS`, default 1 hour) deletes files past retention and marks their records `EXPIRED`, and fails exports still queued or running after 6 hours (a lost job, a dead worker). A TTL index removes export records a week after `expiresAt`. Package builds run `WORKER_EXPORT_CONCURRENCY` at a time (default 1) and need free disk space in `EXPORT_SPOOL_DIR` (default: the OS temporary directory; in production the `export-spool` volume) for the largest package.
 
 ## Manual review
 
@@ -148,6 +166,10 @@ The detail view shows:
 - the campaign consent and proctoring;
 - the sponsored budget, then falling back to the candidate's own credits;
 - a paused campaign blocking starts;
-- the results grid and filters, and hidden reports;
-- CSV formula neutralisation, the package contents and export auditing;
+- the paginated campaign list;
+- the results grid: filters, order, pages and totals, and hidden reports;
+- CSV streaming, formula neutralisation and export auditing;
+- package exports: start (idempotent while running), status, download while ready, expiry, queue failure and auditing;
 - flagging, score revision, candidate visibility of the revision, and review-view auditing.
+
+The worker's [`campaign-export.integration.test.ts`](../../apps/worker/src/processors/campaign-export.integration.test.ts) builds a real package from MongoDB into storage and checks the sweep; unit tests cover the ZIP writer, the processor and the results pipeline.

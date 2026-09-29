@@ -12,7 +12,15 @@ import { routes } from '../../app/routes';
 import { loadAdminUser } from '../../app/session';
 import { initI18n } from '../../i18n';
 import { company, role, template } from '../library/test-fixtures';
-import { campaign, CAMPAIGN_ID, resultRow, results } from './test-fixtures';
+import {
+  campaign,
+  campaignExport,
+  campaignPage,
+  CAMPAIGN_ID,
+  EXPORT_ID,
+  resultRow,
+  results,
+} from './test-fixtures';
 
 const REASON = 'Reason (recorded in the audit log)';
 
@@ -59,11 +67,18 @@ const bodyOf = (api: ReturnType<typeof fakeApi>, key: string) =>
   api.calls.find((c) => c.key === key)!.body;
 
 /** fakeApi keys ignore the query string, so filtered requests are checked by URL. */
-const resultQueries = (api: ReturnType<typeof fakeApi>) =>
+const queriesTo = (api: ReturnType<typeof fakeApi>, suffix: string) =>
   (api.fetchImpl as unknown as { mock: { calls: [string][] } }).mock.calls
     .map(([url]) => new URL(url))
-    .filter((u) => u.pathname.endsWith('/results'))
+    .filter((u) => u.pathname.endsWith(suffix))
     .map((u) => Object.fromEntries(u.searchParams));
+const resultQueries = (api: ReturnType<typeof fakeApi>) => queriesTo(api, '/results');
+
+/** Replies in turn (the last one repeats): fakeApi handlers do not see the query string. */
+const inTurn = (...replies: ReturnType<typeof ok>[]) => {
+  let i = 0;
+  return () => replies[Math.min(i++, replies.length - 1)]!;
+};
 
 const DETAIL = `/campaigns/${CAMPAIGN_ID}`;
 const detailHandlers = (overrides: Parameters<typeof campaign>[0] = {}) => ({
@@ -92,7 +107,7 @@ describe('campaigns navigation', () => {
 
   it('lets support admins read campaigns without managing them', async () => {
     await renderAt('/campaigns', ['SUPPORT_ADMIN'], {
-      'GET /admin/campaigns': () => ok([campaign()]),
+      'GET /admin/campaigns': () => ok(campaignPage()),
     });
     const table = await screen.findByRole('table');
     const row = within(table).getByRole('row', { name: /Globex backend hiring/ });
@@ -118,10 +133,47 @@ describe('campaigns navigation', () => {
   });
 });
 
+describe('campaign list pages', () => {
+  it('pages through campaigns on the server and keeps the page in the URL', async () => {
+    const { api, router } = await renderAt('/campaigns', ['SUPPORT_ADMIN'], {
+      'GET /admin/campaigns': inTurn(
+        ok(campaignPage([campaign({ id: 'c-new', name: 'Newest campaign' })], { total: 30 })),
+        ok(
+          campaignPage([campaign({ id: 'c-old', name: 'Oldest campaign' })], {
+            total: 30,
+            page: 2,
+          }),
+        ),
+      ),
+    });
+    expect(await screen.findByRole('link', { name: 'Newest campaign' })).toBeInTheDocument();
+    const pager = screen.getByRole('navigation', { name: 'Result pages' });
+    expect(within(pager).getByText('Showing 1–25 of 30')).toBeInTheDocument();
+    expect(within(pager).getByRole('button', { name: 'Previous' })).toBeDisabled();
+    expect(queriesTo(api, '/admin/campaigns')[0]).toEqual({ page: '1', pageSize: '25' });
+
+    const user = userEvent.setup();
+    await user.click(within(pager).getByRole('button', { name: 'Next' }));
+    expect(await screen.findByRole('link', { name: 'Oldest campaign' })).toBeInTheDocument();
+    expect(queriesTo(api, '/admin/campaigns').at(-1)).toEqual({ page: '2', pageSize: '25' });
+    expect(router.state.location.search).toBe('?page=2');
+    expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+  });
+
+  it('hides the pager when every campaign fits on one page', async () => {
+    await renderAt('/campaigns', ['SUPPORT_ADMIN'], {
+      'GET /admin/campaigns': () => ok(campaignPage()),
+    });
+    await screen.findByRole('table');
+    expect(screen.queryByRole('navigation', { name: 'Result pages' })).not.toBeInTheDocument();
+  });
+});
+
 describe('creating a campaign', () => {
   it('validates, creates a draft and shows the invite link once with copy', async () => {
     const { api } = await renderAt('/campaigns', ['OPERATIONS_ADMIN'], {
-      'GET /admin/campaigns': () => ok([]),
+      'GET /admin/campaigns': () => ok(campaignPage([])),
       'GET /admin/roles': () =>
         ok([role(), role({ id: 'r2', title: 'No blueprint', activeBlueprintId: null })]),
       'GET /admin/templates': () =>
@@ -374,35 +426,133 @@ describe('campaign results', () => {
     expect(csvInit.headers).toEqual({ Authorization: 'Bearer access-token' });
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1));
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledTimes(1);
-
-    await user.click(screen.getByRole('button', { name: 'Download package (ZIP)' }));
-    await waitFor(() => expect(download).toHaveBeenCalledTimes(2));
-    const [zipUrl] = download.mock.calls[1] as unknown as [string];
-    expect(new URL(zipUrl).pathname).toBe(`/api/v1/admin/campaigns/${CAMPAIGN_ID}/package.zip`);
   });
 
-  it('shows the server message when an export is refused', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              error: {
-                code: 'VALIDATION_FAILED',
-                message: 'Packages hold up to 500 candidates. Export the CSV instead.',
-                requestId: 'r1',
-              },
-            }),
-            { status: 400, headers: { 'Content-Type': 'application/json' } },
+  it('pages and sorts the grid on the server', async () => {
+    const { api, router } = await renderAt(DETAIL, ['SUPPORT_ADMIN'], {
+      ...detailHandlers(),
+      [`GET /admin/campaigns/${CAMPAIGN_ID}/results`]: inTurn(
+        ok(results([resultRow()], { total: 120 })),
+        ok(
+          results(
+            [
+              resultRow({
+                applicationId: 'app51',
+                candidate: { userId: 'u51', name: 'Ravi K', email: null },
+              }),
+            ],
+            {
+              total: 120,
+              page: 2,
+            },
           ),
+        ),
       ),
-    );
-    await renderAt(DETAIL, ['OPERATIONS_ADMIN'], detailHandlers());
+    });
+    // The caption counts every matching candidate, not just this page.
+    expect(await screen.findByRole('table', { name: '120 candidates' })).toBeInTheDocument();
+    const pager = screen.getByRole('navigation', { name: 'Result pages' });
+    expect(within(pager).getByText('Page 1 of 3')).toBeInTheDocument();
+
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Download package (ZIP)' }));
+    await user.click(within(pager).getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Ravi K')).toBeInTheDocument();
+    expect(resultQueries(api).at(-1)).toEqual({ page: '2' });
+    expect(router.state.location.search).toBe('?page=2');
+
+    // A new order (or filter) starts again from the first page.
+    const filters = screen.getByRole('search', { name: 'Result filters' });
+    await user.selectOptions(within(filters).getByLabelText('Order'), 'joined_desc');
+    await user.click(within(filters).getByRole('button', { name: 'Apply' }));
+    await expect.poll(() => resultQueries(api).at(-1)).toEqual({ sort: 'joined_desc' });
+    expect(router.state.location.search).toBe('?sort=joined_desc');
+  });
+
+  it('prepares a package in the background, shows progress and downloads it when ready', async () => {
+    const download = vi.fn(async () => new Response('PK', { status: 200 }));
+    vi.stubGlobal('fetch', download);
+    const downloadPath = `/admin/campaigns/${CAMPAIGN_ID}/exports/${EXPORT_ID}/download`;
+    const { api } = await renderAt(DETAIL, ['OPERATIONS_ADMIN'], {
+      ...detailHandlers(),
+      [`POST /admin/campaigns/${CAMPAIGN_ID}/exports`]: () => ({
+        status: 202,
+        body: { data: campaignExport() },
+      }),
+      [`GET /admin/campaigns/${CAMPAIGN_ID}/exports/${EXPORT_ID}`]: inTurn(
+        ok(campaignExport({ status: 'RUNNING', progress: { done: 40, total: 120 } })),
+        ok(
+          campaignExport({
+            status: 'READY',
+            progress: { done: 120, total: 120 },
+            sizeBytes: 2048,
+            completedAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+            downloadPath,
+          }),
+        ),
+      ),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Prepare package (ZIP)' }));
     expect(
-      await screen.findByText('Packages hold up to 500 candidates. Export the CSV instead.'),
+      await screen.findByText('Building the package: 40 of 120 candidates…'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Package progress' })).toHaveAttribute(
+      'aria-valuenow',
+      '40',
+    );
+    expect(screen.queryByRole('button', { name: 'Prepare package (ZIP)' })).not.toBeInTheDocument();
+
+    // Polling picks up the finished package.
+    const get = await screen.findByRole('button', { name: 'Download package' }, { timeout: 5_000 });
+    expect(screen.getByText(/The package is ready \(2 KB\)/)).toBeInTheDocument();
+    expect(
+      api.calls.filter((c) => c.key === `GET /admin/campaigns/${CAMPAIGN_ID}/exports/${EXPORT_ID}`),
+    ).toHaveLength(2);
+    await user.click(get);
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    const [zipUrl, zipInit] = download.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(zipUrl).pathname).toBe(`/api/v1${downloadPath}`);
+    expect(zipInit.headers).toEqual({ Authorization: 'Bearer access-token' });
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows why a package failed and lets the admin try again', async () => {
+    await renderAt(DETAIL, ['OPERATIONS_ADMIN'], {
+      ...detailHandlers(),
+      [`POST /admin/campaigns/${CAMPAIGN_ID}/exports`]: () => ({
+        status: 202,
+        body: { data: campaignExport() },
+      }),
+      [`GET /admin/campaigns/${CAMPAIGN_ID}/exports/${EXPORT_ID}`]: () =>
+        ok(campaignExport({ status: 'FAILED', error: 'Try again later.' })),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Prepare package (ZIP)' }));
+    expect(
+      await screen.findByText('The package could not be built. Try again later.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Prepare a new package' })).toBeEnabled();
+  });
+
+  it('shows the server message when a package is refused', async () => {
+    await renderAt(DETAIL, ['OPERATIONS_ADMIN'], {
+      ...detailHandlers(),
+      [`POST /admin/campaigns/${CAMPAIGN_ID}/exports`]: () => ({
+        status: 400,
+        body: {
+          error: {
+            code: 'VALIDATION_FAILED',
+            message: 'Packages hold up to 5000 candidates. Export the CSV instead.',
+            requestId: 'r1',
+          },
+        },
+      }),
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Prepare package (ZIP)' }));
+    expect(
+      await screen.findByText('Packages hold up to 5000 candidates. Export the CSV instead.'),
     ).toBeInTheDocument();
     expect(URL.createObjectURL).not.toHaveBeenCalled();
   });

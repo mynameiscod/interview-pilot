@@ -96,6 +96,16 @@ async function main(): Promise<void> {
         judge: integrations.judge,
       },
     },
+    exports: {
+      concurrency: env.WORKER_EXPORT_CONCURRENCY,
+      sweepIntervalMs: env.WORKER_EXPORT_SWEEP_INTERVAL_MS,
+      deps: {
+        storage,
+        logger,
+        retentionHours: env.CAMPAIGN_EXPORT_RETENTION_HOURS,
+        tmpDir: env.EXPORT_SPOOL_DIR,
+      },
+    },
   });
 
   const health = createHealthServer({

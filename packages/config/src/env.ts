@@ -364,12 +364,35 @@ export const apiEnvSchema = apiObjectSchema.superRefine((env, ctx) => {
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
+// --- Campaign package exports (worker) ------------------------------------------
+/** Package ZIPs are built by the worker, spooled on local disk and streamed to storage. */
+const campaignExportShape = {
+  /** Parallel package builds (disk and storage bound; one is plenty for most deployments). */
+  WORKER_EXPORT_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(1),
+  /** How long a finished package can be downloaded before its file is deleted. */
+  CAMPAIGN_EXPORT_RETENTION_HOURS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 30)
+    .default(24),
+  /** Where package ZIPs are spooled before upload (default: the OS temp directory). */
+  EXPORT_SPOOL_DIR: optionalString,
+  /** How often expired package files are deleted and stuck exports failed. */
+  WORKER_EXPORT_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .default(60 * 60_000),
+};
+
 export const workerEnvSchema = baseEnvSchema
   .extend({
     ...aiRuntimeShape,
     ...storageShape,
     ...paymentShape,
     ...judgeShape,
+    ...campaignExportShape,
     WORKER_HEALTH_PORT: z.coerce.number().int().min(1).max(65535).default(4100),
     WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).default(15000),
     /** How often AI usage is rolled up into providerHealth. */
