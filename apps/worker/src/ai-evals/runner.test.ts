@@ -13,6 +13,7 @@ import {
   type FixtureResult,
   type FixtureRun,
 } from './runner.js';
+import { seedableDatabase } from './seed.js';
 
 const run = (overrides: Partial<FixtureRun> = {}): FixtureRun => ({
   dimensions: [
@@ -222,6 +223,17 @@ describe('quote grounding', () => {
       c.name.startsWith('quotes not found'),
     )!;
     expect(grounding).toMatchObject({ passed: false, detail: 'got 1' });
+  });
+});
+
+describe('eval database seeding', () => {
+  it('only seeds throwaway databases', () => {
+    expect(seedableDatabase('mongodb://localhost:27017/cbi_ai_eval?directConnection=true')).toBe(
+      true,
+    );
+    expect(seedableDatabase('mongodb+srv://u:p@cluster.example/interview_test')).toBe(true);
+    expect(seedableDatabase('mongodb://localhost:27017/interview')).toBe(false);
+    expect(seedableDatabase('mongodb://db.internal/production?retryWrites=true')).toBe(false);
   });
 });
 

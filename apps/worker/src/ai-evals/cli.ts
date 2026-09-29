@@ -11,6 +11,11 @@
  *   --only=id1,id2          run selected fixtures
  *   --repeat=N              run each fixture N times and check score stability
  *   --out=path.json         write the full report as JSON
+ *   --seed                  first seed an empty eval database (indexes, AI
+ *                           catalog, library prompts) and store provider keys
+ *                           from AI_EVAL_{ANTHROPIC,OPENAI,GEMINI}_API_KEY.
+ *                           Refused unless the database name contains
+ *                           "eval" or "test" (nightly CI).
  *
  * Uses the same MONGODB_URI/REDIS_URL/AI settings as the worker: models,
  * routes, keys and active prompts come from the database. Real models are
@@ -23,6 +28,7 @@ import { connectMongo, createRedis, disconnectMongo } from '@cbi/db';
 import { calibrationFixtures } from './calibration.js';
 import { EVAL_FIXTURES, type EvalFixture } from './fixtures.js';
 import { formatReport, runEvalSuite, type EvalMode } from './runner.js';
+import { seedableDatabase, seedEvalDatabase } from './seed.js';
 
 function arg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -60,6 +66,13 @@ async function main() {
   ]);
   try {
     const ai = buildAiRuntime({ env, logger, redis });
+    if (process.argv.includes('--seed')) {
+      if (!seedableDatabase(env.MONGODB_URI)) {
+        throw new Error('--seed needs a database whose name contains "eval" or "test"');
+      }
+      const keyed = await seedEvalDatabase(ai);
+      process.stdout.write(`seeded eval database; keys for: ${keyed.join(', ') || 'none'}\n`);
+    }
     const report = await runEvalSuite({ ai, logger }, fixtures, {
       mode,
       repeat: Number(arg('repeat') ?? 1),
