@@ -17,6 +17,8 @@ export interface GatewayPayment {
   currency: string;
   /** Only `captured` means the money was taken. */
   status: 'created' | 'authorized' | 'captured' | 'refunded' | 'failed';
+  /** Paise refunded so far (a partly refunded payment stays `captured`). */
+  amountRefundedMinor?: number;
 }
 
 export interface GatewayRefund {
@@ -58,6 +60,7 @@ export interface PaymentGateway {
     signature: string | undefined,
     eventIdHeader: string | undefined,
   ): GatewayWebhookEvent | null;
+  /** Refunds `amountMinor` of a captured payment (less than the full amount is a partial refund). */
   refund(
     paymentId: string,
     amountMinor: number,

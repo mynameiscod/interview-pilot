@@ -90,6 +90,7 @@ import {
   Quote,
   QuoteBody,
   RefundBody,
+  RefundPreview,
   UpsertCouponBody,
   VerifyPaymentBody,
   CompareQuery,
@@ -99,6 +100,9 @@ import {
   ProcessingProgress,
   ReportHistoryItem,
   ReportSummary,
+  AdminCreditAccount,
+  AdminCreditLookupQuery,
+  CreditAdjustmentBody,
   CreditBalance,
   CreditLedgerEntry,
   CreditLedgerQuery,
@@ -1104,6 +1108,15 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: PurchaseSummary,
     errors: [401, 404],
   });
+  route('get', '/payments/purchases/{purchaseId}/receipt', {
+    tag: 'Payments',
+    auth: 'bearer',
+    summary:
+      'Download the receipt of a paid purchase (application/pdf; a GST tax invoice when a seller GSTIN is set); 409 before payment',
+    response: null,
+    status: 200,
+    errors: [401, 404, 409],
+  });
   const pay = (method: Method, path: string, spec: Omit<RouteSpec, 'tag' | 'auth'>) =>
     route(method, path, {
       tag: 'Admin payments',
@@ -1157,11 +1170,36 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'One purchase with its payment history (payments.read)',
     response: AdminPurchase,
   });
+  pay('get', '/admin/purchases/{id}/receipt', {
+    summary: 'Download the receipt of a paid purchase (application/pdf) (payments.read)',
+    response: null,
+    status: 200,
+    errors: [401, 403, 404, 409],
+  });
+  pay('get', '/admin/purchases/{id}/refund-preview', {
+    summary:
+      'Refundable amount, credits used and unused, and a prorated suggestion (payments.read)',
+    response: RefundPreview,
+  });
   pay('post', '/admin/purchases/{id}/refund', {
-    summary: 'Refund a paid purchase in full; unused credits are withdrawn (payments.manage)',
+    summary:
+      'Refund all or part of a paid purchase; unused credits are withdrawn; used credits need acknowledgeUsedCredits (payments.manage)',
     body: RefundBody,
     response: AdminRefundResult,
     errors: [...conflict, 503],
+  });
+  pay('get', '/admin/credits/account', {
+    summary:
+      "A candidate's balance and latest ledger entries, by exact email or user id (payments.read)",
+    query: AdminCreditLookupQuery,
+    response: AdminCreditAccount,
+  });
+  pay('post', '/admin/credits/adjustments', {
+    summary:
+      'Grant or deduct credits by hand with a reason; audited (credits.adjust). 409 when a deduction exceeds usable credits',
+    body: CreditAdjustmentBody,
+    response: AdminCreditAccount,
+    errors: conflict,
   });
   pay('post', '/admin/purchases/{id}/reconcile', {
     summary: 'Ask the gateway what happened to a purchase and apply it (payments.manage)',

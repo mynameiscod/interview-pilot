@@ -1,16 +1,25 @@
 import type { Logger } from '@cbi/config';
 import {
+  claimRefund,
   CouponModel,
-  CouponRedemptionModel,
+  CouponUnavailableError,
+  couponUsesHeld,
+  ensureCouponCounter,
+  issueInvoiceNumber,
+  lotUsage,
   markPurchaseFailed,
   markPurchasePaid,
   markPurchaseRefunded,
+  markRefundFailed,
   markRefundPending,
   PaymentModel,
   PlanModel,
   PurchaseModel,
   reconcilePurchase,
+  releaseRefundClaim,
+  reserveCoupon,
   UserModel,
+  UserProfileModel,
   WebhookEventModel,
   type CouponRecord,
   type PaymentRecord,
@@ -21,8 +30,11 @@ import {
 import { NotConfiguredError, type PaymentGateway } from '@cbi/provider-adapters';
 import {
   PAYMENT_POLICY,
+  proratedRefundMinor,
   type AdminPurchase,
   type AdminPurchaseQuery,
+  type AdminRefundResult,
+  type BillingSetting,
   type CheckoutOrder,
   type CouponRejection,
   type CouponSummary,
@@ -32,6 +44,8 @@ import {
   type PurchaseSummary,
   type Quote,
   type QuoteBody,
+  type RefundBody,
+  type RefundPreview,
   type UpsertCouponBody,
   type VerifyPaymentBody,
 } from '@cbi/shared-types';
@@ -40,6 +54,7 @@ import { AppError } from '../../lib/errors.js';
 import { iso, objectId } from '../../lib/ids.js';
 import type { ClientContext } from '../../lib/request-context.js';
 import { transaction } from '../../lib/transaction.js';
+import { renderReceiptPdf } from './receipt-pdf.js';
 
 /** Razorpay's smallest chargeable amount (₹1). Discounted totals below it are raised to it. */
 export const MIN_CHARGE_MINOR = 100;
@@ -78,7 +93,13 @@ export const couponSummary = (c: CouponRecord): CouponSummary => ({
   updatedAt: iso(c.updatedAt),
 });
 
-export const purchaseSummary = (p: PurchaseRecord): PurchaseSummary => ({
+/** A receipt exists for anything that was paid, including purchases refunded since. */
+const receiptAvailable = (p: PurchaseRecord) => p.status === 'PAID' || p.status === 'REFUNDED';
+
+export const purchaseSummary = (
+  p: PurchaseRecord,
+  payment: Pick<PaymentRecord, 'refundedMinor'> | null = null,
+): PurchaseSummary => ({
   id: String(p._id),
   status: p.status,
   plan: {
@@ -93,6 +114,9 @@ export const purchaseSummary = (p: PurchaseRecord): PurchaseSummary => ({
   totalMinor: p.amountMinor,
   currency: p.currency,
   creditsIssuedAt: p.creditsIssuedAt ? iso(p.creditsIssuedAt) : null,
+  refundedMinor: payment?.refundedMinor ?? (p.status === 'REFUNDED' ? p.amountMinor : 0),
+  invoiceNumber: p.invoiceNumber ?? null,
+  receiptAvailable: receiptAvailable(p),
   createdAt: iso(p.createdAt),
   updatedAt: iso(p.updatedAt),
 });
@@ -103,9 +127,10 @@ function adminPurchase(
   email: string | null,
 ): AdminPurchase {
   return {
-    ...purchaseSummary(p),
+    ...purchaseSummary(p, payment),
     userId: String(p.userId),
     userEmail: email,
+    refundFailed: payment?.refundFailed ?? false,
     payment: payment
       ? {
           provider: payment.provider,
@@ -117,6 +142,16 @@ function adminPurchase(
             status: h.status,
             at: iso(h.at),
             source: h.source,
+          })),
+          refunds: (payment.refunds ?? []).map((r) => ({
+            id: r.id,
+            amountMinor: r.amountMinor,
+            status: r.status,
+            creditsToWithdraw: r.creditsToWithdraw,
+            creditsWithdrawn: r.creditsWithdrawn,
+            reason: r.reason,
+            requestedAt: iso(r.requestedAt),
+            processedAt: r.processedAt ? iso(r.processedAt) : null,
           })),
         }
       : null,
@@ -163,6 +198,10 @@ export interface PaymentsServiceDeps {
   gateway: PaymentGateway;
   audit: AuditService;
   logger: Logger;
+  /** The seller details printed on receipts (System → Settings → Billing). */
+  billing: () => Promise<BillingSetting>;
+  /** Optional font covering non-Latin names on receipts. */
+  receiptFontPath?: string | null;
 }
 
 export type WebhookResult =
@@ -179,6 +218,12 @@ export type WebhookResult =
 
 export function createPaymentsService(deps: PaymentsServiceDeps) {
   const { gateway, audit, logger } = deps;
+  const refundInProgress = () =>
+    new AppError(
+      409,
+      'INVALID_STATE',
+      'A refund is already in progress for this purchase, or its refundable amount changed. Reload and try again.',
+    );
 
   async function activePlan(code: string) {
     const plan = await PlanModel.findOne({ code, active: true }).lean<PlanRecord>();
@@ -195,9 +240,7 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
     let rejection: CouponRejection | null = null;
     if (body.couponCode) {
       coupon = await CouponModel.findOne({ code: body.couponCode }).lean<CouponRecord>();
-      const redeemed = coupon
-        ? await CouponRedemptionModel.countDocuments({ couponId: coupon._id, userId })
-        : 0;
+      const redeemed = coupon ? await couponUsesHeld(coupon._id, userId) : 0;
       rejection = couponRejection(coupon, plan.code, redeemed, now);
     }
     const applied = body.couponCode !== null && rejection === null;
@@ -309,20 +352,29 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         await markPurchaseRefunded({
           purchaseId: payment.purchaseId,
           refundId: event.refund.id,
+          amountMinor: event.refund.amountMinor,
           source: 'WEBHOOK',
         });
         return 'REFUNDED';
       }
       case 'refund.failed': {
-        const now = new Date();
-        await PaymentModel.updateOne(
-          { paymentId: event.refund.paymentId, status: 'REFUND_PENDING' },
-          {
-            $set: { status: 'CAPTURED', 'refund.status': 'failed' },
-            $push: { statusHistory: { status: 'CAPTURED', at: now, source: 'WEBHOOK' } },
-          },
-        );
+        const failed = await markRefundFailed({
+          paymentId: event.refund.paymentId,
+          refundId: event.refund.id,
+          amountMinor: event.refund.amountMinor,
+        });
         logger.error({ refundId: event.refund.id }, 'refund failed at the gateway');
+        if (failed) {
+          // Flagged on the payment for the admin; recorded here for the audit trail.
+          await audit.record({
+            actorType: 'SYSTEM',
+            action: 'payments.refund.failed',
+            resourceType: 'purchase',
+            resourceId: String(failed.purchaseId),
+            outcome: 'FAILURE',
+            details: { refundId: event.refund.id, amountMinor: failed.amountMinor },
+          });
+        }
         return 'REFUND_FAILED';
       }
       case 'ignored':
@@ -367,27 +419,46 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         });
       }
       const now = new Date();
-      const [purchase] = await PurchaseModel.create([
-        {
-          userId,
-          planId: plan._id,
-          plan: {
-            code: plan.code,
-            version: plan.version,
-            name: plan.name,
-            credits: plan.credits,
-            validityDays: plan.validityDays,
-          },
-          couponId: coupon?._id ?? null,
-          couponCode: coupon?.code ?? null,
-          listPriceMinor: quote.listPriceMinor,
-          discountMinor: quote.discountMinor,
-          amountMinor: quote.totalMinor,
-          currency: quote.currency,
-          statusHistory: [{ status: 'CREATED', at: now, source: 'ORDER' }],
-        },
-      ]);
-      const purchaseId = String(purchase!._id);
+      if (coupon) await ensureCouponCounter(coupon._id, userId);
+      // The purchase and its coupon use are created together: the limits are
+      // checked by the writes that take the use, so concurrent orders cannot
+      // overrun them (see reserveCoupon).
+      let purchase;
+      try {
+        purchase = await transaction(async (session) => {
+          const [created] = await PurchaseModel.create(
+            [
+              {
+                userId,
+                planId: plan._id,
+                plan: {
+                  code: plan.code,
+                  version: plan.version,
+                  name: plan.name,
+                  credits: plan.credits,
+                  validityDays: plan.validityDays,
+                },
+                couponId: coupon?._id ?? null,
+                couponCode: coupon?.code ?? null,
+                listPriceMinor: quote.listPriceMinor,
+                discountMinor: quote.discountMinor,
+                amountMinor: quote.totalMinor,
+                currency: quote.currency,
+                statusHistory: [{ status: 'CREATED', at: now, source: 'ORDER' }],
+              },
+            ],
+            { session },
+          );
+          if (coupon) await reserveCoupon({ coupon, userId, purchaseId: created!._id }, session);
+          return created!;
+        });
+      } catch (err) {
+        if (err instanceof CouponUnavailableError) {
+          throw AppError.validation('This coupon cannot be applied.', { rejection: err.reason });
+        }
+        throw err;
+      }
+      const purchaseId = String(purchase._id);
       await audit.record(
         {
           actorType: 'USER',
@@ -434,7 +505,7 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       // An order was created, so a real gateway is configured.
       const providerName = gateway.name as 'razorpay' | 'mock';
       await PaymentModel.create({
-        purchaseId: purchase!._id,
+        purchaseId: purchase._id,
         userId,
         provider: providerName,
         orderId: order.id,
@@ -530,11 +601,25 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
         .sort({ createdAt: -1, _id: -1 })
         .limit(100)
         .lean<PurchaseRecord[]>();
-      return rows.map(purchaseSummary);
+      const payments = await PaymentModel.find(
+        { purchaseId: { $in: rows.map((r) => r._id) } },
+        { purchaseId: 1, refundedMinor: 1 },
+      ).lean();
+      const refundedBy = new Map(payments.map((p) => [String(p.purchaseId), p]));
+      return rows.map((r) => purchaseSummary(r, refundedBy.get(String(r._id)) ?? null));
     },
 
     async get(userId: string, id: string): Promise<PurchaseSummary> {
-      return purchaseSummary(await ownPurchase(userId, id));
+      const purchase = await ownPurchase(userId, id);
+      return purchaseSummary(
+        purchase,
+        await PaymentModel.findOne({ purchaseId: purchase._id }, { refundedMinor: 1 }).lean(),
+      );
+    },
+
+    /** The receipt PDF of the caller's paid purchase. */
+    async receipt(userId: string, id: string) {
+      return receiptFor(await ownPurchase(userId, id), deps);
     },
 
     /** The order's gateway id for a purchase the user owns (mock checkout in development). */
@@ -729,45 +814,136 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       return (await decorate([row]))[0]!;
     },
 
+    async adminReceipt(id: string) {
+      const purchase = await PurchaseModel.findById(
+        objectId(id, 'Purchase'),
+      ).lean<PurchaseRecord>();
+      if (!purchase) throw AppError.notFound('Purchase not found');
+      return receiptFor(purchase, deps);
+    },
+
+    /** What refunding a purchase involves: amounts, and how its credits were used. */
+    async refundPreview(id: string): Promise<RefundPreview> {
+      const purchase = await PurchaseModel.findById(
+        objectId(id, 'Purchase'),
+      ).lean<PurchaseRecord>();
+      if (!purchase) throw AppError.notFound('Purchase not found');
+      const payment = await PaymentModel.findOne({
+        purchaseId: purchase._id,
+      }).lean<PaymentRecord>();
+      return previewFor(purchase, payment);
+    },
+
     /**
-     * Refunds a paid purchase in full through the gateway. Unused credits from
-     * it are withdrawn when the refund is processed (immediately, or on the
-     * refund webhook).
+     * Refunds all or part of a paid purchase through the gateway. The payment
+     * is claimed first (CAPTURED → REFUND_REQUESTED, one conditional update,
+     * audited in the same transaction), so concurrent requests cannot both
+     * reach the gateway; a refused request releases the claim. Unused credits
+     * are withdrawn when the refund is processed (immediately, or on the
+     * refund webhook): all of them for a refund that completes the full
+     * amount, else the number chosen.
      */
-    async refund(id: string, reason: string, actorId: string, ctx: ClientContext) {
+    async refund(
+      id: string,
+      body: RefundBody,
+      actorId: string,
+      ctx: ClientContext,
+    ): Promise<AdminRefundResult> {
       const purchaseId = objectId(id, 'Purchase');
       const purchase = await PurchaseModel.findById(purchaseId).lean<PurchaseRecord>();
       if (!purchase) throw AppError.notFound('Purchase not found');
-      const payment = await PaymentModel.findOne({ purchaseId }).lean();
-      if (purchase.status !== 'PAID' || payment?.status !== 'CAPTURED' || !payment.paymentId) {
-        throw new AppError(409, 'INVALID_STATE', 'Only captured, paid purchases can be refunded.');
+      const payment = await PaymentModel.findOne({ purchaseId }).lean<PaymentRecord>();
+      if (payment?.status === 'REFUND_REQUESTED' || payment?.status === 'REFUND_PENDING') {
+        throw refundInProgress();
       }
-      // Audit before the money moves; a failed audit write stops the refund.
-      await transaction((session) =>
-        audit.record(
+      const preview = await previewFor(purchase, payment);
+      if (!preview.refundable || !payment?.paymentId) {
+        throw new AppError(
+          409,
+          'INVALID_STATE',
+          'Only captured, paid purchases with an amount left to refund can be refunded.',
+        );
+      }
+      const amountMinor = body.amountMinor ?? preview.refundableMinor;
+      if (amountMinor > preview.refundableMinor) {
+        throw AppError.validation('The refund is more than is left to refund.', {
+          field: 'amountMinor',
+          refundableMinor: preview.refundableMinor,
+        });
+      }
+      if (preview.creditsUsed > 0 && !body.acknowledgeUsedCredits) {
+        throw AppError.validation(
+          `The candidate has used ${preview.creditsUsed} of ${preview.creditsGranted} credits from this purchase. Confirm to refund anyway.`,
+          { field: 'acknowledgeUsedCredits', creditsUsed: preview.creditsUsed },
+        );
+      }
+      const fully = amountMinor === preview.refundableMinor;
+      const withdrawable = preview.creditsUnused + preview.creditsExpired;
+      const creditsToWithdraw = fully
+        ? withdrawable
+        : (body.withdrawCredits ?? preview.creditsUnused);
+      if (creditsToWithdraw > withdrawable) {
+        throw AppError.validation('Only unused credits can be withdrawn.', {
+          field: 'withdrawCredits',
+          creditsUnused: preview.creditsUnused,
+        });
+      }
+
+      // Claim and audit together: a failed audit write undoes the claim, and
+      // a request that loses the race is refused before anything is recorded.
+      const claim = await transaction(async (session) => {
+        const claimed = await claimRefund(
+          { purchaseId, amountMinor, creditsToWithdraw, reason: body.reason, actorId },
+          session,
+        );
+        if (!claimed) return null;
+        await audit.record(
           {
             actorType: 'ADMIN',
             actorId,
             action: 'payments.refund',
             resourceType: 'purchase',
             resourceId: id,
-            details: { amountMinor: payment.amountMinor, reason },
+            details: {
+              amountMinor,
+              refundableMinor: preview.refundableMinor,
+              completesRefund: fully,
+              creditsToWithdraw,
+              creditsUsed: preview.creditsUsed,
+              acknowledgedUsedCredits: body.acknowledgeUsedCredits,
+              reason: body.reason,
+            },
           },
           ctx,
           session,
-        ),
-      );
+        );
+        return claimed;
+      });
+      if (!claim) throw refundInProgress();
+
       let refund;
       try {
-        refund = await gateway.refund(payment.paymentId, payment.amountMinor, {
-          purchaseId: id,
-        });
+        refund = await gateway.refund(payment.paymentId, amountMinor, { purchaseId: id });
       } catch (err) {
         logger.error({ err, purchaseId: id }, 'refund request failed');
+        await releaseRefundClaim({ purchaseId, key: claim.key });
+        await audit.record(
+          {
+            actorType: 'ADMIN',
+            actorId,
+            action: 'payments.refund.request_failed',
+            resourceType: 'purchase',
+            resourceId: id,
+            outcome: 'FAILURE',
+            details: { amountMinor },
+          },
+          ctx,
+        );
         throw new AppError(503, 'PROVIDER_UNAVAILABLE', 'The refund could not be requested.');
       }
       await markRefundPending({
         purchaseId,
+        key: claim.key,
         refundId: refund.id,
         amountMinor: refund.amountMinor,
       });
@@ -778,6 +954,8 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
           refundId: refund.id,
           source: 'ADMIN',
         }));
+      } else if (refund.status === 'failed') {
+        await markRefundFailed({ paymentId: payment.paymentId, refundId: refund.id });
       }
       return {
         purchase: (await decorate([(await PurchaseModel.findById(purchaseId).lean())!]))[0]!,
@@ -819,6 +997,89 @@ export function createPaymentsService(deps: PaymentsServiceDeps) {
       };
     },
   };
+}
+
+/** Amounts and credit use for a refund decision (see RefundPreview). */
+export async function previewFor(
+  purchase: PurchaseRecord,
+  payment: PaymentRecord | null,
+  now = new Date(),
+): Promise<RefundPreview> {
+  const usage = purchase.creditLotId
+    ? await lotUsage(purchase.userId, purchase.creditLotId, now)
+    : { granted: 0, remaining: 0, expired: false, withdrawn: 0, used: 0 };
+  const capturedMinor = payment?.amountMinor ?? 0;
+  const refundedMinor = payment?.refundedMinor ?? 0;
+  const refundable =
+    purchase.status === 'PAID' &&
+    payment?.status === 'CAPTURED' &&
+    Boolean(payment.paymentId) &&
+    capturedMinor > refundedMinor;
+  const refundableMinor = refundable ? capturedMinor - refundedMinor : 0;
+  const creditsUnused = usage.expired ? 0 : usage.remaining;
+  return {
+    currency: purchase.currency,
+    capturedMinor,
+    refundedMinor,
+    refundableMinor,
+    refundable,
+    creditsGranted: usage.granted,
+    creditsUnused,
+    creditsUsed: usage.used,
+    creditsExpired: usage.expired ? usage.remaining : 0,
+    creditsWithdrawn: usage.withdrawn,
+    suggestedMinor: proratedRefundMinor({
+      capturedMinor,
+      creditsGranted: usage.granted,
+      creditsUnused,
+      refundableMinor,
+    }),
+  };
+}
+
+/**
+ * The receipt of a paid (or since refunded) purchase. Purchases paid before
+ * invoice numbers existed get theirs now.
+ */
+async function receiptFor(
+  purchase: PurchaseRecord,
+  deps: Pick<PaymentsServiceDeps, 'billing' | 'receiptFontPath'>,
+): Promise<{ body: Buffer; fileName: string }> {
+  if (!receiptAvailable(purchase)) {
+    throw new AppError(409, 'INVALID_STATE', 'A receipt is available once the purchase is paid.');
+  }
+  const invoiceNumber =
+    purchase.invoiceNumber ?? (await issueInvoiceNumber(purchase._id, new Date()));
+  if (!invoiceNumber) throw AppError.notFound('Purchase not found');
+  const [fresh, payment, user, profile, seller] = await Promise.all([
+    PurchaseModel.findById(purchase._id, { invoiceIssuedAt: 1 }).lean(),
+    PaymentModel.findOne({ purchaseId: purchase._id }).lean<PaymentRecord>(),
+    UserModel.findById(purchase.userId, { primaryEmail: 1 }).lean(),
+    UserProfileModel.findOne({ userId: purchase.userId }, { displayName: 1 }).lean(),
+    deps.billing(),
+  ]);
+  const body = await renderReceiptPdf(
+    {
+      invoiceNumber,
+      issuedAt: fresh?.invoiceIssuedAt ?? purchase.creditsIssuedAt ?? purchase.createdAt,
+      seller,
+      buyer: {
+        name: profile?.displayName ?? null,
+        email: (user as { primaryEmail?: string | null } | null)?.primaryEmail ?? null,
+      },
+      plan: purchase.plan,
+      couponCode: purchase.couponCode,
+      listPriceMinor: purchase.listPriceMinor,
+      discountMinor: purchase.discountMinor,
+      totalMinor: purchase.amountMinor,
+      refundedMinor: payment?.refundedMinor ?? 0,
+      currency: purchase.currency,
+      payment: payment ? { provider: payment.provider, paymentId: payment.paymentId } : null,
+      purchaseId: String(purchase._id),
+    },
+    { fontPath: deps.receiptFontPath ?? null },
+  );
+  return { body, fileName: `receipt-${invoiceNumber.replaceAll('/', '-')}.pdf` };
 }
 
 async function decorate(rows: PurchaseRecord[]): Promise<AdminPurchase[]> {

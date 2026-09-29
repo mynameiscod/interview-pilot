@@ -25,7 +25,8 @@ export type PaymentReconcileResult = Record<ReconcileOutcome, number> & {
  * verify, webhook lost): unconfirmed purchases older than
  * `reconcileAfterMs` are checked with the gateway, credited if captured and
  * expired after `expireAfterMs`; refunds still pending are completed once
- * the gateway reports them refunded. Every step is idempotent, so running
+ * the gateway reports them refunded, and stale refund claims the gateway
+ * never received are released. Every step is idempotent, so running
  * alongside verify and webhooks is safe.
  */
 export async function reconcilePayments(
@@ -54,7 +55,19 @@ export async function reconcilePayments(
     .sort({ createdAt: 1 })
     .limit(limit)
     .lean();
-  const refunding = await PaymentModel.find({ status: 'REFUND_PENDING' }, { purchaseId: 1 })
+  // Refunds waiting for the gateway, and refund claims whose admin request never finished.
+  const refunding = await PaymentModel.find(
+    {
+      $or: [
+        { status: 'REFUND_PENDING' },
+        {
+          status: 'REFUND_REQUESTED',
+          updatedAt: { $lt: new Date(now.getTime() - PAYMENT_POLICY.refundClaimStaleMs) },
+        },
+      ],
+    },
+    { purchaseId: 1 },
+  )
     .limit(limit)
     .lean();
   const ids = [...unconfirmed.map((p) => p._id), ...refunding.map((p) => p.purchaseId)];

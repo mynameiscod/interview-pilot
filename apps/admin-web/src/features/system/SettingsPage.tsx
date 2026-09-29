@@ -1,4 +1,5 @@
 import {
+  BillingSetting,
   DEFAULT_SETTINGS,
   FinanceSetting,
   KpiTargets,
@@ -25,7 +26,7 @@ type Values = Record<string, string | boolean>;
 
 type Field = {
   name: string;
-  kind: 'checkbox' | 'textarea' | 'number' | 'percent';
+  kind: 'checkbox' | 'textarea' | 'text' | 'number' | 'percent';
   /** Where the shared schema reports problems with this field. */
   path: string;
   /** Read-only display of the saved value. */
@@ -44,6 +45,15 @@ type Spec = {
 const str = (v: string | boolean | undefined) => (typeof v === 'string' ? v : '');
 const numberInput = (value: string) =>
   /^\d+(\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : Number.NaN;
+/** An optional text value: blank is null. */
+const optionalText = (v: string | boolean | undefined) => str(v).trim() || null;
+const textField = (name: string, maxLength: number): Field => ({
+  name,
+  kind: 'text',
+  path: name,
+  maxLength,
+  show: (v) => (typeof v[name] === 'string' && v[name] ? String(v[name]) : '—'),
+});
 const percentField = (name: string): Field => ({
   name,
   kind: 'percent',
@@ -113,6 +123,37 @@ const SPECS: Spec[] = [
           percentInputToRate(str(values[k])),
         ]),
       ),
+  },
+  {
+    // Seller details on purchase receipts; a GSTIN turns them into tax invoices.
+    key: 'billing',
+    schema: BillingSetting,
+    fields: [
+      textField('legalName', 120),
+      { ...textField('address', 300), kind: 'textarea' },
+      textField('gstin', 15),
+      textField('sacCode', 8),
+      {
+        name: 'taxRatePercent',
+        kind: 'percent',
+        path: 'taxRatePercent',
+        show: (v) => `${Number(v.taxRatePercent)}%`,
+      },
+    ],
+    toForm: (v) => ({
+      legalName: String(v.legalName ?? ''),
+      address: String(v.address ?? ''),
+      gstin: String(v.gstin ?? ''),
+      sacCode: String(v.sacCode ?? ''),
+      taxRatePercent: String(v.taxRatePercent ?? ''),
+    }),
+    toValue: (values) => ({
+      legalName: str(values.legalName).trim(),
+      address: str(values.address).trim(),
+      gstin: optionalText(values.gstin)?.toUpperCase() ?? null,
+      sacCode: optionalText(values.sacCode),
+      taxRatePercent: numberInput(str(values.taxRatePercent)),
+    }),
   },
 ];
 
@@ -278,7 +319,8 @@ function SettingSection({ spec, entry }: { spec: Spec; entry: SettingEntry | und
                       <input
                         id={fieldId(f.name)}
                         type="text"
-                        inputMode="decimal"
+                        inputMode={f.kind === 'text' ? undefined : 'decimal'}
+                        maxLength={f.maxLength}
                         className={`form-control ${invalid ? 'is-invalid' : ''}`}
                         value={str(values[f.name])}
                         onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}

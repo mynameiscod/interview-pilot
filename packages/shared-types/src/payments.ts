@@ -192,6 +192,12 @@ export const PurchaseSummary = z.object({
   totalMinor: z.number().int(),
   currency: PaymentCurrency,
   creditsIssuedAt: z.iso.datetime().nullable(),
+  /** Paise refunded so far (a partial refund leaves the purchase PAID). */
+  refundedMinor: z.number().int(),
+  /** Assigned when the payment is captured (sequential per financial year). */
+  invoiceNumber: z.string().nullable(),
+  /** A receipt PDF can be downloaded (the purchase was paid, even if later refunded). */
+  receiptAvailable: z.boolean(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -199,19 +205,45 @@ export type PurchaseSummary = z.infer<typeof PurchaseSummary>;
 
 // ---- Admin ------------------------------------------------------------------------------------
 
+/**
+ * `REFUND_REQUESTED` is the claim an admin refund takes before the gateway
+ * is called, so two refund requests can never both reach the gateway. It
+ * returns to `CAPTURED` if the request fails, or after a partial refund.
+ */
 export const PaymentStatus = z.enum([
   'CREATED',
   'AUTHORIZED',
   'CAPTURED',
   'FAILED',
+  'REFUND_REQUESTED',
   'REFUND_PENDING',
   'REFUNDED',
 ]);
 export type PaymentStatus = z.infer<typeof PaymentStatus>;
 
+/** One refund against a payment: requested (claimed) → pending → processed, or failed. */
+export const RefundEntryStatus = z.enum(['requested', 'pending', 'processed', 'failed']);
+export type RefundEntryStatus = z.infer<typeof RefundEntryStatus>;
+
+export const AdminRefund = z.object({
+  /** The gateway's refund id (null until the gateway accepted the request). */
+  id: z.string().nullable(),
+  amountMinor: z.number().int(),
+  status: RefundEntryStatus,
+  /** Unused credits to withdraw when the refund is processed. */
+  creditsToWithdraw: z.number().int(),
+  creditsWithdrawn: z.number().int(),
+  reason: z.string().nullable(),
+  requestedAt: z.iso.datetime(),
+  processedAt: z.iso.datetime().nullable(),
+});
+export type AdminRefund = z.infer<typeof AdminRefund>;
+
 export const AdminPurchase = PurchaseSummary.extend({
   userId: z.string(),
   userEmail: z.string().nullable(),
+  /** The gateway reported a refund as failed; cleared by the next refund request. */
+  refundFailed: z.boolean(),
   payment: z
     .object({
       provider: z.string(),
@@ -222,6 +254,7 @@ export const AdminPurchase = PurchaseSummary.extend({
       history: z.array(
         z.object({ status: PaymentStatus, at: z.iso.datetime(), source: z.string() }),
       ),
+      refunds: z.array(AdminRefund),
     })
     .nullable(),
 });
@@ -234,14 +267,97 @@ export const AdminPurchaseQuery = z.object({
 });
 export type AdminPurchaseQuery = z.infer<typeof AdminPurchaseQuery>;
 
-export const RefundBody = z.object({ reason: z.string().trim().min(3).max(300) });
+export const RefundBody = z.object({
+  reason: z.string().trim().min(3).max(300),
+  /** Paise to refund; omitted refunds everything not refunded yet. */
+  amountMinor: z.number().int().min(1).max(10_000_000).optional(),
+  /**
+   * Unused credits to withdraw when the refund is processed; omitted withdraws
+   * every unused credit. A refund that completes the full amount always
+   * withdraws every unused credit.
+   */
+  withdrawCredits: z.number().int().min(0).max(500).optional(),
+  /** Required when the candidate has already used credits from this purchase. */
+  acknowledgeUsedCredits: z.boolean().default(false),
+});
 export type RefundBody = z.infer<typeof RefundBody>;
 
-/** Purchases are reconciled after this long in CREATED, and expire after a day without payment. */
+/** What a refund of a purchase would involve, for the admin to decide. */
+export const RefundPreview = z.object({
+  currency: PaymentCurrency,
+  capturedMinor: z.number().int(),
+  refundedMinor: z.number().int(),
+  /** Captured minus already refunded (0 when not refundable now). */
+  refundableMinor: z.number().int(),
+  refundable: z.boolean(),
+  creditsGranted: z.number().int(),
+  /** Still usable in the purchase's lot. */
+  creditsUnused: z.number().int(),
+  /** Spent, or held by an interview in progress. */
+  creditsUsed: z.number().int(),
+  /** Left unused until the lot expired. */
+  creditsExpired: z.number().int(),
+  /** Already withdrawn by earlier refunds. */
+  creditsWithdrawn: z.number().int(),
+  /** Prorated to the unused credits, capped at the refundable amount. */
+  suggestedMinor: z.number().int(),
+});
+export type RefundPreview = z.infer<typeof RefundPreview>;
+
+/**
+ * The refund suggested for a purchase: the captured amount prorated to the
+ * credits still unused, never more than what is left to refund.
+ */
+export function proratedRefundMinor(input: {
+  capturedMinor: number;
+  creditsGranted: number;
+  creditsUnused: number;
+  refundableMinor: number;
+}): number {
+  if (input.creditsGranted <= 0 || input.refundableMinor <= 0) return 0;
+  const unused = Math.min(Math.max(input.creditsUnused, 0), input.creditsGranted);
+  const prorated = Math.floor((input.capturedMinor * unused) / input.creditsGranted);
+  return Math.min(prorated, input.refundableMinor);
+}
+
+/**
+ * Purchases are reconciled after this long in CREATED, and expire after a day
+ * without payment. A refund claim with no gateway answer after
+ * `refundClaimStaleMs` is checked with the gateway (the admin request died).
+ */
 export const PAYMENT_POLICY = {
   reconcileAfterMs: 30 * 60_000,
   expireAfterMs: 24 * 3600_000,
+  refundClaimStaleMs: 15 * 60_000,
 } as const;
+
+// ---- Receipts and invoices ------------------------------------------------------------------
+
+/** India's financial year (April–March, IST) that `at` falls in, as its starting year. */
+export function financialYearStart(at: Date): number {
+  const ist = new Date(at.getTime() + 330 * 60_000);
+  const year = ist.getUTCFullYear();
+  return ist.getUTCMonth() >= 3 ? year : year - 1;
+}
+
+/**
+ * `CPI/26-27/000042`: consecutive per financial year and at most 16
+ * characters (the GST limit for invoice numbers).
+ */
+export function formatInvoiceNumber(fyStart: number, seq: number): string {
+  const yy = (n: number) => String(n % 100).padStart(2, '0');
+  return `CPI/${yy(fyStart)}-${yy(fyStart + 1)}/${String(seq).padStart(6, '0')}`;
+}
+
+/** Splits a GST-inclusive total into its taxable value and tax (rounded to the paisa). */
+export function gstBreakdown(
+  totalMinor: number,
+  ratePercent: number,
+): { taxableMinor: number; taxMinor: number } {
+  if (ratePercent <= 0) return { taxableMinor: totalMinor, taxMinor: 0 };
+  const taxableMinor = Math.round((totalMinor * 100) / (100 + ratePercent));
+  return { taxableMinor, taxMinor: totalMinor - taxableMinor };
+}
 
 /** Activating or retiring a plan version. */
 export const PlanActivationBody = z.object({ reason: z.string().trim().min(3).max(300) });

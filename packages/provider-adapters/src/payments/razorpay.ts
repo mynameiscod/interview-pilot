@@ -29,6 +29,7 @@ interface RzPayment {
   amount: number;
   currency: string;
   status: GatewayPayment['status'];
+  amount_refunded?: number;
 }
 interface RzRefund {
   id: string;
@@ -43,6 +44,7 @@ const toPayment = (p: RzPayment): GatewayPayment => ({
   amountMinor: p.amount,
   currency: p.currency,
   status: p.status,
+  amountRefundedMinor: p.amount_refunded ?? 0,
 });
 const toRefund = (r: RzRefund): GatewayRefund => ({
   id: r.id,

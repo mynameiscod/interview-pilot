@@ -416,6 +416,44 @@ describe('settings', () => {
     });
   });
 
+  it('saves the billing details printed on receipts', async () => {
+    const { api } = await renderAt('/system/settings', ['SUPER_ADMIN'], {
+      'GET /admin/settings': () => ok(settings()),
+      'PUT /admin/settings/billing': (body) =>
+        ok({
+          key: 'billing',
+          value: (body as { value: unknown }).value,
+          updatedAt: new Date().toISOString(),
+          updatedBy: 'admin-1',
+        }),
+    });
+    const billing = await screen.findByRole('region', { name: 'Billing' });
+    expect(within(billing).getByLabelText('GST rate included in prices')).toHaveValue('18');
+    const user = userEvent.setup();
+    await user.type(within(billing).getByLabelText('Legal name'), 'CodeBegun Technologies');
+    await user.type(within(billing).getByLabelText('GSTIN'), '36AABCC1234D1Z');
+    await user.type(within(billing).getByLabelText(REASON), 'GST registration done');
+    await user.click(within(billing).getByRole('button', { name: 'Save billing settings' }));
+    expect(
+      within(billing).getByText('Enter a valid 15-character GSTIN, or leave it blank.'),
+    ).toBeInTheDocument();
+    expect(countOf(api, 'PUT /admin/settings/billing')).toBe(0);
+    await user.type(within(billing).getByLabelText('GSTIN'), '5');
+    await user.type(within(billing).getByLabelText('SAC code'), '999293');
+    await user.click(within(billing).getByRole('button', { name: 'Save billing settings' }));
+    expect(await within(billing).findByText('Billing saved.')).toBeInTheDocument();
+    expect(bodyOf(api, 'PUT /admin/settings/billing')).toEqual({
+      value: {
+        legalName: 'CodeBegun Technologies',
+        address: '',
+        gstin: '36AABCC1234D1Z5',
+        sacCode: '999293',
+        taxRatePercent: 18,
+      },
+      reason: 'GST registration done',
+    });
+  });
+
   it('saves maintenance mode and shows server validation errors', async () => {
     const { api } = await renderAt('/system/settings', ['SUPER_ADMIN'], {
       'GET /admin/settings': () => ok(settings()),

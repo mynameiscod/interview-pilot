@@ -108,11 +108,22 @@ couponSchema.index({ code: 1 }, { unique: true });
 
 export const CouponModel = model<CouponRecord>('Coupon', couponSchema);
 
+/**
+ * A coupon use, one per purchase (unique `purchaseId`). `RESERVED` when the
+ * order is created, `REDEEMED` when it is paid, `RELEASED` when the order can
+ * no longer be paid or is refunded in full. Rows written before reservations
+ * existed have no status and count as `REDEEMED`.
+ */
+export type CouponRedemptionStatus = 'RESERVED' | 'REDEEMED' | 'RELEASED';
+
 export interface CouponRedemptionRecord {
   _id: Types.ObjectId;
   couponId: Types.ObjectId;
   userId: Types.ObjectId;
   purchaseId: Types.ObjectId;
+  status: CouponRedemptionStatus;
+  redeemedAt: Date | null;
+  releasedAt: Date | null;
   createdAt: Date;
 }
 
@@ -121,15 +132,54 @@ const redemptionSchema = new Schema<CouponRedemptionRecord>(
     couponId: { type: Schema.Types.ObjectId, ref: 'Coupon', required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     purchaseId: { type: Schema.Types.ObjectId, ref: 'Purchase', required: true },
+    status: {
+      type: String,
+      enum: ['RESERVED', 'REDEEMED', 'RELEASED'],
+      required: true,
+      default: 'REDEEMED',
+    },
+    redeemedAt: { type: Date, default: null },
+    releasedAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false }, collection: 'couponRedemptions' },
 );
 redemptionSchema.index({ purchaseId: 1 }, { unique: true });
+// Not unique: a coupon may allow several uses per user. The per-user limit is
+// enforced by the unique `couponUserUsages` counter below.
 redemptionSchema.index({ couponId: 1, userId: 1 });
 
 export const CouponRedemptionModel = model<CouponRedemptionRecord>(
   'CouponRedemption',
   redemptionSchema,
+);
+
+/**
+ * How many uses of a coupon one user holds (reserved or redeemed). The
+ * unique (couponId, userId) index makes the guarded upsert in
+ * `reserveCoupon` atomic: a second concurrent first use collides instead of
+ * creating a second counter.
+ */
+export interface CouponUserUsageRecord {
+  _id: Types.ObjectId;
+  couponId: Types.ObjectId;
+  userId: Types.ObjectId;
+  held: number;
+  updatedAt: Date;
+}
+
+const couponUsageSchema = new Schema<CouponUserUsageRecord>(
+  {
+    couponId: { type: Schema.Types.ObjectId, ref: 'Coupon', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    held: { type: Number, required: true, default: 0, min: 0 },
+  },
+  { timestamps: { createdAt: false, updatedAt: true }, collection: 'couponUserUsages' },
+);
+couponUsageSchema.index({ couponId: 1, userId: 1 }, { unique: true });
+
+export const CouponUserUsageModel = model<CouponUserUsageRecord>(
+  'CouponUserUsage',
+  couponUsageSchema,
 );
 
 // ---- purchases ------------------------------------------------------------------------------------
@@ -156,6 +206,9 @@ export interface PurchaseRecord {
   statusHistory: { status: PurchaseStatusT; at: Date; source: string }[];
   creditsIssuedAt: Date | null;
   creditLotId: Types.ObjectId | null;
+  /** `CPI/26-27/000042`, assigned once when the purchase is paid. */
+  invoiceNumber: string | null;
+  invoiceIssuedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -199,15 +252,43 @@ const purchaseSchema = new Schema<PurchaseRecord>(
     },
     creditsIssuedAt: { type: Date, default: null },
     creditLotId: { type: Schema.Types.ObjectId, default: null },
+    invoiceNumber: { type: String, default: null },
+    invoiceIssuedAt: { type: Date, default: null },
   },
   { timestamps: true, collection: 'purchases' },
 );
 purchaseSchema.index({ userId: 1, createdAt: -1 });
 purchaseSchema.index({ status: 1, createdAt: 1 });
+purchaseSchema.index(
+  { invoiceNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { invoiceNumber: { $type: 'string' } },
+    name: 'unique_invoice_number',
+  },
+);
 
 export const PurchaseModel = model<PurchaseRecord>('Purchase', purchaseSchema);
 
 // ---- payments ------------------------------------------------------------------------------------------
+
+export type RefundEntryStatus = 'requested' | 'pending' | 'processed' | 'failed';
+
+/** One refund of a payment (several partial refunds may add up to the amount paid). */
+export interface RefundEntryRecord {
+  /** Our id for the entry, known before the gateway answers. */
+  key: string;
+  /** The gateway's refund id (null while only requested). */
+  id: string | null;
+  amountMinor: number;
+  status: RefundEntryStatus;
+  creditsToWithdraw: number;
+  creditsWithdrawn: number;
+  reason: string | null;
+  actorId: Types.ObjectId | null;
+  requestedAt: Date;
+  processedAt: Date | null;
+}
 
 export interface PaymentRecord {
   _id: Types.ObjectId;
@@ -221,7 +302,13 @@ export interface PaymentRecord {
   status: PaymentStatusT;
   statusHistory: { status: PaymentStatusT; at: Date; source: string }[];
   signatureVerified: boolean;
+  /** The latest refund (kept for older readers; `refunds` has them all). */
   refund: { id: string; amountMinor: number; status: 'pending' | 'processed' | 'failed' } | null;
+  refunds: RefundEntryRecord[];
+  /** Sum of processed refunds. */
+  refundedMinor: number;
+  /** The gateway reported a refund as failed; cleared by the next refund request. */
+  refundFailed: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -261,6 +348,32 @@ const paymentSchema = new Schema<PaymentRecord>(
       ),
       default: null,
     },
+    refunds: {
+      type: [
+        new Schema<RefundEntryRecord>(
+          {
+            key: { type: String, required: true },
+            id: { type: String, default: null },
+            amountMinor: { type: Number, required: true, min: 1 },
+            status: {
+              type: String,
+              enum: ['requested', 'pending', 'processed', 'failed'],
+              required: true,
+            },
+            creditsToWithdraw: { type: Number, required: true, default: 0 },
+            creditsWithdrawn: { type: Number, required: true, default: 0 },
+            reason: { type: String, default: null },
+            actorId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+            requestedAt: { type: Date, required: true },
+            processedAt: { type: Date, default: null },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+    refundedMinor: { type: Number, required: true, default: 0, min: 0 },
+    refundFailed: { type: Boolean, default: false },
   },
   { timestamps: true, collection: 'payments' },
 );
@@ -274,8 +387,27 @@ paymentSchema.index(
   },
 );
 paymentSchema.index({ purchaseId: 1 });
+paymentSchema.index({ status: 1, updatedAt: 1 });
 
 export const PaymentModel = model<PaymentRecord>('Payment', paymentSchema);
+
+// ---- invoiceCounters ---------------------------------------------------------------------------
+
+/** One consecutive invoice sequence per financial year (`_id` = `fy:2026`). */
+export interface InvoiceCounterRecord {
+  _id: string;
+  seq: number;
+}
+
+const invoiceCounterSchema = new Schema<InvoiceCounterRecord>(
+  { _id: { type: String, required: true }, seq: { type: Number, required: true, default: 0 } },
+  { collection: 'invoiceCounters', versionKey: false },
+);
+
+export const InvoiceCounterModel = model<InvoiceCounterRecord>(
+  'InvoiceCounter',
+  invoiceCounterSchema,
+);
 
 // ---- webhookEvents ------------------------------------------------------------------------------------------
 

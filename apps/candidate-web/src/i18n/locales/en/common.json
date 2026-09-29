@@ -1096,6 +1096,10 @@
     "details": "Details",
     "view": "View",
     "viewNamed": "View {{name}} purchase from {{date}}",
+    "receipt": "Receipt",
+    "receiptNamed": "Download the receipt for the {{name}} purchase from {{date}}",
+    "receiptError": "We could not download the receipt. Please try again.",
+    "partlyRefunded": "{{amount}} refunded",
     "statuses": {
       "CREATED": "Pending",
       "PAID": "Paid",

@@ -35,6 +35,7 @@ import { createInputsService } from './modules/inputs/inputs.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
 import { createLibraryAdminService } from './modules/library/library-admin.service.js';
 import { createLiveInterviewService, createRoomEmitter } from './modules/live/live.service.js';
+import { createCreditsAdminService } from './modules/credits/credits-admin.service.js';
 import { createPaymentsService } from './modules/payments/payments.service.js';
 import { createReportsService } from './modules/reports/reports.service.js';
 import { createTranscriptStore, createVoiceService } from './modules/voice/voice.service.js';
@@ -255,7 +256,14 @@ export function buildContainer(opts: ContainerOptions) {
     secrets: ai.secrets,
     audit,
   });
-  const payments = createPaymentsService({ gateway: paymentGateway, audit, logger });
+  const payments = createPaymentsService({
+    gateway: paymentGateway,
+    audit,
+    logger,
+    billing: () => settings.get('billing'),
+    receiptFontPath: env.RECEIPT_FONT_PATH ?? null,
+  });
+  const creditsAdmin = createCreditsAdminService({ audit });
   // Mock Checkout controls exist only with the mock gateway (refused outside development/test).
   const paymentMock = opts.overrides?.payments
     ? opts.overrides.payments.mock
@@ -303,6 +311,7 @@ export function buildContainer(opts: ContainerOptions) {
     proof,
     payments,
     paymentMock,
+    creditsAdmin,
     cookies,
     integrations,
     integrationsAdmin,

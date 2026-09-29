@@ -1,5 +1,6 @@
 import { createLogger } from '@cbi/config';
 import {
+  claimRefund,
   connectMongo,
   CreditLedgerModel,
   disconnectMongo,
@@ -125,12 +126,80 @@ describe('reconcilePayments', () => {
     const p = await openPurchase(mock, minutesAgo(10));
     const { payment } = mock.pay(p.orderId);
     await markPurchasePaid({ purchaseId: p.purchaseId, source: 'VERIFY', paymentId: payment.id });
+    const claim = await claimRefund({
+      purchaseId: p.purchaseId,
+      amountMinor: 19_900,
+      creditsToWithdraw: 3,
+      reason: 'Customer request',
+      actorId: null,
+    });
     const refund = await mock.gateway.refund(payment.id, payment.amountMinor);
-    await markRefundPending({ purchaseId: p.purchaseId, refundId: refund.id, amountMinor: 19_900 });
+    await markRefundPending({
+      purchaseId: p.purchaseId,
+      key: claim!.key,
+      refundId: refund.id,
+      amountMinor: 19_900,
+    });
 
     const result = await reconcilePayments({ gateway: mock.gateway, logger, now: NOW });
     expect(result.REFUNDED).toBe(1);
     expect(await statusOf(p.purchaseId)).toBe('REFUNDED');
+  });
+
+  it('completes a partial refund without refunding the purchase', async () => {
+    const mock = createMockGateway();
+    const p = await openPurchase(mock, minutesAgo(10));
+    const { payment } = mock.pay(p.orderId);
+    await markPurchasePaid({ purchaseId: p.purchaseId, source: 'VERIFY', paymentId: payment.id });
+    const claim = await claimRefund({
+      purchaseId: p.purchaseId,
+      amountMinor: 5_000,
+      creditsToWithdraw: 1,
+      reason: 'One credit back',
+      actorId: null,
+    });
+    const refund = await mock.gateway.refund(payment.id, 5_000);
+    await markRefundPending({
+      purchaseId: p.purchaseId,
+      key: claim!.key,
+      refundId: refund.id,
+      amountMinor: 5_000,
+    });
+
+    const result = await reconcilePayments({ gateway: mock.gateway, logger, now: NOW });
+    expect(result.REFUNDED).toBe(1);
+    expect(await statusOf(p.purchaseId)).toBe('PAID');
+    expect((await PaymentModel.findOne({ purchaseId: p.purchaseId }).lean())!).toMatchObject({
+      status: 'CAPTURED',
+      refundedMinor: 5_000,
+    });
+  });
+
+  it('releases a stale refund claim the gateway never received', async () => {
+    const mock = createMockGateway();
+    const p = await openPurchase(mock, minutesAgo(60));
+    const { payment } = mock.pay(p.orderId);
+    await markPurchasePaid({ purchaseId: p.purchaseId, source: 'VERIFY', paymentId: payment.id });
+    // The admin request died between the claim and the gateway call.
+    await claimRefund({
+      purchaseId: p.purchaseId,
+      amountMinor: 19_900,
+      creditsToWithdraw: 3,
+      reason: 'Customer request',
+      actorId: null,
+      now: minutesAgo(30),
+    });
+    await PaymentModel.collection.updateOne(
+      { purchaseId: p.purchaseId },
+      { $set: { updatedAt: minutesAgo(30) } },
+    );
+
+    const result = await reconcilePayments({ gateway: mock.gateway, logger, now: NOW });
+    expect(result.UNCHANGED).toBe(1);
+    expect((await PaymentModel.findOne({ purchaseId: p.purchaseId }).lean())!.status).toBe(
+      'CAPTURED',
+    );
+    expect(await statusOf(p.purchaseId)).toBe('PAID');
   });
 
   it('leaves purchases for the next run when the gateway is down', async () => {

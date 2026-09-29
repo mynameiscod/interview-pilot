@@ -62,6 +62,7 @@ describe('webhooks', () => {
         amountMinor: 19900,
         currency: 'INR',
         status: 'captured',
+        amountRefundedMinor: 0,
       },
     });
     expect(gw.parseWebhook(raw, undefined, 'evt_1')).toBeNull();
@@ -126,9 +127,46 @@ describe('REST calls', () => {
     );
     expect(JSON.parse(init.body).receipt).toHaveLength(40);
     expect(await gw.fetchOrderPayments('order_1')).toEqual([
-      { id: 'pay_1', orderId: 'order_1', amountMinor: 19900, currency: 'INR', status: 'captured' },
+      {
+        id: 'pay_1',
+        orderId: 'order_1',
+        amountMinor: 19900,
+        currency: 'INR',
+        status: 'captured',
+        amountRefundedMinor: 0,
+      },
     ]);
     expect(await gw.refund('pay_1', 19900)).toMatchObject({ id: 'rfnd_1', status: 'pending' });
+  });
+
+  it('sends partial refund amounts and reports what was refunded so far', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json(200, { id: 'rfnd_2', payment_id: 'pay_1', amount: 5000, status: 'processed' }),
+      )
+      .mockResolvedValueOnce(
+        json(200, {
+          id: 'pay_1',
+          order_id: 'order_1',
+          amount: 19900,
+          currency: 'INR',
+          status: 'captured',
+          amount_refunded: 5000,
+        }),
+      );
+    const { gw } = gateway(fetchImpl);
+    expect(await gw.refund('pay_1', 5000, { purchaseId: 'p1' })).toMatchObject({
+      amountMinor: 5000,
+      status: 'processed',
+    });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe('https://api.razorpay.com/v1/payments/pay_1/refund');
+    expect(JSON.parse(init.body)).toEqual({ amount: 5000, notes: { purchaseId: 'p1' } });
+    expect(await gw.fetchPayment('pay_1')).toMatchObject({
+      status: 'captured',
+      amountRefundedMinor: 5000,
+    });
   });
 
   it('reports failures without echoing provider messages', async () => {
@@ -171,6 +209,27 @@ describe('mock gateway', () => {
     expect(mock.gateway.parseWebhook(hook.body, hook.signature, hook.eventId)).toMatchObject({
       kind: 'payment.captured',
       payment,
+    });
+  });
+
+  it('refunds partly, then in full, and refuses more than was paid', async () => {
+    const mock = createMockGateway();
+    const order = await mock.gateway.createOrder({
+      amountMinor: 19900,
+      currency: 'INR',
+      receipt: 'p2',
+    });
+    const { payment } = mock.pay(order.id);
+    await mock.gateway.refund(payment.id, 5000);
+    expect(await mock.gateway.fetchPayment(payment.id)).toMatchObject({
+      status: 'captured',
+      amountRefundedMinor: 5000,
+    });
+    await expect(mock.gateway.refund(payment.id, 15000)).rejects.toThrow(/exceeds/);
+    await mock.gateway.refund(payment.id, 14900);
+    expect(await mock.gateway.fetchPayment(payment.id)).toMatchObject({
+      status: 'refunded',
+      amountRefundedMinor: 19900,
     });
   });
 });

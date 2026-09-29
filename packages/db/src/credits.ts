@@ -61,17 +61,20 @@ async function loadAccount(userId: Id, session: ClientSession): Promise<CreditAc
 const usable = (lot: CreditLotRecord, now: Date) =>
   lot.remaining > 0 && (lot.expiresAt === null || lot.expiresAt > now);
 
-/** Earliest-expiring usable lot; lots without expiry come last. */
+/** Usable lots, earliest-expiring first; lots without expiry come last. */
+function usableLots(lots: readonly CreditLotRecord[], now: Date): CreditLotRecord[] {
+  return [...lots]
+    .filter((l) => usable(l, now))
+    .sort(
+      (a, b) =>
+        (a.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) -
+        (b.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY),
+    );
+}
+
+/** Earliest-expiring usable lot. */
 function pickLot(lots: readonly CreditLotRecord[], now: Date): CreditLotRecord | null {
-  return (
-    [...lots]
-      .filter((l) => usable(l, now))
-      .sort(
-        (a, b) =>
-          (a.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY) -
-          (b.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY),
-      )[0] ?? null
-  );
+  return usableLots(lots, now)[0] ?? null;
 }
 
 export interface GrantInput {
@@ -293,9 +296,9 @@ export async function recomputeCreditAccount(userId: Id, session?: ClientSession
 }
 
 /**
- * Withdraws whatever is left of a lot (e.g. after a refund). Credits already
- * spent or reserved by an interview in progress are not touched. Returns the
- * number withdrawn; idempotent per key.
+ * Withdraws what is left of a lot, or at most `max` credits of it (e.g. after
+ * a refund). Credits already spent or reserved by an interview in progress
+ * are not touched. Returns the number withdrawn; idempotent per key.
  */
 export async function revokeLotCredits(
   userId: Id,
@@ -303,12 +306,13 @@ export async function revokeLotCredits(
   idempotencyKey: string,
   reason: string,
   session?: ClientSession,
+  max = Number.POSITIVE_INFINITY,
 ): Promise<number> {
   return inTransaction(session, async (s) => {
     const account = await loadAccount(userId, s);
     if (await findEntry(idempotencyKey, s)) return 0;
     const lot = account.lots.find((l) => String(l.lotId) === String(lotId));
-    const remaining = lot?.remaining ?? 0;
+    const remaining = Math.min(lot?.remaining ?? 0, Math.max(0, max));
     await CreditLedgerModel.create(
       [
         {
@@ -334,4 +338,118 @@ export async function revokeLotCredits(
     }
     return remaining;
   });
+}
+
+export interface AdjustInput {
+  userId: Id;
+  /** Positive grants a new lot; negative takes usable credits. */
+  delta: number;
+  reason: string;
+  actorId: Id;
+  idempotencyKey: string;
+  /** Grants only. */
+  expiresAt?: Date | null;
+  now?: Date;
+}
+
+/**
+ * An admin's manual adjustment (`ADMIN_ADJUSTMENT`). A grant adds a lot; a
+ * deduction takes usable credits earliest-expiring first, one ledger entry
+ * per lot touched, and throws InsufficientCreditsError when there are not
+ * enough (reserved credits are never taken). Returns false when the
+ * adjustment already happened.
+ */
+export async function adjustCredits(input: AdjustInput, session?: ClientSession): Promise<boolean> {
+  if (!Number.isInteger(input.delta) || input.delta === 0) {
+    throw new Error('adjustment must be a non-zero whole number');
+  }
+  if (input.delta > 0) {
+    return grantCredits(
+      {
+        userId: input.userId,
+        amount: input.delta,
+        source: 'ADMIN_ADJUSTMENT',
+        idempotencyKey: input.idempotencyKey,
+        expiresAt: input.expiresAt ?? null,
+        refType: 'adminAdjustment',
+        actorId: input.actorId,
+        reason: input.reason,
+      },
+      session,
+    );
+  }
+  const now = input.now ?? new Date();
+  return inTransaction(session, async (s) => {
+    const account = await loadAccount(input.userId, s);
+    if (await findEntry(input.idempotencyKey, s)) return false;
+    const lots = usableLots(account.lots, now);
+    let left = -input.delta;
+    if (lots.reduce((sum, l) => sum + l.remaining, 0) < left) throw new InsufficientCreditsError();
+    for (const [i, lot] of lots.entries()) {
+      if (left === 0) break;
+      const take = Math.min(left, lot.remaining);
+      await CreditLedgerModel.create(
+        [
+          {
+            userId: oid(input.userId),
+            type: 'ADMIN_ADJUSTMENT',
+            amount: -take,
+            reservedDelta: 0,
+            lotId: lot.lotId,
+            refType: 'adminAdjustment',
+            refId: String(lot.lotId),
+            // The first entry carries the key itself, so a retry is recognised.
+            idempotencyKey: i === 0 ? input.idempotencyKey : `${input.idempotencyKey}:${i}`,
+            actorId: oid(input.actorId),
+            reason: input.reason,
+          },
+        ],
+        { session: s },
+      );
+      await CreditAccountModel.updateOne(
+        { userId: oid(input.userId) },
+        { $inc: { balance: -take, version: 1, 'lots.$[lot].remaining': -take } },
+        { session: s, arrayFilters: [{ 'lot.lotId': lot.lotId }] },
+      );
+      left -= take;
+    }
+    return true;
+  });
+}
+
+export interface LotUsage {
+  granted: number;
+  /** Left in the lot (usable only while not expired). */
+  remaining: number;
+  expired: boolean;
+  /** Taken back by refunds or deductions. */
+  withdrawn: number;
+  /** Spent, or held by an interview in progress. */
+  used: number;
+}
+
+/** How one lot (e.g. a purchase's) has been used, from the ledger and the account. */
+export async function lotUsage(userId: Id, lotId: Id, now = new Date()): Promise<LotUsage> {
+  const [entries, account] = await Promise.all([
+    CreditLedgerModel.find(
+      { userId: oid(userId), lotId: oid(lotId) },
+      { type: 1, amount: 1, lotSource: 1 },
+    ).lean(),
+    CreditAccountModel.findOne({ userId: oid(userId) }, { lots: 1 }).lean(),
+  ]);
+  const granted = entries
+    .filter((e) => Boolean(e.lotSource) && e.amount > 0)
+    .reduce((sum, e) => sum + e.amount, 0);
+  const withdrawn = -entries
+    .filter((e) => e.type === 'ADMIN_ADJUSTMENT' && !e.lotSource && e.amount < 0)
+    .reduce((sum, e) => sum + e.amount, 0);
+  const lot = account?.lots.find((l) => String(l.lotId) === String(lotId));
+  const remaining = lot?.remaining ?? 0;
+  return {
+    granted,
+    remaining,
+    expired: lot?.expiresAt ? lot.expiresAt <= now : false,
+    withdrawn,
+    used: Math.max(0, granted - withdrawn - remaining),
+  };
 }

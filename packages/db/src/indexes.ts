@@ -31,6 +31,7 @@ import { IntegrityEventModel, MediaAssetModel } from './models/media.js';
 import {
   CouponModel,
   CouponRedemptionModel,
+  CouponUserUsageModel,
   PaymentModel,
   PlanModel,
   PurchaseModel,
@@ -88,6 +89,7 @@ const MODELS = [
   PlanModel,
   CouponModel,
   CouponRedemptionModel,
+  CouponUserUsageModel,
   PurchaseModel,
   PaymentModel,
   WebhookEventModel,

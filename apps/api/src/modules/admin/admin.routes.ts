@@ -13,6 +13,7 @@ import { clientContext } from '../../lib/request-context.js';
 import { authenticate, requireAuth, requirePermission } from '../../middleware/authenticate.js';
 import { aiAdminRouter } from '../ai/ai.routes.js';
 import { libraryAdminRouter } from '../library/library-admin.routes.js';
+import { creditsAdminRouter } from '../credits/credits.routes.js';
 import { paymentsAdminRouter } from '../payments/payments.routes.js';
 import { mediaAdminRouter } from '../media/media.routes.js';
 import { codingAdminRouter } from '../coding/coding.routes.js';
@@ -112,6 +113,7 @@ export function adminRouter(c: Container): Router {
   router.use(libraryAdminRouter(c));
   router.use(interviewsAdminRouter(c));
   router.use(paymentsAdminRouter(c));
+  router.use(creditsAdminRouter(c));
   router.use(mediaAdminRouter(c));
   router.use(codingAdminRouter(c));
   router.use(campaignsAdminRouter(c));

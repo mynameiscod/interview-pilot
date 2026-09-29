@@ -52,3 +52,36 @@ export const CreditLedgerQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 export type CreditLedgerQuery = z.infer<typeof CreditLedgerQuery>;
+
+// ---- Admin adjustments ----------------------------------------------------------------------
+
+/** Find a candidate's credit account by exact email or user id. */
+export const AdminCreditLookupQuery = z.object({ user: z.string().trim().min(3).max(254) });
+export type AdminCreditLookupQuery = z.infer<typeof AdminCreditLookupQuery>;
+
+export const AdminCreditAccount = z.object({
+  userId: z.string(),
+  userEmail: z.string().nullable(),
+  balance: CreditBalance,
+  /** The latest ledger entries, newest first. */
+  ledger: z.array(CreditLedgerEntry),
+});
+export type AdminCreditAccount = z.infer<typeof AdminCreditAccount>;
+
+/**
+ * Grants (positive) or deducts (negative) credits by hand. A deduction takes
+ * usable credits earliest-expiring first and fails when there are not enough.
+ */
+export const CreditAdjustmentBody = z.object({
+  userId: z.string().regex(/^[0-9a-f]{24}$/i, 'invalid user id'),
+  delta: z
+    .number()
+    .int()
+    .min(-500)
+    .max(500)
+    .refine((d) => d !== 0, 'must not be zero'),
+  reason: z.string().trim().min(3).max(300),
+  /** Grants only: days until the granted credits expire; null = no expiry. */
+  expiresInDays: z.number().int().min(1).max(3650).nullable().default(null),
+});
+export type CreditAdjustmentBody = z.infer<typeof CreditAdjustmentBody>;

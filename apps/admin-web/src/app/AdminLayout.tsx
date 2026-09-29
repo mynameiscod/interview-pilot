@@ -89,6 +89,13 @@ const NAV_ITEMS: NavItem[] = [
     group: 'payments',
   },
   {
+    to: '/credits',
+    key: 'nav.credits',
+    icon: 'bi-coin',
+    permission: 'payments.read',
+    group: 'payments',
+  },
+  {
     to: '/recordings',
     key: 'nav.recordings',
     icon: 'bi-camera-video',

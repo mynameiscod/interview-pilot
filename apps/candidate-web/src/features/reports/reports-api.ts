@@ -109,13 +109,23 @@ function fileNameFrom(disposition: string | null, fallback: string): string {
   return match?.[1] ?? fallback;
 }
 
+/** Downloads the report PDF. */
+export function downloadReportPdf(manager: SessionManager, sessionId: string) {
+  return downloadPdf(
+    manager,
+    `/reports/${encodeURIComponent(sessionId)}/pdf`,
+    `readiness-report-${sessionId}.pdf`,
+  );
+}
+
 /**
- * Downloads the report PDF. The API client only understands JSON, so this
- * fetches the bytes directly with the session's bearer token (refreshing it
- * once on 401) and saves them through an object URL.
+ * Downloads a PDF from the API (a report, a purchase receipt). The API client
+ * only understands JSON, so this fetches the bytes directly with the
+ * session's bearer token (refreshing it once on 401) and saves them through
+ * an object URL. A 409 means the file is not ready (PdfNotReadyError).
  */
-export async function downloadReportPdf(manager: SessionManager, sessionId: string) {
-  const url = `${config.VITE_API_URL}${API_V1_PREFIX}/reports/${encodeURIComponent(sessionId)}/pdf`;
+export async function downloadPdf(manager: SessionManager, path: string, fallbackName: string) {
+  const url = `${config.VITE_API_URL}${API_V1_PREFIX}${path}`;
   const send = (token: string | null) =>
     fetch(url, {
       credentials: 'include',
@@ -140,10 +150,7 @@ export async function downloadReportPdf(manager: SessionManager, sessionId: stri
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = objectUrl;
-  link.download = fileNameFrom(
-    response.headers.get('Content-Disposition'),
-    `readiness-report-${sessionId}.pdf`,
-  );
+  link.download = fileNameFrom(response.headers.get('Content-Disposition'), fallbackName);
   document.body.appendChild(link);
   link.click();
   link.remove();

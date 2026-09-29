@@ -35,6 +35,8 @@ export const Permission = z.enum([
   // Plans, coupons, purchases, payments and refunds (Phase 6)
   'payments.read',
   'payments.manage',
+  // Grant or deduct a candidate's credits by hand (audited, with a reason)
+  'credits.adjust',
   // Recordings and integrity observations; consent texts (Phase 8)
   'media.read',
   'media.manage',
@@ -89,6 +91,7 @@ export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly Permission[]>
     'ai_usage.read',
     'payments.read',
     'payments.manage',
+    'credits.adjust',
     'analytics.read',
   ],
 };

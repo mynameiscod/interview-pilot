@@ -1,14 +1,62 @@
+import type { PurchaseSummary } from '@cbi/shared-types';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
+import { useCandidateAuth } from '../../app/session';
 import { formatDate } from '../interviews/messages';
+import { downloadPdf } from '../reports/reports-api';
 import { formatMoney, STATUS_BADGE } from './payment-format';
 import { usePurchases } from './payments-api';
+
+/** Downloads the receipt PDF of a paid purchase (a GST invoice when the seller is registered). */
+function ReceiptButton({
+  purchase,
+  date,
+  onError,
+}: {
+  purchase: PurchaseSummary;
+  date: string;
+  onError: () => void;
+}) {
+  const { t } = useTranslation();
+  const { manager } = useCandidateAuth();
+  const [busy, setBusy] = useState(false);
+
+  async function download() {
+    setBusy(true);
+    try {
+      await downloadPdf(
+        manager,
+        `/payments/purchases/${encodeURIComponent(purchase.id)}/receipt`,
+        `receipt-${purchase.id}.pdf`,
+      );
+    } catch {
+      onError();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="btn btn-link btn-sm p-0 me-3"
+      disabled={busy}
+      aria-label={t('purchases.receiptNamed', { name: purchase.plan.name, date })}
+      onClick={() => void download()}
+    >
+      <i className="bi bi-file-earmark-arrow-down me-1" aria-hidden="true" />
+      {t('purchases.receipt')}
+    </button>
+  );
+}
 
 /** Every purchase, newest first, with a link to its status page. */
 export function PurchasesPage() {
   const { t, i18n } = useTranslation();
   const purchases = usePurchases();
   const items = purchases.data ?? [];
+  const [receiptFailed, setReceiptFailed] = useState(false);
 
   return (
     <div className="container py-5">
@@ -38,6 +86,11 @@ export function PurchasesPage() {
             {t('purchases.seePlans')}
           </Link>
         </section>
+      )}
+      {receiptFailed && (
+        <div className="alert alert-danger" role="alert">
+          {t('purchases.receiptError')}
+        </div>
       )}
       {items.length > 0 && (
         <section className="p-4 border cb-border rounded-3 bg-white">
@@ -74,13 +127,31 @@ export function PurchasesPage() {
                       </th>
                       <td className="text-nowrap">
                         {formatMoney(i18n.resolvedLanguage, item.totalMinor, item.currency)}
+                        {item.status === 'PAID' && item.refundedMinor > 0 && (
+                          <span className="d-block small cb-text-secondary">
+                            {t('purchases.partlyRefunded', {
+                              amount: formatMoney(
+                                i18n.resolvedLanguage,
+                                item.refundedMinor,
+                                item.currency,
+                              ),
+                            })}
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span className={`badge ${STATUS_BADGE[item.status]}`}>
                           {t(`purchases.statuses.${item.status}`)}
                         </span>
                       </td>
-                      <td className="text-end">
+                      <td className="text-end text-nowrap">
+                        {item.receiptAvailable && (
+                          <ReceiptButton
+                            purchase={item}
+                            date={date}
+                            onError={() => setReceiptFailed(true)}
+                          />
+                        )}
                         <Link
                           to={`/app/payments/${encodeURIComponent(item.id)}`}
                           aria-label={t('purchases.viewNamed', { name: item.plan.name, date })}

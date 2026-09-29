@@ -266,6 +266,18 @@ export const routes: RouteObject[] = [
                 ],
               },
               {
+                path: 'credits',
+                element: <RequirePermission permission="payments.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/payments/CreditsPage')).CreditsPage,
+                    }),
+                  },
+                ],
+              },
+              {
                 path: 'plans',
                 element: <RequirePermission permission="payments.read" />,
                 children: [
