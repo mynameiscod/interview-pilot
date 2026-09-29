@@ -7,6 +7,7 @@ import { RouteLoading } from '../../app/RouteStates';
 import { formatDate, formatMinutes, inputErrorMessage } from '../interviews/messages';
 import { RecordingCard } from '../media/RecordingCard';
 import { SharePanel } from '../proof/SharePanel';
+import { AssessmentPanelView } from './components/AssessmentPanelView';
 import { CodingResults } from './components/CodingResults';
 import { DimensionBars } from './components/DimensionBars';
 import { FeedbackCard } from './components/FeedbackCard';
@@ -69,6 +70,12 @@ function ReportView({ report }: { report: ReportSummary }) {
       <DimensionBars dimensions={content.dimensions} />
       <StrengthsAndGaps content={content} />
       {content.coding && content.coding.length > 0 && <CodingResults items={content.coding} />}
+      {content.systemDesign && (
+        <AssessmentPanelView kind="systemDesign" panel={content.systemDesign} />
+      )}
+      {content.aiCollaboration && (
+        <AssessmentPanelView kind="aiCollaboration" panel={content.aiCollaboration} />
+      )}
       <RoundsAndCoverage content={content} />
       <PlanTabs plan={content.plan} />
       <NextSteps sessionId={report.sessionId} content={content} pdfReady={report.pdfReady} />

@@ -985,7 +985,41 @@
       "language": "Language: {{language}}",
       "passed": "{{passed}} of {{total}} tests passed",
       "notRun": "Not run (the code judge was unavailable) — reviewed from your code",
-      "notSubmitted": "Not submitted before time ran out"
+      "notSubmitted": "Not submitted before time ran out",
+      "aiAssisted": "AI assistant allowed"
+    },
+    "panels": {
+      "separate": "This is assessed separately and is not part of your overall readiness score.",
+      "subjects": "Assessed:",
+      "score": "{{score}} / 100",
+      "notScored": "Not scored",
+      "notAssessed": "not assessed",
+      "unavailable": "This part could not be assessed this time, so it has no score.",
+      "systemDesign": {
+        "title": "System design",
+        "intro": "How your design covered requirements, interfaces, data, scale and trade-offs, from your notes, diagram and answers."
+      },
+      "aiCollaboration": {
+        "title": "Working with the AI assistant",
+        "intro": "How you used the coding assistant: the questions you asked, how you checked its answers, and how much of the solution was your own."
+      },
+      "dimensions": {
+        "requirements": "Requirements and scope",
+        "api": "API and interfaces",
+        "data-model": "Data model and storage",
+        "scaling": "Scaling and reliability",
+        "trade-offs": "Trade-offs and reasoning",
+        "prompt-quality": "Prompt quality",
+        "verification": "Checking the AI's answers",
+        "independence": "Independence"
+      },
+      "sources": {
+        "NOTES": "From your notes",
+        "DIAGRAM": "From your diagram",
+        "ANSWER": "From your answer",
+        "TRANSCRIPT": "From your conversation with the assistant",
+        "CODE": "From your code"
+      }
     }
   },
   "history": {
@@ -1510,6 +1544,30 @@
       "rows": "Rows in the tables",
       "anyOrder": "Rows can be returned in any order.",
       "exactOrder": "Rows must be returned in the order the problem asks for."
+    },
+    "assistant": {
+      "banner": "AI assistant allowed in this round",
+      "bannerBody": "You can ask the AI assistant for help, as you might at work. Everything you ask and every answer is saved and reviewed as part of your interview, including how you check its answers.",
+      "title": "AI assistant",
+      "policyHints": "It gives hints, explanations and short snippets, not complete solutions.",
+      "policyFull": "It can write code for you, but how you use and check it is part of your result.",
+      "conversation": "Conversation with the AI assistant",
+      "empty": "No messages yet. Ask about the approach, an error, or an edge case.",
+      "you": "You",
+      "assistant": "Assistant",
+      "unavailable": "The assistant could not answer just now. This message did not count; please try again.",
+      "redacted": "Part of this answer was removed because complete solutions are not allowed in this round.",
+      "label": "Message to the assistant",
+      "left_one": "{{count}} of {{max}} messages left",
+      "left_other": "{{count}} of {{max}} messages left",
+      "tooLong": "Keep your message to {{max}} characters.",
+      "send": "Ask",
+      "thinking": "Thinking…",
+      "problems": {
+        "rateLimited": "You are sending messages very quickly. Wait a moment and try again.",
+        "usedUp": "You have used all the assistant messages for this question.",
+        "failed": "Your message could not be sent. Please try again."
+      }
     }
   },
   "campaign": {

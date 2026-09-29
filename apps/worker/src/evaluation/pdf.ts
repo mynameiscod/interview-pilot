@@ -1,4 +1,4 @@
-import type { ReportContent } from '@cbi/shared-types';
+import type { AssessmentPanel, ReportContent } from '@cbi/shared-types';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,10 @@ const BAND_LABELS: Record<ReportContent['overall']['band'], string> = {
   NOT_YET: 'Not yet ready',
   INSUFFICIENT_EVIDENCE: 'Not enough evidence to score',
 };
+
+/** Panels are reported beside the dimensions, never in the overall score. */
+const PANEL_NOTE =
+  'Assessed separately from the dimensions above; not part of the overall readiness score.';
 
 const REPLACEMENTS: Record<string, string> = {
   '‘': "'",
@@ -291,9 +295,33 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
             ? `${c.passed} of ${c.total} tests passed`
             : 'no solution';
         bullet(
-          `${c.title} (${c.difficulty.toLowerCase()}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ' - not submitted before time ran out'}`,
+          `${c.title} (${c.difficulty.toLowerCase()}${c.language ? `, ${c.language}` : ''}${c.aiAssisted ? ', AI assistant allowed' : ''}): ${outcome}${c.submitted ? '' : ' - not submitted before time ran out'}`,
         );
       }
+    }
+
+    const panel = (title: string, note: string, x: AssessmentPanel) => {
+      h2(title);
+      write(note, 'italic', 8).fontSize(10);
+      if (x.fallback) {
+        p('The assessment model was unavailable, so this part was not scored.');
+        return;
+      }
+      p(
+        `${x.score === null ? 'Not scored' : `${x.score} / 100`}${x.subjects.length ? ` - ${x.subjects.join(', ')}` : ''}`,
+        11,
+      );
+      if (x.summary) p(x.summary, 9);
+      for (const d of x.dimensions) {
+        write(`${d.name}: ${d.score === null ? 'not assessed' : `${d.score} / 100`}`, 'bold', 10);
+        if (d.rationale) p(d.rationale, 9);
+      }
+    };
+    if (content.systemDesign) {
+      panel('System design', PANEL_NOTE, content.systemDesign);
+    }
+    if (content.aiCollaboration) {
+      panel('AI collaboration', PANEL_NOTE, content.aiCollaboration);
     }
 
     if (content.integrity) {

@@ -51,6 +51,7 @@ import {
   loadCoding,
   mergeCodingEvidence,
 } from './coding.js';
+import { aiCollaborationPanel } from './panels.js';
 
 export interface EvaluationDeps {
   ai: AiRuntime;
@@ -178,6 +179,13 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
       );
     }
   }
+
+  // Panels scored beside the role's dimensions (never part of the overall score).
+  const aiCollaboration = await aiCollaborationPanel(deps, coding, ctxOf(s));
+  await InterviewSessionModel.updateOne(
+    { _id: s._id },
+    { $set: { 'processing.draft.panels': { systemDesign: null, aiCollaboration } } },
+  );
 }
 
 /** Dimensions scored at the same time (each is an independent AI call). */
@@ -398,11 +406,14 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
         )
       : null;
 
-    const codingItems = codingReport(await loadCoding(s._id), turns);
+    const codingItems = codingReport(await loadCoding(s._id), turns, template.rounds);
+    const panels = s.processing?.draft.panels;
 
     const content: ReportContent = buildReportContent({
       integrity,
       coding: codingItems,
+      systemDesign: panels?.systemDesign ?? null,
+      aiCollaboration: panels?.aiCollaboration ?? null,
       header: {
         title: s.analysis?.detectedRole.title ?? template.name,
         companyName: target?.companyName ?? target?.structured?.companyName ?? null,

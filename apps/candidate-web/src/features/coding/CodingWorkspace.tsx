@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { inputErrorMessage } from '../interviews/messages';
 import { CodeEditor } from './CodeEditor';
 import { ProblemPanel, RunResultView } from './CodingParts';
+import { AssistantPanel } from './AssistantPanel';
 import { CustomInputPanel } from './CustomInputPanel';
 import { submissionMessage } from './coding-format';
 import { useCodingWorkspace, type SaveStatus } from './useCodingWorkspace';
@@ -206,8 +207,28 @@ export function CodingWorkspace({
           </div>
         </div>
       )}
-      <div className="col-lg-5">
+      {ws.assistant && (
+        <div className="col-12">
+          <div className="alert alert-info d-flex align-items-start gap-2 mb-0" role="note">
+            <i className="bi bi-stars" aria-hidden="true" />
+            <div className="small">
+              <p className="fw-semibold mb-1">{t('coding.assistant.banner')}</p>
+              <p className="mb-0">{t('coding.assistant.bannerBody')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="col-lg-5 d-flex flex-column gap-3">
         <ProblemPanel problem={problem} headingId={`${id}-problem`} />
+        {ws.assistant && (
+          <AssistantPanel
+            state={ws.assistant}
+            busy={ws.assistBusy}
+            closed={submitted}
+            problem={ws.assistProblem}
+            onSend={ws.assist}
+          />
+        )}
       </div>
       <div className="col-lg-7 d-flex flex-column gap-3">
         {ws.judgeDown && !submitted && (

@@ -3,6 +3,7 @@ import type {
   AdminRole,
   BlueprintSummary,
   Permission,
+  TemplateContent,
   RoleSummary,
 } from '@cbi/shared-types';
 import { permissionsFor } from '@cbi/shared-types';
@@ -537,6 +538,51 @@ describe('templates', () => {
       content: expected,
       reason: 'More weight on domain',
     });
+  });
+
+  it('allows the AI assistant only in coding rounds, off by default', async () => {
+    const { api } = await renderAt('/templates', ['CONTENT_ADMIN'], {
+      'GET /admin/templates': () => ok(versions()),
+      'POST /admin/templates': () => ({
+        status: 201,
+        body: { data: template({ id: 't3', version: 3, status: 'DRAFT' }) },
+      }),
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: 'New version of standard-technical' }),
+    );
+    expect(screen.queryByText('AI assistant in coding rounds')).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Round 2 type'), 'CODING');
+    const allow = screen.getByLabelText('Allow the AI assistant in round 2');
+    expect(allow).not.toBeChecked();
+    await user.click(allow);
+    const turns = screen.getByLabelText('Assistant messages per question in round 2');
+    expect(turns).toHaveValue(12);
+    await user.clear(turns);
+    await user.type(turns, '5');
+    expect(
+      screen.getByLabelText(
+        'Allow complete solutions in round 2 (otherwise hints and short snippets only)',
+      ),
+    ).not.toBeChecked();
+    await user.type(screen.getByLabelText(REASON), 'AI-allowed coding');
+    await user.click(screen.getByRole('button', { name: 'Save as draft' }));
+    await screen.findByText('standard-technical v3 was saved as a draft.');
+    const body = bodyOf(api, 'POST /admin/templates') as { content: TemplateContent };
+    expect(body.content.rounds[1]).toMatchObject({
+      type: 'CODING',
+      aiAssist: { enabled: true, maxTurns: 5, allowFullSolutions: false },
+    });
+
+    // Changing the round away from coding drops the setting.
+    await user.click(
+      await screen.findByRole('button', { name: 'New version of standard-technical' }),
+    );
+    await user.selectOptions(screen.getByLabelText('Round 2 type'), 'CODING');
+    await user.click(screen.getByLabelText('Allow the AI assistant in round 2'));
+    await user.selectOptions(screen.getByLabelText('Round 2 type'), 'TECHNICAL');
+    expect(screen.queryByLabelText('Allow the AI assistant in round 2')).not.toBeInTheDocument();
   });
 
   it('activates a draft template version with a reason', async () => {

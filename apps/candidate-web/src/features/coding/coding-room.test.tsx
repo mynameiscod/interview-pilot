@@ -363,6 +363,100 @@ describe('coding question in the room', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows no assistant unless the round allows one', async () => {
+    await openCodingRoom();
+    expect(screen.queryByText('AI assistant allowed in this round')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: 'Message to the assistant' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('says clearly when the AI assistant is allowed and keeps the conversation', async () => {
+    const user = userEvent.setup();
+    const assistant = {
+      allowFullSolutions: false,
+      maxTurns: 3,
+      turnsUsed: 0,
+      messages: [],
+    };
+    const { api } = await openCodingRoom({
+      handlers: {
+        [`GET ${WS}`]: () => ok(makeWorkspace({ assistant })),
+        [`POST ${WS}/assist`]: () =>
+          ok(
+            makeWorkspace({
+              assistant: {
+                ...assistant,
+                turnsUsed: 1,
+                messages: [
+                  {
+                    role: 'CANDIDATE',
+                    text: 'Is a hash map a good idea here?',
+                    at: '2026-09-20T10:11:00.000Z',
+                    unavailable: false,
+                    redacted: false,
+                  },
+                  {
+                    role: 'ASSISTANT',
+                    text: 'Yes: think about what you would store as the key.',
+                    at: '2026-09-20T10:11:02.000Z',
+                    unavailable: false,
+                    redacted: true,
+                  },
+                ],
+              },
+            }),
+          ),
+      },
+    });
+    expect(screen.getByText('AI assistant allowed in this round')).toBeInTheDocument();
+    expect(
+      screen.getByText('It gives hints, explanations and short snippets, not complete solutions.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('3 of 3 messages left')).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Message to the assistant' }),
+      'Is a hash map a good idea here?',
+    );
+    await user.click(screen.getByRole('button', { name: 'Ask' }));
+    expect(
+      await screen.findByText('Yes: think about what you would store as the key.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Part of this answer was removed because complete solutions are not allowed in this round.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 of 3 messages left')).toBeInTheDocument();
+    expect(bodies(api, `POST ${WS}/assist`)).toEqual([
+      { language: 'python', code: PYTHON_STARTER, message: 'Is a hash map a good idea here?' },
+    ]);
+    expect(screen.getByRole('textbox', { name: 'Message to the assistant' })).toHaveValue('');
+  });
+
+  it('tells the candidate when the assistant messages are used up', async () => {
+    const user = userEvent.setup();
+    await openCodingRoom({
+      handlers: {
+        [`GET ${WS}`]: () =>
+          ok(
+            makeWorkspace({
+              assistant: { allowFullSolutions: true, maxTurns: 2, turnsUsed: 1, messages: [] },
+            }),
+          ),
+        [`POST ${WS}/assist`]: () => fail(429, 'QUOTA_EXCEEDED'),
+      },
+    });
+    await user.type(screen.getByRole('textbox', { name: 'Message to the assistant' }), 'Help');
+    await user.click(screen.getByRole('button', { name: 'Ask' }));
+    expect(
+      await screen.findByText('You have used all the assistant messages for this question.'),
+    ).toBeInTheDocument();
+    // The message stays so it is not lost.
+    expect(screen.getByRole('textbox', { name: 'Message to the assistant' })).toHaveValue('Help');
+  });
+
   it('shows the schema and row-order rule for a SQL problem', async () => {
     await openCodingRoom({
       handlers: {

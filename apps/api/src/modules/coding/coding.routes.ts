@@ -1,4 +1,5 @@
 import {
+  AssistBody,
   CreateProblemVersionBody,
   CustomRunBody,
   ProblemActivationBody,
@@ -39,6 +40,12 @@ export function codingInterviewRouter(c: Container): Router {
   router.post('/:id/coding/:questionId/custom-run', c.limiters.codingCustom, async (req, res) => {
     const body = CustomRunBody.parse(req.body);
     res.json({ data: await c.coding.customRun(requireAuth(req).userId, ...ids(req), body) });
+  });
+
+  // The in-editor assistant of AI-allowed rounds (billed model calls; the round caps the turns).
+  router.post('/:id/coding/:questionId/assist', c.limiters.codingAssist, async (req, res) => {
+    const body = AssistBody.parse(req.body);
+    res.json({ data: await c.coding.assist(requireAuth(req).userId, ...ids(req), body) });
   });
 
   router.post('/:id/coding/:questionId/submit', c.limiters.coding, async (req, res) => {

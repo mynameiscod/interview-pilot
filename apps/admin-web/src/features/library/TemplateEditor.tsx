@@ -1,4 +1,5 @@
 import {
+  AI_ASSIST_LIMITS,
   AVAILABLE_INTERVIEW_MODES,
   CompetencyCategory,
   CreateTemplateVersionBody,
@@ -220,7 +221,14 @@ export function TemplateEditor({
                         className="form-select form-select-sm"
                         aria-label={t('library.templates.roundTypeLabel', { n })}
                         value={round.type}
-                        onChange={(e) => setRound(index, { type: e.target.value as RoundType })}
+                        onChange={(e) => {
+                          const type = e.target.value as RoundType;
+                          // Only coding rounds keep an assistant setting.
+                          setRound(
+                            index,
+                            type === 'CODING' ? { type } : { type, aiAssist: undefined },
+                          );
+                        }}
                       >
                         {RoundType.options.map((r) => (
                           <option key={r} value={r}>
@@ -330,6 +338,71 @@ export function TemplateEditor({
             </tbody>
           </table>
         </div>
+        {content.rounds.some((r) => r.type === 'CODING') && (
+          <div className="mb-2">
+            <p className="small fw-semibold mb-1">{t('library.templates.aiAssist.title')}</p>
+            <p className="small cb-text-secondary mb-2">{t('library.templates.aiAssist.hint')}</p>
+            {content.rounds.map((round, index) => {
+              if (round.type !== 'CODING') return null;
+              const n = index + 1;
+              const assist = round.aiAssist;
+              const setAssist = (patch: Partial<NonNullable<Round['aiAssist']>>) =>
+                setRound(index, {
+                  aiAssist: {
+                    enabled: assist?.enabled ?? false,
+                    maxTurns: assist?.maxTurns ?? AI_ASSIST_LIMITS.defaultTurns,
+                    allowFullSolutions: assist?.allowFullSolutions ?? false,
+                    ...patch,
+                  },
+                });
+              return (
+                <div key={index} className="d-flex flex-wrap align-items-center gap-3 small mb-1">
+                  <div className="form-check mb-0">
+                    <input
+                      id={`${id}-assist-${index}`}
+                      type="checkbox"
+                      className="form-check-input"
+                      checked={assist?.enabled ?? false}
+                      onChange={(e) => setAssist({ enabled: e.target.checked })}
+                    />
+                    <label htmlFor={`${id}-assist-${index}`} className="form-check-label">
+                      {t('library.templates.aiAssist.enable', { n })}
+                    </label>
+                  </div>
+                  {assist?.enabled && (
+                    <>
+                      <label className="d-inline-flex align-items-center gap-1 mb-0">
+                        {t('library.templates.aiAssist.maxTurns')}
+                        <input
+                          type="number"
+                          min={1}
+                          max={AI_ASSIST_LIMITS.maxTurns}
+                          className="form-control form-control-sm"
+                          style={{ width: '4.5rem' }}
+                          aria-label={t('library.templates.aiAssist.maxTurnsLabel', { n })}
+                          value={assist.maxTurns}
+                          onChange={(e) => setAssist({ maxTurns: int(e.target.value) })}
+                        />
+                      </label>
+                      <div className="form-check mb-0">
+                        <input
+                          id={`${id}-assist-full-${index}`}
+                          type="checkbox"
+                          className="form-check-input"
+                          checked={assist.allowFullSolutions}
+                          onChange={(e) => setAssist({ allowFullSolutions: e.target.checked })}
+                        />
+                        <label htmlFor={`${id}-assist-full-${index}`} className="form-check-label">
+                          {t('library.templates.aiAssist.allowFull', { n })}
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="d-flex flex-wrap align-items-center gap-3">
           <button
             type="button"

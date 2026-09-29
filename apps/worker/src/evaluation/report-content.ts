@@ -11,7 +11,7 @@ import {
   type RoleAnalysis,
   type RoundType,
 } from '@cbi/shared-types';
-import type { CodingReportItem, IntegritySummary } from '@cbi/shared-types';
+import type { AssessmentPanel, CodingReportItem, IntegritySummary } from '@cbi/shared-types';
 import { quoteFound } from './quotes.js';
 
 export const REPORT_DISCLAIMER =
@@ -91,6 +91,9 @@ export interface ReportInputs {
   integrity?: IntegritySummary | null;
   /** Coding problems and their judged results. */
   coding?: CodingReportItem[];
+  /** System design and AI collaboration panels (null when the interview had none). */
+  systemDesign?: AssessmentPanel | null;
+  aiCollaboration?: AssessmentPanel | null;
 }
 
 const mentions = (haystack: string, needle: string) =>
@@ -217,6 +220,8 @@ export function buildReportContent(input: ReportInputs): ReportContent {
       : null,
     integrity: input.integrity ?? null,
     ...(input.coding?.length ? { coding: input.coding } : {}),
+    ...(input.systemDesign ? { systemDesign: input.systemDesign } : {}),
+    ...(input.aiCollaboration ? { aiCollaboration: input.aiCollaboration } : {}),
     disclaimer: REPORT_DISCLAIMER,
   });
 }

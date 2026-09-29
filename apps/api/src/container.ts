@@ -240,6 +240,7 @@ export function buildContainer(opts: ContainerOptions) {
     judge,
     audit,
     logger,
+    ai,
     answer: (userId, payload, o) => liveRef!.answer(userId, payload, o),
   });
   const live = createLiveInterviewService({

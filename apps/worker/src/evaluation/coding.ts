@@ -11,11 +11,13 @@ import {
   CODING_LIMITS,
   codingStrength,
   judgeTestsFor,
+  roundAiAssist,
   submissionAnswerText,
   toRunResult,
   type BlueprintContent,
   type CodeRunResult,
   type CodingReportItem,
+  type TemplateRound,
 } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
 
@@ -203,6 +205,7 @@ export function mergeCodingEvidence(
 export function codingReport(
   coding: CodingContext,
   turns: readonly InterviewTurnRecord[],
+  rounds: readonly TemplateRound[] = [],
 ): CodingReportItem[] {
   return turns
     .filter((t) => t.question.coding)
@@ -219,6 +222,7 @@ export function codingReport(
         total: sub?.result?.total ?? null,
         verdict: sub?.result?.verdict ?? null,
         judgeUnavailable: Boolean(sub?.judgeUnavailable),
+        aiAssisted: roundAiAssist(rounds[t.roundIdx]) !== null,
       };
     });
 }

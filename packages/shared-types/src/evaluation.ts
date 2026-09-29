@@ -95,6 +95,107 @@ export const RecommendationsAi = z.object({
 });
 export type RecommendationsAi = z.infer<typeof RecommendationsAi>;
 
+// ---- Assessment panels (system design, AI collaboration) --------------------------------
+
+/**
+ * A fixed set of dimensions scored from one kind of work: the system design
+ * (notes, diagram and answers) or the conversation with the coding
+ * assistant. Reported beside the role's dimensions and never part of the
+ * weighted overall score.
+ */
+export const PanelEvidenceSource = z.enum(['NOTES', 'DIAGRAM', 'ANSWER', 'TRANSCRIPT', 'CODE']);
+export type PanelEvidenceSource = z.infer<typeof PanelEvidenceSource>;
+
+export const PANEL_DIMENSIONS = {
+  systemDesign: [
+    { key: 'requirements', name: 'Requirements and scope' },
+    { key: 'api', name: 'API and interfaces' },
+    { key: 'data-model', name: 'Data model and storage' },
+    { key: 'scaling', name: 'Scaling and reliability' },
+    { key: 'trade-offs', name: 'Trade-offs and reasoning' },
+  ],
+  aiCollaboration: [
+    { key: 'prompt-quality', name: 'Prompt quality' },
+    { key: 'verification', name: 'Verification of AI output' },
+    { key: 'independence', name: 'Independence' },
+  ],
+} as const;
+export type PanelKind = keyof typeof PANEL_DIMENSIONS;
+
+/** Structured output of `evaluation.systemDesign` and `evaluation.aiCollaboration`. */
+export const PanelScoresAi = z.object({
+  dimensions: z
+    .array(
+      z.object({
+        key: text(40).min(1),
+        score: z.number().int().min(0).max(100),
+        rationale: text(400).min(5),
+        evidence: z
+          .array(z.object({ source: PanelEvidenceSource, quote: text(300).min(1) }))
+          .max(3),
+      }),
+    )
+    .max(8),
+  summary: text(600).min(10),
+});
+export type PanelScoresAi = z.infer<typeof PanelScoresAi>;
+
+export const PanelDimension = z.object({
+  key: z.string(),
+  name: z.string(),
+  /** Null when the model was unavailable or found nothing to judge. */
+  score: z.number().int().nullable(),
+  rationale: z.string().nullable(),
+  evidence: z.array(z.object({ source: PanelEvidenceSource, quote: z.string() })),
+});
+export type PanelDimension = z.infer<typeof PanelDimension>;
+
+export const AssessmentPanel = z.object({
+  /** What was assessed (the design prompt titles, or the coding problem titles). */
+  subjects: z.array(z.string()),
+  dimensions: z.array(PanelDimension),
+  /** Mean of the scored dimensions (null when none was scored). */
+  score: z.number().int().nullable(),
+  summary: z.string().nullable(),
+  /** The model was unavailable: nothing was scored. */
+  fallback: z.boolean(),
+  promptVersion: z.number().int().nullable(),
+});
+export type AssessmentPanel = z.infer<typeof AssessmentPanel>;
+
+/**
+ * The panel for a model's output: only the known dimensions, with evidence
+ * quotes that really appear in the material (others are dropped).
+ */
+export function toAssessmentPanel(
+  kind: PanelKind,
+  subjects: string[],
+  ai: { data: PanelScoresAi; promptVersion: number } | null,
+  material: string,
+): AssessmentPanel {
+  const haystack = material.toLowerCase().replace(/\s+/g, ' ');
+  const found = (quote: string) => haystack.includes(quote.toLowerCase().replace(/\s+/g, ' '));
+  const dimensions = PANEL_DIMENSIONS[kind].map((d) => {
+    const scored = ai?.data.dimensions.find((x) => x.key === d.key);
+    return {
+      key: d.key,
+      name: d.name,
+      score: scored?.score ?? null,
+      rationale: scored?.rationale ?? null,
+      evidence: (scored?.evidence ?? []).filter((e) => found(e.quote)),
+    };
+  });
+  const scores = dimensions.flatMap((d) => (d.score === null ? [] : [d.score]));
+  return {
+    subjects,
+    dimensions,
+    score: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+    summary: ai?.data.summary ?? null,
+    fallback: ai === null,
+    promptVersion: ai?.promptVersion ?? null,
+  };
+}
+
 // ---- Report ----------------------------------------------------------------------------
 
 export const ReportEvidence = z.object({
@@ -128,6 +229,10 @@ export const ReportContent = z.object({
   integrity: IntegritySummary.nullable().optional(),
   /** Coding problems and their results (Phase 9); absent in older reports. */
   coding: z.array(CodingReportItem).optional(),
+  /** System design rounds: the design dimensions (absent when there was none). */
+  systemDesign: AssessmentPanel.nullable().optional(),
+  /** AI-allowed coding rounds: how the candidate worked with the assistant. */
+  aiCollaboration: AssessmentPanel.nullable().optional(),
   /** Set on revisions made by a manual review. */
   review: z
     .object({ revision: z.number().int(), reviewedAt: z.iso.datetime(), note: z.string() })

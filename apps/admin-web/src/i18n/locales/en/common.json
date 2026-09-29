@@ -761,7 +761,17 @@
       "reportSummary": "Dimension scores {{scores}} · transcript {{transcript}}",
       "saved": "{{key}} {{version}} was saved as a draft.",
       "activateExplain": "{{version}} becomes the version of {{key}} used by new interviews; the current active version is retired.",
-      "activated": "{{key}} {{version}} is now active."
+      "activated": "{{key}} {{version}} is now active.",
+      "aiAssist": {
+        "title": "AI assistant in coding rounds",
+        "hint": "Off by default. When allowed, candidates get an assistant chat in the editor (through the AI router, with a limit on messages). Candidates are told plainly, the whole conversation is kept, and it is evaluated as AI collaboration (prompt quality, verification, independence).",
+        "enable": "Allow the AI assistant in round {{n}}",
+        "maxTurns": "Messages",
+        "maxTurnsLabel": "Assistant messages per question in round {{n}}",
+        "allowFull": "Allow complete solutions in round {{n}} (otherwise hints and short snippets only)",
+        "badge_one": "AI assistant, {{count}} message",
+        "badge_other": "AI assistant, {{count}} messages"
+      }
     },
     "problems": {
       "title": "Coding problems",

@@ -24,6 +24,7 @@ import {
   type InterviewSnapshot,
   type LiveQuestion,
   type RtAck,
+  type TemplateRound,
 } from '@cbi/shared-types';
 import { io as connect, type Socket } from 'socket.io-client';
 import request from 'supertest';
@@ -88,7 +89,7 @@ async function adminAs(roles: AdminRole[], email = `${roles[0]!.toLowerCase()}@c
 }
 
 /** A READY text interview whose first round is a coding round (then a short wrap-up). */
-async function codingInterview(userId: string) {
+async function codingInterview(userId: string, coding: Partial<TemplateRound> = {}) {
   const base = await InterviewTemplateModel.findOne({ key: 'standard-practice' }).lean();
   const [template] = await InterviewTemplateModel.create([
     {
@@ -105,6 +106,7 @@ async function codingInterview(userId: string) {
             difficulty: 'EASY',
             followUpDepth: 0,
             minEvidence: 0,
+            ...coding,
           },
           {
             type: 'WRAP_UP',
@@ -340,6 +342,50 @@ describe('coding round', () => {
       .send({ language: 'python', code: 'print("other")' })
       .expect(200);
     expect(await InterviewTurnModel.countDocuments({ sessionId: id })).toBe(2);
+  });
+
+  it('gives AI-allowed rounds an assistant with a turn allowance and keeps the conversation', async () => {
+    const { userId, accessToken, call } = await candidate();
+    const id = await codingInterview(userId, {
+      aiAssist: { enabled: true, maxTurns: 2, allowFullSolutions: false },
+    });
+    const { question } = await startAndJoin(accessToken, call, id);
+    const path = `/interviews/${id}/coding/${question.questionId}`;
+    const ws = CodingWorkspace.parse((await call('get', path).expect(200)).body.data);
+    expect(ws.assistant).toEqual({
+      allowFullSolutions: false,
+      maxTurns: 2,
+      turnsUsed: 0,
+      messages: [],
+    });
+
+    const ask = (message: string) =>
+      call('post', `${path}/assist`).send({ language: 'python', code: 'print(1)', message });
+    const first = CodingWorkspace.parse((await ask('How should I start?').expect(200)).body.data);
+    expect(first.assistant).toMatchObject({ turnsUsed: 1 });
+    expect(first.assistant!.messages.map((m) => m.role)).toEqual(['CANDIDATE', 'ASSISTANT']);
+    expect(first.assistant!.messages[1]!.text).toMatch(/^\[mock\]/);
+    expect(first.code).toBe('print(1)'); // saved with the message
+    await ask('And the edge cases?').expect(200);
+    const used = await ask('One more?').expect(429);
+    expect(used.body.error.code).toBe('QUOTA_EXCEEDED');
+
+    const attempt = (await CodingAttemptModel.findOne({ sessionId: id }).lean())!;
+    expect(attempt.assistant!.messages).toHaveLength(4);
+    expect(attempt.assistant!.messages[0]).toMatchObject({
+      role: 'CANDIDATE',
+      codeSnapshot: 'print(1)',
+    });
+
+    // A round without the assistant refuses it.
+    const other = await candidate('ravi@example.com');
+    const plain = await codingInterview(other.userId);
+    const q = await startAndJoin(other.accessToken, other.call, plain);
+    const refused = await other
+      .call('post', `/interviews/${plain}/coding/${q.question.questionId}/assist`)
+      .send({ language: 'python', code: 'x', message: 'Help' })
+      .expect(403);
+    expect(refused.body.error.code).toBe('FEATURE_DISABLED');
   });
 
   it('lets library admins manage the problem bank', async () => {

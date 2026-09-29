@@ -294,8 +294,26 @@ export const TemplateRound = z.object({
   followUpDepth: z.number().int().min(0).max(3),
   /** Evidence items required before the round may end early. */
   minEvidence: z.number().int().min(0).max(10),
+  /**
+   * Coding rounds only: an AI assistant in the editor ("AI allowed" rounds).
+   * Absent or disabled means no assistant. Its conversation is kept and
+   * evaluated as AI collaboration.
+   */
+  aiAssist: z
+    .object({
+      enabled: z.boolean(),
+      /** Candidate messages per coding question. */
+      maxTurns: z.number().int().min(1).max(30).default(12),
+      /** False: hints, explanations and short snippets only, never a complete solution. */
+      allowFullSolutions: z.boolean().default(false),
+    })
+    .optional(),
 });
 export type TemplateRound = z.infer<typeof TemplateRound>;
+
+/** The assistant setting of a round, or null when the round has none. */
+export const roundAiAssist = (round: Pick<TemplateRound, 'type' | 'aiAssist'> | undefined) =>
+  round?.type === 'CODING' && round.aiAssist?.enabled ? round.aiAssist : null;
 
 export const TemplateContent = z
   .object({
@@ -331,6 +349,15 @@ export const TemplateContent = z
         message: 'a coding round is required when codingRequired is set',
       });
     }
+    t.rounds.forEach((r, i) => {
+      if (r.aiAssist?.enabled && r.type !== 'CODING') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['rounds', i, 'aiAssist'],
+          message: 'only coding rounds can allow the AI assistant',
+        });
+      }
+    });
   });
 export type TemplateContent = z.infer<typeof TemplateContent>;
 

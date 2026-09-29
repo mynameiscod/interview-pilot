@@ -65,6 +65,7 @@ import {
   RotateInviteBody,
   ScoreRevisionSummary,
   UpdateCampaignBody,
+  AssistBody,
   CodingWorkspace,
   CustomRunBody,
   CustomRunResult,
@@ -1081,6 +1082,14 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: CustomRunBody,
     response: CustomRunResult,
     errors: [400, 401, 404, 409, 413, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/coding/{questionId}/assist', {
+    tag: 'Coding',
+    summary:
+      'AI-allowed rounds only: send one message to the in-editor assistant (the code is saved with it). The whole conversation is kept and evaluated. 403 FEATURE_DISABLED when the round has no assistant, 429 QUOTA_EXCEEDED when its turns are used up',
+    body: AssistBody,
+    response: CodingWorkspace,
+    errors: [400, 401, 403, 404, 409, 413, 429],
   });
   candidate('post', '/interviews/{id}/coding/{questionId}/submit', {
     tag: 'Coding',

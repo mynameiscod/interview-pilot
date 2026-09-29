@@ -50,6 +50,12 @@ export const AiFeature = z.enum([
   'ocr.document',
   /** Connectivity checks from the admin console. Never routed. */
   'admin.test',
+  /** The in-editor assistant of AI-allowed coding rounds. */
+  'coding.assist',
+  /** System design rounds: scores on the design dimensions. */
+  'evaluation.systemDesign',
+  /** AI-allowed coding rounds: how the candidate worked with the assistant. */
+  'evaluation.aiCollaboration',
 ]);
 export type AiFeature = z.infer<typeof AiFeature>;
 
@@ -68,6 +74,9 @@ export const AI_FEATURE_CAPABILITY: Readonly<Record<AiFeature, AiCapability>> = 
   'tts.live': 'TTS',
   'ocr.document': 'OCR',
   'admin.test': 'LLM',
+  'coding.assist': 'LLM',
+  'evaluation.systemDesign': 'LLM',
+  'evaluation.aiCollaboration': 'LLM',
 };
 
 /**
@@ -137,6 +146,9 @@ export const DEFAULT_ROUTE_EFFORT: Readonly<Partial<Record<AiFeature, AiEffort>>
   'evaluation.extractEvidence': 'high',
   'evaluation.scoreDimension': 'high',
   'report.recommendations': 'medium',
+  'coding.assist': 'low',
+  'evaluation.systemDesign': 'high',
+  'evaluation.aiCollaboration': 'high',
 };
 
 /**
