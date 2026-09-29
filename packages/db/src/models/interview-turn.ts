@@ -1,9 +1,9 @@
-import { Difficulty, QuestionSource, RoundType, TurnSufficiency } from '@cbi/shared-types';
+import { Difficulty, QuestionSource, RoundType, TurnEvalSufficiency } from '@cbi/shared-types';
 import type {
   Difficulty as DifficultyT,
   QuestionSource as QuestionSourceT,
   RoundType as RoundTypeT,
-  TurnSufficiency as TurnSufficiencyT,
+  TurnEvalSufficiency as TurnEvalSufficiencyT,
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
@@ -53,14 +53,15 @@ export interface InterviewTurnRecord {
     } | null;
   } | null;
   turnEval: {
-    sufficiency: TurnSufficiencyT;
+    /** UNASSESSED when the assessment could not run (no verdict is invented). */
+    sufficiency: TurnEvalSufficiencyT;
     followUpNeeded: boolean;
     followUpAngle: string | null;
     evidence: string[];
     notes: string | null;
     promptVersion: number | null;
     model: string | null;
-    /** The assessment could not run; the planner treated the answer as adequate. */
+    /** The assessment could not run (sufficiency is UNASSESSED); evaluation treats it neutrally. */
     fallback: boolean;
   } | null;
   language: string;
@@ -124,7 +125,7 @@ const turnSchema = new Schema<InterviewTurnRecord>(
     turnEval: {
       type: new Schema(
         {
-          sufficiency: { type: String, enum: TurnSufficiency.options, required: true },
+          sufficiency: { type: String, enum: TurnEvalSufficiency.options, required: true },
           followUpNeeded: { type: Boolean, required: true },
           followUpAngle: { type: String, default: null },
           evidence: { type: [String], default: [] },

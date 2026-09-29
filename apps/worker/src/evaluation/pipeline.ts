@@ -70,7 +70,11 @@ const AFTER_REPORT = new Set<ProcessingStage>(['RENDER_PDF', 'NOTIFY']);
 export const nextStage = (stage: ProcessingStage): ProcessingStage | null =>
   STAGES[STAGES.indexOf(stage) + 1] ?? null;
 
-/** Live assessment → evidence strength, for the extraction fallback. */
+/**
+ * Live assessment → evidence strength, for the extraction fallback. An
+ * UNASSESSED answer (the live assessment could not run) carries no verdict,
+ * so it yields no evidence either way.
+ */
 const SUFFICIENCY_STRENGTH = { STRONG: 2, ADEQUATE: 1, WEAK: -1, NO_ANSWER: -2 } as const;
 
 type Session = InterviewSessionRecord;
@@ -139,7 +143,11 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
       : answered
           .map((a) => a.turn)
           .filter(
-            (t) => t.question.competencyKey && keys.has(t.question.competencyKey) && t.turnEval,
+            (t) =>
+              t.question.competencyKey &&
+              keys.has(t.question.competencyKey) &&
+              t.turnEval &&
+              t.turnEval.sufficiency !== 'UNASSESSED',
           )
           .map((t) => ({
             questionId: t.questionId,
@@ -147,7 +155,8 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
             claim:
               t.turnEval!.evidence[0] ??
               `Answer assessed as ${t.turnEval!.sufficiency.toLowerCase().replace('_', ' ')} during the interview.`,
-            strength: SUFFICIENCY_STRENGTH[t.turnEval!.sufficiency],
+            strength:
+              SUFFICIENCY_STRENGTH[t.turnEval!.sufficiency as keyof typeof SUFFICIENCY_STRENGTH],
             confidence: 0.5,
             practical: false,
             quote: null,

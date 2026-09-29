@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UiLocale } from './i18n.js';
 import { InterviewState } from './interviews.js';
 import { Difficulty, InterviewMode, RoundType } from './library.js';
 import { InterviewLanguagePreference } from './users.js';
@@ -17,6 +18,14 @@ export type QuestionSource = z.infer<typeof QuestionSource>;
 
 export const TurnSufficiency = z.enum(['STRONG', 'ADEQUATE', 'WEAK', 'NO_ANSWER']);
 export type TurnSufficiency = z.infer<typeof TurnSufficiency>;
+
+/**
+ * A recorded live assessment: a model verdict, or `UNASSESSED` when the
+ * assessment could not run. No verdict is invented for an unassessed answer;
+ * the planner and the evaluation treat it neutrally.
+ */
+export const TurnEvalSufficiency = z.enum([...TurnSufficiency.options, 'UNASSESSED']);
+export type TurnEvalSufficiency = z.infer<typeof TurnEvalSufficiency>;
 
 export const QuestionDifficulty = Difficulty;
 
@@ -180,6 +189,32 @@ export const RoundTransitionEvent = z.object({
 export type RoundTransitionEvent = z.infer<typeof RoundTransitionEvent>;
 
 // ---- REST -----------------------------------------------------------------------------
+
+/** `POST /interviews/:id/start`. The UI locale settles an `auto` interview language. */
+export const StartInterviewBody = z.object({
+  uiLocale: UiLocale.optional(),
+});
+export type StartInterviewBody = z.infer<typeof StartInterviewBody>;
+
+/** The language questions are asked in (an `auto` preference resolved). */
+export const InterviewLanguage = z.enum(['en', 'hi', 'te']);
+export type InterviewLanguage = z.infer<typeof InterviewLanguage>;
+
+/**
+ * Resolves an interview language preference: an explicit language wins;
+ * `auto` takes the first known language among `hints` (the profile
+ * preference, then the UI locale), and English only when none is known.
+ */
+export function resolveInterviewLanguage(
+  preference: string,
+  hints: readonly (string | null | undefined)[] = [],
+): InterviewLanguage {
+  for (const candidate of [preference, ...hints]) {
+    const parsed = InterviewLanguage.safeParse(candidate);
+    if (parsed.success) return parsed.data;
+  }
+  return 'en';
+}
 
 export const EndInterviewBody = z.object({
   reason: z.enum(['CANDIDATE_ENDED']).default('CANDIDATE_ENDED'),
