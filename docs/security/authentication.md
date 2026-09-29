@@ -4,13 +4,13 @@ This describes how sign-in works in CareerPilot Interview (Phase 1) and the secu
 
 ## Sign-in methods
 
-| Method               | Candidate app                      | Admin app                          | Provider                                      |
-| -------------------- | ---------------------------------- | ---------------------------------- | --------------------------------------------- |
-| Email one-time code  | ✔                                  | ✔ (existing admins only)           | AWS SES in production; SMTP (Mailpit) locally |
-| Mobile one-time code | ✔ when `SMS_PROVIDER` ≠ `disabled` | ✔ if the admin has a linked mobile | MSG91 Flow API (DLT template required)        |
-| Google               | ✔ when `GOOGLE_CLIENT_ID` is set   | ✔ (existing admins only)           | Google Identity Services ID token             |
+| Method               | Candidate app                      | Admin app                          | Org portal (`/org`)                 | Provider                                      |
+| -------------------- | ---------------------------------- | ---------------------------------- | ----------------------------------- | --------------------------------------------- |
+| Email one-time code  | ✔                                  | ✔ (existing admins only)           | ✔ (existing members only)           | AWS SES in production; SMTP (Mailpit) locally |
+| Mobile one-time code | ✔ when `SMS_PROVIDER` ≠ `disabled` | ✔ if the admin has a linked mobile | ✔ if the member has a linked mobile | MSG91 Flow API (DLT template required)        |
+| Google               | ✔ when `GOOGLE_CLIENT_ID` is set   | ✔ (existing admins only)           | ✔ (existing members only)           | Google Identity Services ID token             |
 
-Candidates have no passwords (admins may also set one on their account page). Signing in with a new email/mobile/Google account on the candidate app creates the account. **Admin accounts are never created by signing in**: a super admin invites them, and the first super admin is created with the seed CLI (see [local development](../deployment/local-development.md#admin-access)).
+Candidates have no passwords (admins may also set one on their account page). Signing in with a new email/mobile/Google account on the candidate app creates the account. **Admin and org accounts are never created by signing in**: a super admin invites admins (the first super admin is created with the seed CLI, see [local development](../deployment/local-development.md#admin-access)), and organisations' members are invited by CodeBegun or their owners (see [organisation members](#organisation-members-org-portal)).
 
 ## One-time codes (OTP)
 
@@ -19,7 +19,7 @@ Candidates have no passwords (admins may also set one on their account page). Si
 - The code email (and dev-mailbox SMS) is sent in English, Hindi or Telugu: the request's optional `lang` (the web apps send the current UI locale), else the first supported `Accept-Language` entry, else English. Production SMS via MSG91 uses the fixed DLT template, so its wording is set in that template.
 - Per destination: `OTP_RESEND_COOLDOWN_SEC` (30 s) between sends and `OTP_MAX_PER_DESTINATION_PER_HOUR` (5). Keys are HMACs of the destination, not the address itself.
 - Per IP (Redis-backed, shared across API replicas): 10 requests / 15 min and 15 verifications / min.
-- **No account enumeration on the admin app:** a code request for an address that is not an active admin returns the same response and creates a challenge that can never verify, and no message is sent.
+- **No account enumeration on the admin app or the org portal:** a code request for an address that is not an active admin (or a member of an active organisation) returns the same response and creates a challenge that can never verify, and no message is sent.
 - If the email/SMS provider fails, the API returns `503 PROVIDER_UNAVAILABLE`, voids the challenge and releases the cooldown so the person can retry at once. It never claims a code was sent when it was not.
 
 ## Sessions
@@ -31,7 +31,7 @@ Candidates have no passwords (admins may also set one on their account page). Si
 | Stored by browser | JavaScript memory only (never `localStorage`)  | httpOnly cookie, `SameSite=Lax`, `Secure` + `__Secure-` prefix outside dev, path-scoped to `/api/v1/auth` or `/api/v1/admin/auth` |
 | Stored by server  | not stored                                     | SHA-256 hash in `refreshTokens` (TTL-indexed)                                                                                     |
 
-- **Audience separation:** candidate and admin sessions use different JWT audiences, cookie names and cookie paths. A candidate token is rejected by admin endpoints and vice versa.
+- **Audience separation:** candidate, admin and org sessions use different JWT audiences (`candidate`, `admin`, `org`), cookie names (`cbi_rt`, `cbi_admin_rt`, `cbi_org_rt`) and cookie paths. A token of one audience is rejected by the other apps' endpoints.
 - **Rotation:** every refresh atomically marks the presented token used and issues a new one in the same _family_ (one family per signed-in device).
 - **Replay detection:** presenting an already-used refresh token more than 10 s after it was rotated revokes the whole family and is audited (`auth.refresh_token_reuse_detected`). Within the 10 s grace window (two tabs, a lost response) the request is rejected without revoking. The web apps also serialize refreshes across tabs with the Web Locks API.
 - **Absolute lifetime:** every token in a family carries `familyCreatedAt` (the sign-in). Rotation slides the expiry by the refresh TTL but never past `familyCreatedAt + SESSION_MAX_AGE_CANDIDATE_DAYS` (90 d) or `SESSION_MAX_AGE_ADMIN_DAYS` (7 d), so an active refresh chain (stolen or not) still ends. Families created before this change start their cap at their next refresh.
@@ -51,6 +51,17 @@ Candidates have no passwords (admins may also set one on their account page). Si
 - **Replay:** the last accepted time step is stored and a code for the same or an earlier step is refused (a conditional update makes concurrent replays lose). ±1 step of clock drift is accepted.
 - Audited: `auth.mfa_challenged`, `auth.mfa_failed`, `auth.mfa_enabled`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_regenerated`, `auth.mfa_disabled`.
 - Lost phone and recovery codes: an operator removes the admin's `mfa` field on the server (there is no self-service bypass); the next sign-in asks them to enrol again.
+
+## Organisation members (org portal)
+
+Employers and colleges use the org portal at `/org` in the admin web app (see [the org portal](../architecture/org-portal.md)). Their members sign in with the `org` audience:
+
+- **Invited only.** CodeBegun admins (`orgs.manage`) create an organisation and invite its owner; owners invite members. Codes and Google sign-in work only for members of an active organisation; the first sign-in activates the membership. A person belongs to one organisation at a time, and staff accounts cannot be members.
+- **Sessions** use the admin lifetimes (`REFRESH_TTL_ADMIN_HOURS`, `SESSION_MAX_AGE_ADMIN_DAYS`), because members see candidates' personal data. The refresh cookie is `cbi_org_rt` on `/api/v1/org/auth`; the web app keeps a separate session manager and tab channel for it.
+- **Live checks.** Every request and refresh checks the live membership and the organisation's status (the user-state cache carries the membership and is invalidated on every membership or organisation change). Removing a member revokes their org refresh families; suspending an organisation blocks all members at once (`403 ACCOUNT_SUSPENDED`).
+- **Two-factor (optional per organisation).** With `mfaRequired`, members must set up an authenticator app at sign-in (`ENROLL` challenge, then `POST /org/auth/mfa/verify`); otherwise only members who set one up are asked. The challenge records its audience: an org challenge can never complete an admin sign-in and vice versa. Audited with actor type `ORG_MEMBER`.
+- **Permissions.** Org endpoints check org permissions of the member's role (`ORG_OWNER`, `ORG_RECRUITER`, `ORG_VIEWER`; matrix in [`permissions.ts`](../../packages/shared-types/src/permissions.ts)), and every campaign query is filtered by the member's organisation.
+- **API keys** (`cbk_…`) authenticate only the read-only `/org-api` endpoints; they are stored as SHA-256 hashes and audited as actor type `API_KEY`.
 
 ## Account suspension
 
@@ -89,6 +100,8 @@ Endpoints check **permissions**, never role names. The matrix lives in [`package
 | `library.read`       | ✔     | ✔          | ✔       |         |         |
 | `library.manage`     | ✔     | ✔          | ✔       |         |         |
 | `interviews.manage`  | ✔     | ✔          |         |         |         |
+| `orgs.read`          | ✔     | ✔          |         | ✔       |         |
+| `orgs.manage`        | ✔     |            |         |         |         |
 
 The AI permissions (Phase 2) are described in [the AI provider layer](../ai/provider-layer.md#admin-console-and-permissions). The library permissions (Phase 3: roles, blueprints, companies, templates) are described in [inputs and role analysis](../architecture/inputs-and-role-analysis.md#admin-permissions). Only super admins can see or change provider keys and routing.
 
@@ -98,7 +111,7 @@ Safeguards: admins cannot demote or revoke themselves; the platform keeps at lea
 
 `auditLogs` is append-only. The Mongoose model rejects every update and delete operation. Entries record the actor, action, target, outcome, request id and a keyed hash of the IP (never the raw IP), plus minimal details (never codes, tokens or full contact details). Admin mutations write their audit entry inside the same transaction, so a change cannot happen unaudited. Security events outside a transaction (login, OTP failures) log an error and continue if the audit write fails, so an audit outage cannot lock everyone out.
 
-Recorded actions so far: `auth.otp_requested`, `auth.otp_verify_failed`, `auth.account_created`, `auth.login_succeeded`, `auth.logout`, `auth.logout_all`, `auth.session_revoked`, `auth.identity_linked`, `auth.refresh_token_reuse_detected`, the `auth.mfa_*` actions above, `admin.user_invited`, `admin.user_roles_changed`, `admin.user_access_revoked`, `admin.super_admin_seeded`, `candidate.searched`, `candidate.viewed`, `candidate.suspended`, `candidate.reinstated`, and the data-rights actions in [data protection](data-protection.md). Sign-outs from the admin app are recorded with actor type `ADMIN`.
+Recorded actions so far: `auth.otp_requested`, `auth.otp_verify_failed`, `auth.account_created`, `auth.login_succeeded`, `auth.logout`, `auth.logout_all`, `auth.session_revoked`, `auth.identity_linked`, `auth.refresh_token_reuse_detected`, the `auth.mfa_*` actions above, `admin.user_invited`, `admin.user_roles_changed`, `admin.user_access_revoked`, `admin.super_admin_seeded`, `candidate.searched`, `candidate.viewed`, `candidate.suspended`, `candidate.reinstated`, and the data-rights actions in [data protection](data-protection.md). Sign-outs from the admin app are recorded with actor type `ADMIN`. Organisations add `org.created`, `org.updated`, `org.status_changed`, `org.wallet_adjusted`, `org.member_invited`, `org.member_role_changed`, `org.member_removed`, `org.scorecard_criteria_changed`, `org.invites_created`, `org.invite_revoked`, `org.invite_retried`, `org.stage_changed`, `org.note_added`, `org.scorecard_saved`, `org.candidate_viewed`, `org.results_exported`, `org.cohort_exported`, `org.identity_viewed`, `org.identity_reviewed`, `org.webhook_*`, `org.api_key_created`, `org.api_key_revoked` and `org.api_results_read` (actor types `ORG_MEMBER` and `API_KEY`), plus `identity.captured` by candidates.
 
 ## Secrets
 
