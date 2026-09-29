@@ -1296,6 +1296,31 @@
         "format": "We could not read that recording. Try again, or type your answer instead.",
         "stale": "The interview had already moved on, so that recording was not used.",
         "failed": "We could not process your recording. Please try again."
+      },
+      "live": {
+        "listening": "Listening… just speak your answer",
+        "finishing": "Finishing your answer…",
+        "nothingYet": "Start speaking. Your words appear here as you talk.",
+        "interruptHint": "Listen to the question, or start speaking whenever you are ready. The interviewer will stop and listen.",
+        "sendNow": "Send now",
+        "edit": "Edit",
+        "sendingIn": "Sending in {{seconds}} s…",
+        "keepTalking": "Keep talking to add more, tap Send now to send it straight away, or Edit to correct it.",
+        "speakToContinue": "You can also keep speaking to add to your answer.",
+        "unclear": "We may not have heard every word clearly. Check the text, and edit it if something is wrong.",
+        "editLabel": "Correct your answer",
+        "paused": "The connection dropped. Your answer so far is kept and continues as soon as you are back online.",
+        "reviewPreference": "Let me review my answer before it is sent",
+        "usePushToTalk": "Use the record button instead",
+        "announce": {
+          "listening": "Listening. Speak your answer.",
+          "grace": "Your answer will be sent in {{seconds}} seconds. Keep talking to continue."
+        },
+        "fallback": {
+          "unsupported": "Live transcription is not available for this interview, so answer with the record button.",
+          "unavailable": "Live transcription stopped working. Record your answer with the button below instead.",
+          "slow": "Your connection is too slow for live transcription. Record your answer with the button below instead."
+        }
       }
     }
   },

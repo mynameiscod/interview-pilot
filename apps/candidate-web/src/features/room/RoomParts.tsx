@@ -140,12 +140,15 @@ export function RoundStepper({ rounds, current }: { rounds: LiveRound[]; current
 export function InterviewerPanel({
   question,
   thinking,
+  draftText,
   questionTextId,
   speaking = false,
   controls,
 }: {
   question: LiveQuestion | null;
   thinking: boolean;
+  /** Realtime voice: the next question as it is being written (not announced until saved). */
+  draftText?: string;
   questionTextId: string;
   speaking?: boolean;
   controls?: ReactNode;
@@ -195,6 +198,8 @@ export function InterviewerPanel({
               {question.text}
             </p>
           </>
+        ) : draftText ? (
+          <p className="visually-hidden">{t('room.thinking')}</p>
         ) : (
           <>
             <p className="mb-0 cb-text-secondary d-flex align-items-center gap-2">
@@ -207,6 +212,12 @@ export function InterviewerPanel({
           </>
         )}
       </div>
+      {!question && draftText && (
+        // Shown as it is written; screen readers hear the question once it is complete.
+        <p className="fs-5 mb-0" style={{ whiteSpace: 'pre-wrap' }} aria-hidden="true">
+          {draftText}
+        </p>
+      )}
       {question && controls && <div className="mt-3">{controls}</div>}
     </section>
   );

@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router';
+import { useFlag } from '../../app/system-api';
 import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { CodingWorkspace } from '../coding/CodingWorkspace';
@@ -20,13 +21,22 @@ import { useCameraStream, useInterviewRecording, type TrackKind } from '../media
 import { clearDraft, loadDraft, saveDraft } from './drafts';
 import { useIntegrityObservations } from './integrity';
 import { ConnectionPill, InterviewerPanel, RoundStepper, RoomTimer, Transcript } from './RoomParts';
+import { useReviewBeforeSending } from '../voice/preferences';
+import { realtimeVoiceSupported } from '../voice/stream-player';
+import { RealtimeFallbackNotice, RealtimeVoiceAnswer } from './RealtimeVoiceAnswer';
+import { useRealtimeVoice } from './realtime-voice';
+import { useInterviewerAudio } from './streamed-audio';
 import { useInterviewRoom, type InterviewRoom } from './useInterviewRoom';
 import { VoiceAnswer } from './VoiceAnswer';
 import { SelfView } from './SelfView';
-import { useQuestionAudio } from './voice-hooks';
+import type { PlaybackStatus } from './voice-hooks';
 import '../voice/voice.scss';
 
-type QuestionAudio = ReturnType<typeof useQuestionAudio>;
+interface QuestionAudio {
+  status: PlaybackStatus | null;
+  stop: () => void;
+  replay: () => void;
+}
 
 /** Playback controls under the question in a voice interview. */
 function QuestionAudioControls({ audio, recording }: { audio: QuestionAudio; recording: boolean }) {
@@ -378,12 +388,34 @@ export function RoomPage() {
   useTrackOnce('interview_room_joined', room.joined);
 
   const onTtsDown = useCallback(() => reportDegraded('TTS'), [reportDegraded]);
-  const audio = useQuestionAudio(
-    id,
-    voiceMode ? (room.question?.questionId ?? null) : null,
-    onTtsDown,
-  );
+  // Realtime voice (flag `voice.realtime`): streamed answers and questions, with push-to-talk
+  // as the fallback and for browsers without AudioWorklet.
+  const realtimeFlag = useFlag('voice.realtime');
+  const [realtimeSupported] = useState(realtimeVoiceSupported);
+  const realtime = voiceMode && realtimeFlag && realtimeSupported;
+  const [reviewBeforeSending, setReviewBeforeSending] = useReviewBeforeSending();
+  const audio = useInterviewerAudio({
+    sessionId: id,
+    channel: room.voiceChannel,
+    questionId: voiceMode ? (room.question?.questionId ?? room.draft?.questionId ?? null) : null,
+    realtime,
+    onSpeechUnavailable: onTtsDown,
+  });
+  const liveVoice = useRealtimeVoice({
+    sessionId: id,
+    channel: room.voiceChannel,
+    questionId: room.question?.questionId ?? room.draft?.questionId ?? null,
+    saved: Boolean(room.question),
+    // Coding questions are answered in the editor.
+    enabled: realtime && !room.question?.coding,
+    interviewerSpeaking: audio.status === 'loading' || audio.status === 'playing',
+    reviewBeforeSending,
+    sendAnswer: room.sendAnswer,
+    onBargeIn: audio.stop,
+  });
+  const realtimeAnswer = realtime && liveVoice.phase !== 'fallback';
   const [recording, setRecording] = useState(false);
+  const listening = recording || (realtimeAnswer && liveVoice.phase === 'listening');
   /** The coding question just submitted: its result stays until the next question. */
   const [keptCodingId, setKeptCodingId] = useState<string | null>(null);
   const { codingSubmitted } = room;
@@ -503,6 +535,7 @@ export function RoomPage() {
           <InterviewerPanel
             question={room.question}
             thinking={room.thinking}
+            draftText={room.draft?.text}
             questionTextId="room-question-text"
             speaking={voiceMode && audio.status === 'playing'}
             controls={
@@ -529,11 +562,12 @@ export function RoomPage() {
             <InterviewerPanel
               question={room.question}
               thinking={room.thinking}
+              draftText={room.draft?.text}
               questionTextId="room-question-text"
               speaking={voiceMode && audio.status === 'playing'}
               controls={
                 voiceMode ? (
-                  <QuestionAudioControls audio={audio} recording={recording} />
+                  <QuestionAudioControls audio={audio} recording={listening} />
                 ) : undefined
               }
             />
@@ -549,15 +583,25 @@ export function RoomPage() {
                 {t(`voice.room.modeNow.${room.mode}`)}
               </p>
             )}
-            {voiceMode ? (
-              <VoiceAnswer
-                key={room.question?.questionId ?? 'waiting'}
+            {voiceMode && realtimeAnswer ? (
+              <RealtimeVoiceAnswer
                 room={room}
-                sessionId={id}
-                question={room.question}
-                onBeforeRecord={audio.stop}
-                onRecordingChange={setRecording}
+                voice={liveVoice}
+                reviewBeforeSending={reviewBeforeSending}
+                onReviewBeforeSendingChange={setReviewBeforeSending}
               />
+            ) : voiceMode ? (
+              <>
+                {realtime && <RealtimeFallbackNotice voice={liveVoice} />}
+                <VoiceAnswer
+                  key={room.question?.questionId ?? 'waiting'}
+                  room={room}
+                  sessionId={id}
+                  question={room.question}
+                  onBeforeRecord={audio.stop}
+                  onRecordingChange={setRecording}
+                />
+              </>
             ) : (
               <AnswerForm room={room} sessionId={id} />
             )}

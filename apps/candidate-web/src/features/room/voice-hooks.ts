@@ -24,13 +24,17 @@ export type PlaybackStatus = 'loading' | 'playing' | 'ready' | 'blocked' | 'unav
 /**
  * Reads the current question aloud: fetches its audio with the access token,
  * plays it from an object URL and keeps that for "Repeat". Pass a null
- * question (text mode, no question) to stop and release everything.
+ * question (text mode, no question) to stop and release everything. With
+ * `autoPlay: false` (the question is being spoken from a stream) nothing is
+ * fetched until "Repeat".
  */
 export function useQuestionAudio(
   sessionId: string,
   questionId: string | null,
   onSpeechUnavailable: () => void,
+  opts: { autoPlay?: boolean } = {},
 ) {
+  const autoPlay = opts.autoPlay ?? true;
   const { manager } = useCandidateAuth();
   // Keyed by question so a new question starts as "loading" without a reset in the effect.
   const [playback, setPlayback] = useState<{ questionId: string; status: PlaybackStatus } | null>(
@@ -68,8 +72,42 @@ export function useQuestionAudio(
     }
   }, []);
 
+  /** Fetches the question's audio (then plays it); aborted by the cleanup below. */
+  const loadRef = useRef<{ questionId: string; controller: AbortController } | null>(null);
+  const load = useCallback(
+    (forQuestion: string) => {
+      const controller = new AbortController();
+      loadRef.current = { questionId: forQuestion, controller };
+      setPlayback({ questionId: forQuestion, status: 'loading' });
+      fetchQuestionAudio(manager, sessionId, forQuestion, controller.signal)
+        .then((blob) => {
+          if (controller.signal.aborted) return;
+          urlRef.current = URL.createObjectURL(blob);
+          void play(forQuestion);
+        })
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          setPlayback({ questionId: forQuestion, status: 'unavailable' });
+          if (isSpeechUnavailable(err)) unavailableRef.current();
+        });
+    },
+    [manager, sessionId, play],
+  );
+
   useEffect(() => {
-    if (!questionId) return;
+    const release = () => {
+      loadRef.current?.controller.abort();
+      loadRef.current = null;
+      const audio = audioRef.current;
+      if (audio) {
+        audio.onended = null;
+        audio.pause();
+        audio.removeAttribute('src');
+      }
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    };
+    if (!questionId || !autoPlay) return release;
     const controller = new AbortController();
     let cancelled = false;
     fetchQuestionAudio(manager, sessionId, questionId, controller.signal)
@@ -86,16 +124,9 @@ export function useQuestionAudio(
     return () => {
       cancelled = true;
       controller.abort();
-      const audio = audioRef.current;
-      if (audio) {
-        audio.onended = null;
-        audio.pause();
-        audio.removeAttribute('src');
-      }
-      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
+      release();
     };
-  }, [manager, sessionId, questionId, play]);
+  }, [manager, sessionId, questionId, play, autoPlay]);
 
   // Release the audio element when the room closes.
   useEffect(
@@ -118,8 +149,11 @@ export function useQuestionAudio(
   }, [questionId]);
 
   const replay = useCallback(() => {
-    if (questionId) void play(questionId);
-  }, [play, questionId]);
+    if (!questionId) return;
+    // Streamed questions are fetched (from the cache the stream filled) on the first repeat.
+    if (urlRef.current) void play(questionId);
+    else if (loadRef.current?.questionId !== questionId) load(questionId);
+  }, [play, load, questionId]);
 
   const status: PlaybackStatus | null = !questionId
     ? null
