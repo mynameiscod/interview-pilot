@@ -32,6 +32,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - payment webhooks and verification: the money has already moved, the
  *   purchase must be recorded (the mock checkout is the dev equivalent);
  * - analytics events: telemetry, not a state change;
+ * - unsubscribing from emails: opting out must always work;
  * - an interview that is already running: ending it, switching mode,
  *   transcribing, coding answers and recording segments (maintenance stops
  *   new interviews only; creating, setting up and starting one is refused).
@@ -41,6 +42,7 @@ export const MAINTENANCE_EXEMPT_PATHS: readonly RegExp[] = [
   /^\/admin(\/|$)/,
   /^\/payments\/(webhooks\/|verify$|mock\/)/,
   /^\/analytics\/events$/,
+  /^\/email\/unsubscribe$/,
   /^\/interviews\/[^/]+\/(end|mode|voice\/transcribe|coding\/.+|media\/segments\/[^/]+|media\/finalize)$/,
 ];
 

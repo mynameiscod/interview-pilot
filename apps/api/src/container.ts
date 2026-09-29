@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { createAccessTokenIssuer } from '@cbi/auth-core';
+import { createAccessTokenIssuer, emailLinkKey } from '@cbi/auth-core';
 import type { ApiEnv, Logger } from '@cbi/config';
 import type { Redis } from '@cbi/db';
 import {
@@ -56,6 +56,10 @@ import {
   createSettingsService,
 } from './modules/ops/ops.service.js';
 import { createProofService } from './modules/ops/proof.service.js';
+import { createCertificateService } from './modules/ops/certificates.service.js';
+import { createDrillService } from './modules/progress/drills.service.js';
+import { createProgressService } from './modules/progress/progress.service.js';
+import { createEmailPreferencesService } from './modules/users/email-preferences.service.js';
 import { createSystemService } from './modules/ops/system.service.js';
 
 export interface ContainerOptions {
@@ -252,6 +256,7 @@ export function buildContainer(opts: ContainerOptions) {
     transcripts,
     consent,
     maintenance: () => settings.get('maintenance'),
+    practice: () => settings.get('practice'),
     onQuestion: (s, turn) => voice.warmQuestionAudio(s, turn),
     pickCodingProblem: async (s, target) => {
       const p = await coding.pickProblem(s, target);
@@ -280,6 +285,15 @@ export function buildContainer(opts: ContainerOptions) {
     env: env.APP_ENV,
   });
   const proof = createProofService({ flags, audit });
+  const practice = () => settings.get('practice');
+  const certificates = createCertificateService({ flags, audit, storage, jobs, practice });
+  const drills = createDrillService({ audit, logger, practice });
+  const progress = createProgressService({ audit, drills, practice });
+  const emailPreferences = createEmailPreferencesService({
+    // The worker signs unsubscribe links with the same derived key (both have the master key).
+    linkKey: emailLinkKey(Buffer.from(env.AI_SECRETS_MASTER_KEY, 'base64')),
+    audit,
+  });
   const paymentGateway = integrations.payments;
   const integrationsAdmin = createIntegrationsAdminService({
     integrations,
@@ -342,6 +356,10 @@ export function buildContainer(opts: ContainerOptions) {
     queueAdmin,
     system,
     proof,
+    certificates,
+    drills,
+    progress,
+    emailPreferences,
     payments,
     paymentMock,
     creditsAdmin,

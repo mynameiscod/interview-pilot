@@ -27,6 +27,15 @@ import {
   CostReport,
   CreateShareBody,
   CreatedShareLink,
+  CertificateStatus,
+  CertificateVerification,
+  CreateDrillBody,
+  DrillResult,
+  PlanItemState,
+  ProgressOverview,
+  UnsubscribeBody,
+  UpdateGoalsBody,
+  UpdatePlanItemBody,
   Dashboard,
   DateRangeQuery,
   FailedJob,
@@ -870,6 +879,46 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     status: 200,
     errors: [401, 404, 409],
   });
+  candidate('get', '/users/me/progress', {
+    tag: 'Progress',
+    summary:
+      'The progress hub: readiness and dimension trends, the current plan with done items, streak, weekly goal and schedule, badges (awarded idempotently on read), drill quota and recent drills',
+    response: ProgressOverview,
+  });
+  candidate('put', '/users/me/progress/goals', {
+    tag: 'Progress',
+    summary: 'Set the weekly goal (sessions per week) and the optional target interview date',
+    body: UpdateGoalsBody,
+    response: ProgressOverview,
+  });
+  candidate('put', '/users/me/progress/plan-items', {
+    tag: 'Progress',
+    summary: 'Tick a plan item of a report revision done or undone',
+    body: UpdatePlanItemBody,
+    response: PlanItemState,
+  });
+  candidate('post', '/drills', {
+    tag: 'Progress',
+    summary:
+      'Create a practice drill on one dimension of the latest interview’s blueprint (reuses an unstarted one). Start it with POST /interviews/{id}/start; free up to `practice.drillsPerDay` a day (402 DRILL_LIMIT_REACHED)',
+    body: CreateDrillBody,
+    response: InterviewSummary,
+    status: 201,
+    errors: [400, 401, 402, 403, 404, 409, 429],
+  });
+  candidate('get', '/drills/{id}', {
+    tag: 'Progress',
+    summary: 'A drill’s quick evaluation: score, previous score and feedback per question',
+    response: DrillResult,
+  });
+  route('post', '/email/unsubscribe', {
+    tag: 'Progress',
+    summary:
+      'Unsubscribe from product emails with the signed token from an email link (no sign-in; allowed during maintenance)',
+    body: UnsubscribeBody,
+    response: z.object({ unsubscribed: z.literal(true) }),
+    errors: [400, 429],
+  });
   candidate('post', '/feedback', {
     tag: 'Feedback',
     summary: 'Rate an interview and its report (one per interview; sending again updates it)',
@@ -1533,6 +1582,35 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Revoke a proof link',
     response: ShareLinkSummary,
     errors: [401, 404],
+  });
+  candidate('get', '/reports/{sessionId}/certificate', {
+    tag: 'Candidate Proof',
+    summary:
+      'Readiness certificate status: whether the report reaches the `practice.certificateMinBand` band, and the certificate if issued (flag reports.publicProof; 404 while off)',
+    response: CertificateStatus,
+    errors: [401, 404],
+  });
+  candidate('post', '/reports/{sessionId}/certificate', {
+    tag: 'Candidate Proof',
+    summary:
+      'Issue the interview’s readiness certificate (once; again returns it) and queue its PDF. 409 below the band',
+    response: CertificateStatus,
+    errors: [401, 404, 409],
+  });
+  route('get', '/reports/{sessionId}/certificate/pdf', {
+    tag: 'Candidate Proof',
+    auth: 'bearer',
+    summary: 'Download the certificate (application/pdf); 409 while it is being prepared',
+    response: null,
+    status: 200,
+    errors: [401, 404, 409],
+  });
+  route('get', '/certificates/{code}', {
+    tag: 'Candidate Proof',
+    summary:
+      'Public certificate verification: the facts frozen at issue and whether a review replaced the report. Unknown codes answer 404',
+    response: CertificateVerification,
+    errors: [404, 429],
   });
   route('get', '/proof/{token}', {
     tag: 'Candidate Proof',

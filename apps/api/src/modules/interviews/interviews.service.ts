@@ -1,6 +1,7 @@
 import type { Logger } from '@cbi/config';
 import {
   CampaignModel,
+  DRILL_TEMPLATE_KEY,
   InterviewSessionModel,
   InterviewTemplateModel,
   JobTargetModel,
@@ -86,14 +87,26 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
           languages: 1,
         }).lean()
       : null;
+    const drill = session.kind === 'DRILL' && session.drill ? session.drill : null;
     return {
       id: String(session._id),
+      kind: session.kind ?? 'INTERVIEW',
+      drill: drill
+        ? {
+            competencyKey: drill.competencyKey,
+            competencyName: drill.competencyName,
+            sourceSessionId: String(drill.sourceSessionId),
+          }
+        : null,
       state: session.state,
       mode: session.mode,
       language: session.language,
       jobTargetId: String(session.jobTargetId),
       resumeId: session.resumeId ? String(session.resumeId) : null,
-      title: interviewTitle(session, target as JobTargetRecord | null, role?.title),
+      // A drill is named after the skill it practises.
+      title: drill
+        ? drill.competencyName
+        : interviewTitle(session, target as JobTargetRecord | null, role?.title),
       companyName: target?.companyName ?? target?.structured?.companyName ?? null,
       template: {
         id: String(template._id),
@@ -144,6 +157,8 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
   const invalidState = (message: string) => new AppError(409, 'INVALID_STATE', message);
 
   return {
+    summary,
+
     async create(userId: string, body: CreateInterviewBody, ctx: ClientContext) {
       const target = await JobTargetModel.findOne(
         { _id: objectId(body.jobTargetId, 'Job target'), userId },
@@ -172,10 +187,16 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
         key: body.templateKey ?? DEFAULT_TEMPLATE_KEY,
         status: 'ACTIVE',
       }).lean();
-      if (!template) throw AppError.notFound('Interview type not found');
+      // The drill template runs practice drills only (POST /drills).
+      if (!template || template.key === DRILL_TEMPLATE_KEY) {
+        throw AppError.notFound('Interview type not found');
+      }
       if (
-        (await InterviewSessionModel.countDocuments({ userId, state: { $in: OPEN_STATES } })) >=
-        MAX_OPEN_INTERVIEWS
+        (await InterviewSessionModel.countDocuments({
+          userId,
+          kind: { $ne: 'DRILL' },
+          state: { $in: OPEN_STATES },
+        })) >= MAX_OPEN_INTERVIEWS
       ) {
         throw AppError.conflict(
           'You have too many unfinished interviews. Cancel one to start another.',
@@ -209,8 +230,9 @@ export function createInterviewService({ jobs, audit, logger, consent }: Deps) {
       return summary(session.toObject(), { template, target: target as JobTargetRecord });
     },
 
+    /** Interviews only: drills are listed by the progress hub. */
     async list(userId: string, limit: number) {
-      const rows = await InterviewSessionModel.find({ userId })
+      const rows = await InterviewSessionModel.find({ userId, kind: { $ne: 'DRILL' } })
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();

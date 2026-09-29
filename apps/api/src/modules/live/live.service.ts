@@ -5,6 +5,7 @@ import type { Logger } from '@cbi/config';
 import {
   CampaignModel,
   applySessionEvent,
+  drillsStartedToday,
   grantFreeCredits,
   heldSessionClock,
   inTransaction,
@@ -22,7 +23,9 @@ import {
   type Redis,
 } from '@cbi/db';
 import {
+  createDrillPlanner,
   createPlanner,
+  drillBlueprint,
   endCurrentRound,
   nextStep,
   recordAssessment,
@@ -33,6 +36,7 @@ import {
 } from '@cbi/interview-engine';
 import {
   AssessTurnAi,
+  DEFAULT_SETTINGS,
   InterviewQuestionAi,
   resolveInterviewLanguage,
   RtEvent,
@@ -44,6 +48,7 @@ import {
   type LiveQuestion,
   type RtErrorCode,
   type MaintenanceSetting,
+  type PracticeSetting,
   type TurnEvalSufficiency,
   type UiLocale,
 } from '@cbi/shared-types';
@@ -173,6 +178,8 @@ interface Deps {
   ) => Promise<{ _id: Types.ObjectId; title: string; text: string } | null>;
   /** Maintenance mode refuses new starts (running interviews continue). */
   maintenance?: () => Promise<MaintenanceSetting>;
+  /** Drill quota and length (the `practice` setting); defaults when omitted. */
+  practice?: () => Promise<PracticeSetting>;
   now?: () => Date;
 }
 
@@ -190,6 +197,7 @@ export function createLiveInterviewService({
   onQuestion,
   pickCodingProblem,
   maintenance,
+  practice = () => Promise.resolve(DEFAULT_SETTINGS.practice),
   now = () => new Date(),
 }: Deps) {
   const blueprints = new Map<string, BlueprintContent>();
@@ -204,6 +212,12 @@ export function createLiveInterviewService({
     if (blueprints.size > 500) blueprints.clear();
     blueprints.set(id, doc.content);
     return doc.content;
+  }
+
+  /** What the planner and question prompts see: a drill sees only its one competency. */
+  async function planningBlueprint(s: Session): Promise<BlueprintContent> {
+    const full = await blueprintOf(s);
+    return s.kind === 'DRILL' && s.drill ? drillBlueprint(full, s.drill.competencyKey) : full;
   }
 
   async function load(sessionId: string, userId?: string) {
@@ -567,7 +581,7 @@ export function createLiveInterviewService({
         return;
       }
 
-      const blueprint = await blueprintOf(s);
+      const blueprint = await planningBlueprint(s);
       const step = nextStep(s.planner, blueprint, sessionElapsedMs(s, at));
       if (step.kind === 'END_ROUND') {
         await event(
@@ -673,6 +687,13 @@ export function createLiveInterviewService({
     const template = await InterviewTemplateModel.findById(s.templateId).lean();
     if (!template) throw new Error('template missing');
     const blueprint = await blueprintOf(s);
+    if (s.kind === 'DRILL' && s.drill) {
+      // One round of the drill template's rules, on the one competency.
+      const competency = blueprint.competencies.find((c) => c.key === s.drill!.competencyKey);
+      if (!competency) throw new AppError(409, 'INVALID_STATE', 'This skill cannot be practised.');
+      const { drillQuestions } = await practice();
+      return createDrillPlanner(template.content.rounds[0]!, competency, drillQuestions);
+    }
     return createPlanner(template.content.rounds, blueprint.competencies);
   }
 
@@ -696,6 +717,18 @@ export function createLiveInterviewService({
       }
       if (!s.blueprintId) throw new AppError(409, 'INVALID_STATE', 'Analyse the interview first.');
       await refuseDuringMaintenance(maintenance);
+      if (s.kind === 'DRILL') {
+        // Drills are free up to the daily quota (India time). One live session per candidate
+        // (a unique index) keeps two starts from racing past it.
+        const { drillsPerDay } = await practice();
+        if ((await drillsStartedToday(userId, now())) >= drillsPerDay) {
+          throw new AppError(
+            402,
+            'DRILL_LIMIT_REACHED',
+            "You have used today's free practice drills. More are free tomorrow.",
+          );
+        }
+      }
       // Device check (voice and video) and consents, whatever the mode asks for.
       const readiness = await consent.readiness(s, now());
       if (readiness.blocker) throw new AppError(409, 'INVALID_STATE', readiness.blocker);

@@ -35,6 +35,7 @@ import {
 } from './modules/media/media.routes.js';
 import { campaignsRouter } from './modules/campaigns/campaigns.routes.js';
 import { opsPublicRouter, shareLinksRouter } from './modules/ops/ops.routes.js';
+import { drillsRouter, emailRouter, progressRouter } from './modules/progress/progress.routes.js';
 import { buildOpenApiDocument } from './openapi/document.js';
 
 export const SERVICE_NAME = 'api';
@@ -126,7 +127,9 @@ export function createApp(deps: AppDependencies): Express {
   );
   v1.use('/auth', authRouter('candidate', c));
   v1.use('/users', userConsentsRouter(c));
+  v1.use('/users/me/progress', progressRouter(c));
   v1.use('/users', usersRouter(c));
+  v1.use('/email', emailRouter(c));
   v1.use('/legal', legalRouter(env));
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
@@ -135,6 +138,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/interviews', codingInterviewRouter(c));
   v1.use('/media', mediaPlaybackRouter(c));
   v1.use('/interviews', interviewsRouter(c));
+  v1.use('/drills', drillsRouter(c));
   v1.use('/voice', voiceRouter(c));
   v1.use('/credits', creditsRouter(c));
   v1.use('/reports', shareLinksRouter(c));

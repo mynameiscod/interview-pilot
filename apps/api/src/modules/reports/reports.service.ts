@@ -26,11 +26,15 @@ interface Deps {
   audit: AuditService;
 }
 
-/** The latest candidate-visible revision of each of the user's reports (or of one session). */
-async function latestReports(userId: string, sessionIds?: string[]) {
+/**
+ * The latest candidate-visible revision of each of the user's reports (or of
+ * some sessions). History and comparisons leave drills out (`interviewsOnly`).
+ */
+async function latestReports(userId: string, sessionIds?: string[], interviewsOnly = false) {
   const rows = await InterviewReportModel.find({
     userId,
     'visibility.candidate': true,
+    ...(interviewsOnly ? { kind: { $ne: 'DRILL' as const } } : {}),
     ...(sessionIds ? { sessionId: { $in: sessionIds.map((id) => objectId(id, 'Report')) } } : {}),
   })
     .sort({ revision: -1 })
@@ -78,7 +82,7 @@ export function createReportsService({ storage, jobs, audit }: Deps) {
     },
 
     async history(userId: string): Promise<ReportHistoryItem[]> {
-      const reports = (await latestReports(userId)).sort(
+      const reports = (await latestReports(userId, undefined, true)).sort(
         (a, b) => b.generatedAt.getTime() - a.generatedAt.getTime(),
       );
       return reports.map((r) => ({
@@ -100,7 +104,7 @@ export function createReportsService({ storage, jobs, audit }: Deps) {
     async compare(userId: string, sessionIds: string[]): Promise<CompareResult> {
       const unique = [...new Set(sessionIds)];
       if (unique.length < 2) throw AppError.validation('Choose at least two different attempts.');
-      const reports = await latestReports(userId, unique);
+      const reports = await latestReports(userId, unique, true);
       if (reports.length !== unique.length) throw AppError.notFound('Report not found');
       if (new Set(reports.map((r) => r.roleKey ?? String(r.sessionId))).size !== 1) {
         throw AppError.validation('Compare attempts at the same role.');

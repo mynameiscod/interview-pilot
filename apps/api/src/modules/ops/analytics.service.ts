@@ -70,16 +70,21 @@ async function dailyTotals(from: string, to: string) {
 
 /** Funnel steps after `registered` and `onboarded`, each a lookup into the cohort's records. */
 const FUNNEL_LOOKUPS = [
-  { step: 'created_interview', from: () => InterviewSessionModel, match: {} },
+  // Practice drills are not interviews.
+  {
+    step: 'created_interview',
+    from: () => InterviewSessionModel,
+    match: { kind: { $ne: 'DRILL' } },
+  },
   {
     step: 'started_interview',
     from: () => InterviewSessionModel,
-    match: { startedAt: { $ne: null } },
+    match: { kind: { $ne: 'DRILL' }, startedAt: { $ne: null } },
   },
   {
     step: 'completed_interview',
     from: () => InterviewSessionModel,
-    match: { state: { $in: ['PROCESSING', 'REPORT_READY'] } },
+    match: { kind: { $ne: 'DRILL' }, state: { $in: ['PROCESSING', 'REPORT_READY'] } },
   },
   { step: 'viewed_report', from: () => AnalyticsEventModel, match: { name: 'report_viewed' } },
   { step: 'paid', from: () => PurchaseModel, match: { 'statusHistory.status': 'PAID' } },

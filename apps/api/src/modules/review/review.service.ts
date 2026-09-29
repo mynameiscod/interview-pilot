@@ -341,6 +341,7 @@ export function createReviewService(deps: {
                 userId: s.userId,
                 revision: reportRevision,
                 scoreRevision,
+                kind: latestReport.kind ?? 'INTERVIEW',
                 content,
                 visibility: { candidate: latestReport.visibility.candidate },
                 roleKey: latestReport.roleKey,
