@@ -7,16 +7,11 @@ import {
   writeScriptText,
   type Style,
 } from '@cbi/pdf-fonts';
-import type { ReportContent } from '@cbi/shared-types';
+import { INTEGRITY_NOTE, type ReportContent } from '@cbi/shared-types';
 import PDFDocument from 'pdfkit';
-
-const BAND_LABELS: Record<ReportContent['overall']['band'], string> = {
-  READY: 'Interview-ready',
-  READY_WITH_GAPS: 'Interview-ready with gaps',
-  DEVELOPING: 'Developing',
-  NOT_YET: 'Not yet ready',
-  INSUFFICIENT_EVIDENCE: 'Not enough evidence to score',
-};
+import { outputLanguage, type OutputLanguage } from './language.js';
+import { REPORT_DISCLAIMER } from './report-content.js';
+import { fill, pdfMessages } from './report-messages.js';
 
 /** `REPORT_FONT_DIR`, else the fonts shipped with @cbi/pdf-fonts. */
 export function fontDir(): string {
@@ -30,21 +25,24 @@ export interface RenderOptions {
   fontDir?: string | null;
   /** Compress page streams (tests turn it off to inspect the output). */
   compress?: boolean;
+  /** The language of headings and labels; defaults to {@link reportLanguage}. */
+  language?: OutputLanguage;
 }
 
-/** Neutral wording for integrity observations. */
-const INTEGRITY_LABELS: Record<string, string> = {
-  TAB_HIDDEN: 'Switched to another tab or app',
-  WINDOW_BLUR: 'Interview window lost focus',
-  FULLSCREEN_EXIT: 'Left full screen',
-  PASTE: 'Pasted text into an answer',
-  CAMERA_LOST: 'Camera stopped',
-  MICROPHONE_LOST: 'Microphone stopped',
-};
+/**
+ * The language of the PDF's fixed text: the session's language, or for an
+ * automatic one the script the report's summary was written in (the summary
+ * is written in the candidate's output language).
+ */
+export function reportLanguage(content: ReportContent): OutputLanguage {
+  return outputLanguage(content.header.language, [content.summary]);
+}
 
 /**
- * Renders the readiness report as an A4 PDF. With the embedded fonts present
- * any mix of English, Hindi and Telugu renders; without them (or if shaping
+ * Renders the readiness report as an A4 PDF, its headings and labels in the
+ * report's language (English, Hindi or Telugu; the fallback fonts print
+ * English ones). With the embedded fonts present any mix of English, Hindi
+ * and Telugu renders; without them (or if shaping
  * fails on some unusual text) it falls back to the standard fonts and
  * {@link pdfSafe}, so a report always gets a PDF.
  */
@@ -53,18 +51,26 @@ export async function renderReportPdf(
   options: RenderOptions = {},
 ): Promise<Buffer> {
   const dir = options.fontDir === undefined ? fontDir() : options.fontDir;
-  if (dir === null || !fontsAvailable(dir)) return render(content, null, options);
+  const language = options.language ?? reportLanguage(content);
+  // The standard fonts cannot print Hindi or Telugu labels: English ones then.
+  if (dir === null || !fontsAvailable(dir)) return render(content, null, options, 'en');
   try {
-    return await render(content, dir, options);
+    return await render(content, dir, options, language);
   } catch {
-    return render(content, null, options);
+    return render(content, null, options, 'en');
   }
 }
 
-function render(content: ReportContent, dir: string | null, options: RenderOptions) {
+function render(
+  content: ReportContent,
+  dir: string | null,
+  options: RenderOptions,
+  language: OutputLanguage,
+) {
+  const m = pdfMessages(language);
   return new Promise<Buffer>((resolve, reject) => {
     const embedded = dir !== null;
-    const title = `Readiness report - ${content.header.title}`;
+    const title = `${m.title} - ${content.header.title}`;
     const doc = new PDFDocument({
       size: 'A4',
       margin: 50,
@@ -94,24 +100,29 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     const bullet = (t: string) => write(`- ${t}`, 'regular', 10, { indent: 10 }).moveDown(0.1);
 
     const { header, overall } = content;
-    h1('Interview readiness report');
-    p(`${header.title}${header.companyName ? ` at ${header.companyName}` : ''}`, 12);
+    h1(m.title);
     p(
-      `Date: ${date(header.endedAt ?? header.startedAt)}   Mode: ${header.mode.toLowerCase()}   Duration: ${Math.round(header.durationSec / 60)} min`,
-    );
-
-    h2('Overall readiness');
-    p(
-      `${overall.score === null ? 'No overall score' : `${overall.score} / 100`} - ${BAND_LABELS[overall.band]}`,
+      header.companyName
+        ? fill(m.atCompany, { title: header.title, company: header.companyName })
+        : header.title,
       12,
     );
-    p(`Evidence confidence: ${overall.confidence.level.toLowerCase()}`);
+    p(
+      `${m.date}: ${date(header.endedAt ?? header.startedAt)}   ${m.mode}: ${m.modes[header.mode]}   ${m.duration}: ${fill(m.minutes, { n: Math.round(header.durationSec / 60) })}`,
+    );
+
+    h2(m.overall);
+    p(
+      `${overall.score === null ? m.noOverall : `${overall.score} / 100`} - ${m.bands[overall.band]}`,
+      12,
+    );
+    p(`${m.confidence}: ${m.confidenceLevels[overall.confidence.level]}`);
     p(content.summary);
 
-    h2('Dimensions');
+    h2(m.dimensions);
     for (const d of content.dimensions) {
       write(
-        `${d.name}: ${d.score === null ? 'not assessed' : `${d.score} / 100`} (weight ${d.weight}%)`,
+        `${d.name}: ${d.score === null ? m.notAssessed : `${d.score} / 100`} (${m.weight} ${d.weight}%)`,
         'bold',
         10,
       );
@@ -121,19 +132,19 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.strengths.length) {
-      h2('Strengths');
+      h2(m.strengths);
       content.strengths.forEach((s) => bullet(s.text));
     }
     if (content.gaps.length) {
-      h2('Gaps to work on');
+      h2(m.gaps);
       content.gaps.forEach((g) => bullet(g.text));
     }
 
-    h2('Your plan');
+    h2(m.plan);
     for (const [label, items] of [
-      ['Next 24 hours', content.plan.next24h],
-      ['Next 3 days', content.plan.next3Days],
-      ['Next 7 days', content.plan.next7Days],
+      [m.next24h, content.plan.next24h],
+      [m.next3Days, content.plan.next3Days],
+      [m.next7Days, content.plan.next7Days],
     ] as const) {
       write(label, 'bold', 10);
       items.forEach((i) => bullet(`${i.action} (${i.why})`));
@@ -141,9 +152,12 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.previous) {
-      h2('Progress since your last attempt');
+      h2(m.progress);
       p(
-        `Previous overall: ${content.previous.overall ?? '-'} on ${date(content.previous.endedAt)}`,
+        fill(m.previousOverall, {
+          score: content.previous.overall ?? '-',
+          date: date(content.previous.endedAt),
+        }),
       );
       content.previous.deltas.forEach((d) =>
         bullet(`${d.name}: ${d.delta > 0 ? '+' : ''}${d.delta}`),
@@ -151,36 +165,41 @@ function render(content: ReportContent, dir: string | null, options: RenderOptio
     }
 
     if (content.coding?.length) {
-      h2('Coding');
+      h2(m.coding);
       for (const c of content.coding) {
         const outcome = c.judgeUnavailable
-          ? 'not run (the code judge was unavailable); reviewed from the code'
+          ? m.judgeUnavailable
           : c.passed !== null
-            ? `${c.passed} of ${c.total} tests passed`
-            : 'no solution';
+            ? fill(m.testsPassed, { passed: c.passed, total: c.total ?? '-' })
+            : m.noSolution;
         bullet(
-          `${c.title} (${c.difficulty.toLowerCase()}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ' - not submitted before time ran out'}`,
+          `${c.title} (${m.difficulties[c.difficulty]}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ` - ${m.notSubmitted}`}`,
         );
       }
     }
 
     if (content.integrity) {
-      h2('Session observations');
+      h2(m.observations);
       const counts = Object.entries(content.integrity.counts).filter(
         ([type]) => type !== 'TAB_VISIBLE' && type !== 'WINDOW_FOCUS',
       );
-      if (counts.length === 0) p('No browser events were noted.');
-      counts.forEach(([type, n]) => bullet(`${INTEGRITY_LABELS[type] ?? type}: ${n}`));
+      if (counts.length === 0) p(m.noObservations);
+      counts.forEach(([type, n]) => bullet(`${m.integrity[type] ?? type}: ${n}`));
       if (content.integrity.awaySec > 0) {
-        bullet(
-          `Time away from the interview page: about ${Math.round(content.integrity.awaySec / 60)} min`,
-        );
+        bullet(fill(m.timeAway, { n: Math.round(content.integrity.awaySec / 60) }));
       }
-      write(content.integrity.note, 'italic', 8).fontSize(10);
+      // The standard note and disclaimer are shown in the report's language.
+      const note =
+        content.integrity.note === INTEGRITY_NOTE ? m.integrityNote : content.integrity.note;
+      write(note, 'italic', 8).fontSize(10);
     }
 
     doc.moveDown(1);
-    write(content.disclaimer, 'italic', 8);
+    write(
+      content.disclaimer === REPORT_DISCLAIMER ? m.disclaimer : content.disclaimer,
+      'italic',
+      8,
+    );
     doc.end();
   });
 }

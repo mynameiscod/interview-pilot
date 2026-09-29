@@ -5,7 +5,9 @@ import { ReportContent } from '@cbi/shared-types';
 import PDFDocument from 'pdfkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fontsAvailable } from '@cbi/pdf-fonts';
-import { renderReportPdf } from './pdf.js';
+import { renderReportPdf, reportLanguage } from './pdf.js';
+import { REPORT_DISCLAIMER } from './report-content.js';
+import { pdfMessages } from './report-messages.js';
 
 const HINDI = 'आपने अच्छा उत्तर दिया।';
 // "శ్రీ" and "ప్రశ్నలు" crash fontkit with Noto Sans Telugu (why Hind Guntur is used).
@@ -106,6 +108,32 @@ describe('renderReportPdf', () => {
     expect(raw).not.toContain('Noto');
   });
 
+  it.skipIf(!fontsAvailable())('writes headings and labels in the report language', async () => {
+    const text = vi.spyOn(PDFDocument.prototype, 'text');
+    await renderReportPdf(
+      { ...content, disclaimer: REPORT_DISCLAIMER },
+      { compress: false, language: 'te' },
+    );
+    const written = text.mock.calls.map((c) => String(c[0])).join('');
+    const te = pdfMessages('te');
+    expect(written).toContain(te.title);
+    expect(written).toContain(te.overall);
+    expect(written).toContain(te.bands.READY_WITH_GAPS);
+    expect(written).toContain(te.next24h);
+    // The stored English disclaimer is printed in the report language.
+    expect(written).toContain(te.disclaimer);
+    expect(written).not.toContain('Interview readiness report');
+    expect(written).not.toContain(REPORT_DISCLAIMER);
+  });
+
+  it('takes the language from the session, or from the summary’s script when automatic', () => {
+    expect(reportLanguage(content)).toBe('hi');
+    const auto = (summary: string) =>
+      reportLanguage({ ...content, header: { ...content.header, language: 'auto' }, summary });
+    expect(auto(TELUGU)).toBe('te');
+    expect(auto('Good answers overall.')).toBe('en');
+  });
+
   it('falls back to the standard fonts and pdfSafe without the font files', async () => {
     const text = vi.spyOn(PDFDocument.prototype, 'text');
     const empty = mkdtempSync(join(tmpdir(), 'no-fonts-'));
@@ -118,5 +146,7 @@ describe('renderReportPdf', () => {
     const written = text.mock.calls.map((c) => String(c[0])).join('');
     expect(written).not.toContain(HINDI);
     expect(written).toContain('Good answers overall. ??');
+    // The standard fonts cannot print Hindi headings: they are in English.
+    expect(written).toContain('Interview readiness report');
   });
 });
