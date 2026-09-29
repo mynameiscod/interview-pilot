@@ -16,6 +16,7 @@ import { authRouter } from './modules/auth/auth.routes.js';
 import { creditsRouter } from './modules/credits/credits.routes.js';
 import { healthRouter } from './modules/health/health.routes.js';
 import { jobsRouter, resumesRouter } from './modules/inputs/inputs.routes.js';
+import { resumeToolsRouter } from './modules/resume-tools/resume-tools.routes.js';
 import { interviewsRouter } from './modules/interviews/interviews.routes.js';
 import { librarySearchRouter } from './modules/library/library.routes.js';
 import {
@@ -130,6 +131,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/legal', legalRouter(env));
   v1.use('/resumes', resumesRouter(c));
   v1.use('/jobs', jobsRouter(c));
+  v1.use('/resume-tools', resumeToolsRouter(c));
   v1.use('/interviews', voiceInterviewRouter(c));
   v1.use('/interviews', mediaInterviewRouter(c));
   v1.use('/interviews', codingInterviewRouter(c));

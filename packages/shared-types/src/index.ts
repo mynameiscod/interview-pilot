@@ -21,6 +21,7 @@ export * from './payments.js';
 export * from './permissions.js';
 export * from './privacy.js';
 export * from './queues.js';
+export * from './resume-tools.js';
 export * from './review.js';
 export * from './users.js';
 export * from './voice.js';

@@ -45,7 +45,7 @@ import {
   InterviewScoreModel,
 } from './models/evaluation.js';
 import { InterviewTurnModel } from './models/interview-turn.js';
-import { JobTargetModel, ResumeModel } from './models/inputs.js';
+import { JobTargetModel, ResumeModel, ResumeTailoringModel } from './models/inputs.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import {
   CompanyModel,
@@ -74,6 +74,7 @@ const MODELS = [
   PromptTemplateModel,
   ResumeModel,
   JobTargetModel,
+  ResumeTailoringModel,
   CompanyModel,
   RoleModel,
   RoleBlueprintModel,

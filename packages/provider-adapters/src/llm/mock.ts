@@ -1,6 +1,41 @@
-import { sampleFromJsonSchema, toJsonSchema, type LlmAdapter } from '@cbi/ai-core';
+import { sampleFromJsonSchema, toJsonSchema, type LlmAdapter, type OcrAdapter } from '@cbi/ai-core';
 
 export const MOCK_MODEL_ID = 'mock-llm' as const;
+export const MOCK_OCR_MODEL_ID = 'mock-ocr' as const;
+
+/**
+ * What the mock "reads" from any scanned document: long enough to pass the
+ * scanned-PDF threshold, and clearly labelled so it is never mistaken for a
+ * real resume.
+ */
+export const MOCK_OCR_TEXT = [
+  '[mock] OCR text for a scanned document (development only).',
+  'Summary: Backend engineer with 4 years of experience building REST APIs.',
+  'Experience: Example Company (2021 - present). Built services with Node.js, TypeScript and PostgreSQL.',
+  'Skills: Node.js, TypeScript, PostgreSQL, Docker, AWS.',
+  'Education: B.Tech Computer Science, 2020.',
+].join('\n');
+
+/** DEVELOPMENT/TEST ONLY: returns MOCK_OCR_TEXT for any document (registered with the mock LLM). */
+export function createMockOcrAdapter(): OcrAdapter {
+  return {
+    providerKey: 'mock',
+    async recognize({ request, signal }) {
+      signal.throwIfAborted();
+      return {
+        text: MOCK_OCR_TEXT,
+        servedModel: MOCK_OCR_MODEL_ID,
+        finishReason: 'stop',
+        usage: {
+          inputTokens: estimateTokens(request.messages.map((m) => m.content).join('')),
+          cachedInputTokens: 0,
+          outputTokens: estimateTokens(MOCK_OCR_TEXT),
+          requests: 1,
+        },
+      };
+    },
+  };
+}
 
 const estimateTokens = (text: string) => Math.ceil(text.length / 4);
 

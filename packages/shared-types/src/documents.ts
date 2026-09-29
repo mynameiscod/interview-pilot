@@ -54,6 +54,27 @@ export const ExtractionWarning = z.enum([
 ]);
 export type ExtractionWarning = z.infer<typeof ExtractionWarning>;
 
+/**
+ * Layout signals measured while extracting (used to flag formatting that
+ * applicant tracking systems often misread). "Suspected" because they are
+ * heuristics over text positions, not a rendering of the page.
+ */
+export const DocumentLayout = z.object({
+  pages: z.number().int().nullable(),
+  words: z.number().int(),
+  /** Rows of three or more separated cells (PDF), Word tables, or tab-separated lines. */
+  tablesSuspected: z.boolean(),
+  /** A second text column starting at a consistent position mid-page. */
+  columnsSuspected: z.boolean(),
+  /** No usable text layer: the document is an image (a scan or a picture of text). */
+  imageOnly: z.boolean(),
+});
+export type DocumentLayout = z.infer<typeof DocumentLayout>;
+
+/** How a resume was recognised: a regular resume, or a LinkedIn profile (PDF export or pasted text). */
+export const ResumeFormat = z.enum(['STANDARD', 'LINKEDIN']);
+export type ResumeFormat = z.infer<typeof ResumeFormat>;
+
 export const Extraction = z.object({
   status: ExtractionStatus,
   errorCode: ExtractionErrorCode.nullable(),
@@ -121,16 +142,47 @@ export const ResumeStructured = z.object({
 });
 export type ResumeStructured = z.infer<typeof ResumeStructured>;
 
+/** How a resume arrived: an uploaded file, or text the candidate pasted. */
+export const ResumeSource = z.enum(['UPLOAD', 'PASTE']);
+export type ResumeSource = z.infer<typeof ResumeSource>;
+
 export const ResumeSummary = z.object({
   id: z.string(),
   originalName: z.string(),
   mime: DocumentMime,
   size: z.number().int(),
+  source: ResumeSource,
+  /** LINKEDIN once the worker recognises a LinkedIn PDF export or pasted profile. */
+  format: ResumeFormat,
   extraction: Extraction,
+  /** Null until extraction finishes (and for resumes read before layout checks existed). */
+  layout: DocumentLayout.nullable(),
+  /** What the AI (or the LinkedIn parser) read. */
   structured: ResumeStructured.nullable(),
+  /**
+   * The candidate's corrected revision, when they edited the parse. Analysis,
+   * match scoring and tailoring use it instead of `structured`.
+   */
+  edited: ResumeStructured.nullable(),
+  editedAt: z.iso.datetime().nullable(),
   createdAt: z.iso.datetime(),
 });
 export type ResumeSummary = z.infer<typeof ResumeSummary>;
+
+/** The structured resume to use: the candidate's revision when there is one. */
+export const effectiveResume = (r: Pick<ResumeSummary, 'structured' | 'edited'>) =>
+  r.edited ?? r.structured;
+
+/**
+ * A resume from pasted text, e.g. the candidate's LinkedIn profile copied
+ * from their own page (the platform never fetches linkedin.com).
+ */
+export const CreateResumeTextBody = z.object({
+  text: z.string().trim().min(DOCUMENT_LIMITS.minTextChars).max(DOCUMENT_LIMITS.maxPasteChars),
+  /** Shown in the resume list; defaults to "Pasted profile". */
+  label: text(120).optional(),
+});
+export type CreateResumeTextBody = z.infer<typeof CreateResumeTextBody>;
 
 // ---- Job targets ------------------------------------------------------------------
 
@@ -214,6 +266,9 @@ export const JobTargetSummary = z.object({
   originalName: z.string().nullable(),
   extraction: Extraction,
   structured: JdStructured.nullable(),
+  /** The candidate's corrected revision (skills, seniority, responsibilities); preferred when set. */
+  edited: JdStructured.nullable(),
+  editedAt: z.iso.datetime().nullable(),
   company: z.object({ id: z.string(), name: z.string() }).nullable(),
   companyName: z.string().nullable(),
   role: z.object({ id: z.string(), title: z.string() }).nullable(),
@@ -221,3 +276,17 @@ export const JobTargetSummary = z.object({
   createdAt: z.iso.datetime(),
 });
 export type JobTargetSummary = z.infer<typeof JobTargetSummary>;
+
+/** The structured job description to use: the candidate's revision when there is one. */
+export const effectiveJd = (t: Pick<JobTargetSummary, 'structured' | 'edited'>) =>
+  t.edited ?? t.structured;
+
+/**
+ * Candidate corrections to a parsed resume or job description. The whole
+ * revision is sent (the AI parse stays untouched); DELETE on the same path
+ * goes back to the AI version. Only READY inputs can be edited.
+ */
+export const UpdateResumeStructuredBody = ResumeStructured;
+export type UpdateResumeStructuredBody = z.infer<typeof UpdateResumeStructuredBody>;
+export const UpdateJdStructuredBody = JdStructured;
+export type UpdateJdStructuredBody = z.infer<typeof UpdateJdStructuredBody>;

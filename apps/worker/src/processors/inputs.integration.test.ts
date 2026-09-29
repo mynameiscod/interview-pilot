@@ -6,6 +6,7 @@ import {
   CampaignModel,
   CompanyModel,
   AiRouteModel,
+  AiUsageModel,
   connectMongo,
   createRedis,
   disconnectMongo,
@@ -17,18 +18,29 @@ import {
   JobTargetModel,
   mongoose,
   ResumeModel,
+  ResumeTailoringModel,
   RoleBlueprintModel,
   RoleModel,
   UserProfileModel,
   type ExtractionRecord,
   type JobTargetRecord,
 } from '@cbi/db';
-import { buildDocx, buildDocxBomb, buildPdf, SAMPLE_RESUME_LINES } from '@cbi/documents/testing';
+import {
+  buildDocx,
+  buildDocxBomb,
+  buildLinkedInProfilePdf,
+  buildPdf,
+  buildScannedPdf,
+  SAMPLE_RESUME_LINES,
+} from '@cbi/documents/testing';
+import { MOCK_OCR_TEXT } from '@cbi/provider-adapters';
 import { createMemoryStorage } from '@cbi/provider-adapters/testing';
 import { DOCUMENT_MIME } from '@cbi/shared-types';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { processInterviewAnalyze } from './analysis.js';
 import { processJdExtract, processResumeExtract, type DocumentProcessorDeps } from './documents.js';
+import { processResumeTailor } from '../resume-tools/tailoring.js';
+import { createDocumentOcr } from './ocr.js';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const REDIS_URL = process.env.REDIS_URL;
@@ -148,6 +160,41 @@ describe('resume extraction', () => {
     expect(saved!.rawText).toContain('idempotent payments ledger');
     expect(saved!.structured).not.toBeNull();
     expect(saved!.extraction.warnings).not.toContain('STRUCTURE_UNAVAILABLE');
+  });
+
+  it('reads a scanned PDF through the seeded ocr.document route (mock OCR model)', async () => {
+    const resume = await uploadResume(buildScannedPdf(2));
+    // Without OCR the scan is unreadable, as before.
+    await processResumeExtract(docs(), String(resume._id), false);
+    expect((await ResumeModel.findById(resume._id).lean())!.extraction).toMatchObject({
+      status: 'FAILED',
+      errorCode: 'NO_TEXT',
+    });
+
+    const again = await uploadResume(buildScannedPdf(2));
+    const ocr = createDocumentOcr({ ai, logger }, { maxPages: 5, maxBytes: 1024 * 1024 });
+    await processResumeExtract({ ...docs(), ocr }, String(again._id), false);
+    const saved = await ResumeModel.findById(again._id).lean();
+    expect(saved!.extraction).toMatchObject({ status: 'READY', parser: 'ocr', ocrUsed: true });
+    expect(saved!.rawText).toBe(MOCK_OCR_TEXT);
+    expect(saved!.layout).toMatchObject({ imageOnly: true, pages: 2 });
+    const usage = await AiUsageModel.find({ feature: 'ocr.document' }).lean();
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ outcome: 'SUCCESS', promptKey: 'ocr.document' });
+  });
+
+  it('parses a LinkedIn PDF export without an AI call', async () => {
+    const resume = await uploadResume(buildLinkedInProfilePdf());
+    await processResumeExtract(docs(), String(resume._id), false);
+    const saved = await ResumeModel.findById(resume._id).lean();
+    expect(saved).toMatchObject({ format: 'LINKEDIN', extraction: { status: 'READY' } });
+    expect(saved!.layout).toMatchObject({ columnsSuspected: true });
+    expect(saved!.structured!.experience.map((e) => e.organization)).toEqual([
+      'Acme Payments',
+      'Acme Payments',
+      'Globex Labs',
+    ]);
+    expect(await AiUsageModel.countDocuments({ feature: 'resume.structure' })).toBe(0);
   });
 
   it('reads DOCX and records the detected type', async () => {
@@ -512,10 +559,99 @@ describe('interview analysis', () => {
     expect((await ResumeModel.findById(resume._id).lean())!.rawText).toContain('Priya Sharma');
   });
 
+  it('puts the candidate’s edited revisions ahead of the extracted text', async () => {
+    const resume = await ResumeModel.create({
+      userId,
+      storageKey: 'resumes/y.pdf',
+      originalName: 'resume.pdf',
+      mime: DOCUMENT_MIME.PDF,
+      size: 1,
+      sha256: 'y'.repeat(64),
+      rawText: SAMPLE_RESUME_LINES.join('\n'),
+      edited: {
+        headline: 'Platform engineer',
+        totalExperienceYears: 5,
+        skills: [{ name: 'Terraform', level: null, evidence: null }],
+        experience: [],
+        projects: [],
+        education: [],
+        certifications: [],
+      },
+      extraction: extraction('READY'),
+    });
+    const target = await readyTarget({ source: 'PASTE', rawText: JD_TEXT });
+    const s = await session(target, { resumeId: resume._id });
+    const run = vi.spyOn(ai.router, 'run');
+    try {
+      await analyze(s._id);
+      const first = run.mock.calls[0]![1].messages.map((m) => m.content).join('\n');
+      expect(first).toContain('Corrections confirmed by the candidate');
+      expect(first.indexOf('Skills: Terraform')).toBeLessThan(first.indexOf('Acme Payments'));
+    } finally {
+      run.mockRestore();
+    }
+  });
+
   it('ignores sessions that already left ROLE_ANALYSIS', async () => {
     const target = await readyTarget({ source: 'PASTE', rawText: JD_TEXT });
     const s = await session(target, { state: 'CANCELLED' });
     expect(await analyze(s._id)).toEqual({ status: 'done' });
     expect((await InterviewSessionModel.findById(s._id).lean())!.state).toBe('CANCELLED');
+  });
+});
+
+describe('resume tailoring job', () => {
+  async function inputsReady() {
+    const resume = await ResumeModel.create({
+      userId,
+      storageKey: 'resumes/t.pdf',
+      originalName: 'resume.pdf',
+      mime: DOCUMENT_MIME.PDF,
+      size: 1,
+      sha256: 't'.repeat(64),
+      rawText: SAMPLE_RESUME_LINES.join('\n'),
+      extraction: extraction('READY'),
+    });
+    const target = await jd({ rawText: JD_TEXT, extraction: extraction('READY') });
+    return { resume, target };
+  }
+
+  it('fills the record through the seeded resume.tailor route (mock model), once', async () => {
+    const { resume, target } = await inputsReady();
+    const record = await ResumeTailoringModel.create({
+      userId,
+      resumeId: resume._id,
+      jobTargetId: target._id,
+      inputKey: 'k',
+    });
+    await processResumeTailor({ ai, logger }, String(record._id), false);
+    const saved = await ResumeTailoringModel.findById(record._id).lean();
+    expect(saved).toMatchObject({ status: 'READY', promptVersion: 1 });
+    expect(saved!.suggestions!.source).toBe('AI');
+    // Mock rewrites quote nothing from the resume, so the guard drops them all.
+    expect(saved!.suggestions!.bullets).toEqual([]);
+    expect(await AiUsageModel.countDocuments({ feature: 'resume.tailor' })).toBe(1);
+    // A redelivered job does nothing.
+    await processResumeTailor({ ai, logger }, String(record._id), false);
+    expect(await AiUsageModel.countDocuments({ feature: 'resume.tailor' })).toBe(1);
+  });
+
+  it('fails as INPUT_NOT_READY when a document is unread', async () => {
+    const { resume, target } = await inputsReady();
+    await JobTargetModel.updateOne(
+      { _id: target._id },
+      { $set: { 'extraction.status': 'FAILED' } },
+    );
+    const record = await ResumeTailoringModel.create({
+      userId,
+      resumeId: resume._id,
+      jobTargetId: target._id,
+      inputKey: 'k2',
+    });
+    await processResumeTailor({ ai, logger }, String(record._id), false);
+    expect(await ResumeTailoringModel.findById(record._id).lean()).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'INPUT_NOT_READY',
+    });
   });
 });

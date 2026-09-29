@@ -26,6 +26,9 @@ export const ClientEventName = z.enum([
   'checkout_started',
   'campaign_landing_viewed',
   'proof_shared',
+  'resume_match_viewed',
+  'resume_tailoring_requested',
+  'resume_draft_exported',
 ]);
 export type ClientEventName = z.infer<typeof ClientEventName>;
 

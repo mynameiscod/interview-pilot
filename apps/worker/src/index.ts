@@ -18,6 +18,7 @@ import {
 } from '@cbi/provider-adapters';
 import { createHealthServer } from './health-server.js';
 import { createFfmpegRunner } from './processors/media-file.js';
+import { createDocumentOcr } from './processors/ocr.js';
 import { createQueueDepthReader } from './queue-metrics.js';
 import { startWorkers } from './worker.js';
 
@@ -111,6 +112,12 @@ async function main(): Promise<void> {
         ai,
         logger,
         fetch: { timeoutMs: env.JD_FETCH_TIMEOUT_MS, maxBytes: env.JD_FETCH_MAX_BYTES },
+        ocr: env.OCR_ENABLED
+          ? createDocumentOcr(
+              { ai, logger },
+              { maxPages: env.OCR_MAX_PAGES, maxBytes: env.OCR_MAX_MB * 1024 * 1024 },
+            )
+          : undefined,
       },
     },
     analysis: { concurrency: env.WORKER_ANALYSIS_CONCURRENCY, deps: { ai, logger } },

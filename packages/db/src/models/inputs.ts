@@ -4,6 +4,11 @@ import {
   ExtractionStatus,
   ExtractionWarning,
   JobTargetSource,
+  ResumeFormat,
+  ResumeSource,
+  TailoringStatus,
+  type TailoringSuggestions,
+  type DocumentLayout,
   type JdStructured,
   type ResumeStructured,
 } from '@cbi/shared-types';
@@ -13,6 +18,9 @@ import type {
   ExtractionStatus as ExtractionStatusT,
   ExtractionWarning as ExtractionWarningT,
   JobTargetSource as JobTargetSourceT,
+  ResumeFormat as ResumeFormatT,
+  ResumeSource as ResumeSourceT,
+  TailoringStatus as TailoringStatusT,
 } from '@cbi/shared-types';
 import mongoose, { Schema, type Model, type Types } from 'mongoose';
 
@@ -37,9 +45,18 @@ export interface ResumeRecord {
   mime: DocumentMimeT;
   size: number;
   sha256: string;
+  /** Missing on resumes created before pasted text was accepted (= UPLOAD). */
+  source?: ResumeSourceT;
+  /** Missing on older resumes (= STANDARD). */
+  format?: ResumeFormatT;
   /** Extracted text, capped at DOCUMENT_LIMITS.maxTextChars. Never returned by list endpoints. */
   rawText: string | null;
+  /** Layout signals from extraction (ATS formatting checks); null until extracted. */
+  layout?: DocumentLayout | null;
   structured: ResumeStructured | null;
+  /** The candidate's corrected revision; preferred over `structured` everywhere. */
+  edited?: ResumeStructured | null;
+  editedAt?: Date | null;
   extraction: ExtractionRecord;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +74,9 @@ export interface JobTargetRecord {
   sha256: string | null;
   rawText: string | null;
   structured: JdStructured | null;
+  /** The candidate's corrected revision; preferred over `structured` everywhere. */
+  edited?: JdStructured | null;
+  editedAt?: Date | null;
   extraction: ExtractionRecord;
   companyId: Types.ObjectId | null;
   companyName: string | null;
@@ -98,8 +118,13 @@ const resumeSchema = new Schema<ResumeRecord>(
     mime: { type: String, enum: DocumentMime.options, required: true },
     size: { type: Number, required: true },
     sha256: { type: String, required: true },
+    source: { type: String, enum: ResumeSource.options, default: 'UPLOAD' },
+    format: { type: String, enum: ResumeFormat.options, default: 'STANDARD' },
     rawText: { type: String, default: null },
+    layout: { type: Schema.Types.Mixed, default: null },
     structured: { type: Schema.Types.Mixed, default: null },
+    edited: { type: Schema.Types.Mixed, default: null },
+    editedAt: { type: Date, default: null },
     extraction: { type: extractionSchema, required: true, default: () => ({}) },
   },
   { timestamps: true, collection: 'resumes' },
@@ -121,6 +146,8 @@ const jobTargetSchema = new Schema<JobTargetRecord>(
     sha256: { type: String, default: null },
     rawText: { type: String, default: null },
     structured: { type: Schema.Types.Mixed, default: null },
+    edited: { type: Schema.Types.Mixed, default: null },
+    editedAt: { type: Date, default: null },
     extraction: { type: extractionSchema, required: true, default: () => ({}) },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', default: null },
     companyName: { type: String, default: null },
@@ -133,3 +160,48 @@ const jobTargetSchema = new Schema<JobTargetRecord>(
 jobTargetSchema.index({ userId: 1, createdAt: -1 });
 
 export const JobTargetModel = model<JobTargetRecord>('JobTarget', jobTargetSchema);
+
+// ---- Resume tailoring suggestions ------------------------------------------------------
+
+export interface ResumeTailoringRecord {
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
+  resumeId: Types.ObjectId;
+  jobTargetId: Types.ObjectId;
+  /**
+   * Identifies the exact inputs (both documents and their edited revisions):
+   * asking again for unchanged inputs returns this record instead of a new AI call.
+   */
+  inputKey: string;
+  status: TailoringStatusT;
+  suggestions: TailoringSuggestions | null;
+  failureCode: 'INPUT_NOT_READY' | 'INTERNAL' | null;
+  promptVersion: number | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const tailoringSchema = new Schema<ResumeTailoringRecord>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    resumeId: { type: Schema.Types.ObjectId, ref: 'Resume', required: true },
+    jobTargetId: { type: Schema.Types.ObjectId, ref: 'JobTarget', required: true },
+    inputKey: { type: String, required: true },
+    status: { type: String, enum: TailoringStatus.options, required: true, default: 'PENDING' },
+    suggestions: { type: Schema.Types.Mixed, default: null },
+    failureCode: { type: String, enum: ['INPUT_NOT_READY', 'INTERNAL', null], default: null },
+    promptVersion: { type: Number, default: null },
+    completedAt: { type: Date, default: null },
+  },
+  { timestamps: true, collection: 'resumeTailorings' },
+);
+tailoringSchema.index({ userId: 1, inputKey: 1, createdAt: -1 });
+tailoringSchema.index({ userId: 1, createdAt: -1 });
+// Suggestions are cheap to regenerate and hold resume content: kept for 30 days.
+tailoringSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+
+export const ResumeTailoringModel = model<ResumeTailoringRecord>(
+  'ResumeTailoring',
+  tailoringSchema,
+);

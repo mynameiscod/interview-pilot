@@ -2,10 +2,17 @@ import {
   toJsonSchema,
   type FinishReason,
   type LlmAdapter,
+  type LlmCallResult,
+  type OcrAdapter,
   type ProviderCredentials,
 } from '@cbi/ai-core';
 import { ApiError, FinishReason as GeminiFinish, GoogleGenAI } from '@google/genai';
-import { splitSystem, toProviderError } from './shared.js';
+import {
+  attachToLastUser,
+  OCR_DEFAULT_INSTRUCTION,
+  splitSystem,
+  toProviderError,
+} from './shared.js';
 
 type GeminiClient = Pick<GoogleGenAI, 'models'>;
 
@@ -33,6 +40,36 @@ function defaultClient(credentials: ProviderCredentials, timeoutMs: number): Gem
     },
   });
 }
+
+type GeminiResponse = Awaited<ReturnType<GeminiClient['models']['generateContent']>>;
+
+function resultOf(response: GeminiResponse, modelId: string): LlmCallResult {
+  const finish = response.candidates?.[0]?.finishReason;
+  const finishReason: FinishReason =
+    response.promptFeedback?.blockReason || (finish && REFUSALS.has(finish))
+      ? 'refusal'
+      : finish === GeminiFinish.MAX_TOKENS
+        ? 'length'
+        : finish === GeminiFinish.STOP
+          ? 'stop'
+          : 'other';
+  const usage = response.usageMetadata;
+  return {
+    text: response.text ?? '',
+    servedModel: response.modelVersion ?? modelId,
+    finishReason,
+    usage: {
+      inputTokens: usage?.promptTokenCount ?? 0,
+      cachedInputTokens: usage?.cachedContentTokenCount ?? 0,
+      // Thinking tokens are billed as output.
+      outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
+      requests: 1,
+    },
+  };
+}
+
+const mapError = (err: unknown, signal: AbortSignal) =>
+  toProviderError('gemini', err, err instanceof ApiError ? err.status : undefined, signal);
 
 /** Gemini via the official Google Gen AI SDK (Gemini Developer API). */
 export function createGeminiLlmAdapter(opts: GeminiAdapterOptions = {}): LlmAdapter {
@@ -62,35 +99,42 @@ export function createGeminiLlmAdapter(opts: GeminiAdapterOptions = {}): LlmAdap
               : {}),
           },
         });
-        const finish = response.candidates?.[0]?.finishReason;
-        const finishReason: FinishReason =
-          response.promptFeedback?.blockReason || (finish && REFUSALS.has(finish))
-            ? 'refusal'
-            : finish === GeminiFinish.MAX_TOKENS
-              ? 'length'
-              : finish === GeminiFinish.STOP
-                ? 'stop'
-                : 'other';
-        const usage = response.usageMetadata;
-        return {
-          text: response.text ?? '',
-          servedModel: response.modelVersion ?? model.modelId,
-          finishReason,
-          usage: {
-            inputTokens: usage?.promptTokenCount ?? 0,
-            cachedInputTokens: usage?.cachedContentTokenCount ?? 0,
-            // Thinking tokens are billed as output.
-            outputTokens: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
-            requests: 1,
-          },
-        };
+        return resultOf(response, model.modelId);
       } catch (err) {
-        throw toProviderError(
-          'gemini',
-          err,
-          err instanceof ApiError ? err.status : undefined,
-          signal,
-        );
+        throw mapError(err, signal);
+      }
+    },
+  };
+}
+
+/** OCR for scanned PDFs through Gemini's inline document input (a fallback to Claude). */
+export function createGeminiOcrAdapter(opts: GeminiAdapterOptions = {}): OcrAdapter {
+  const factory = opts.clientFactory ?? defaultClient;
+  return {
+    providerKey: 'gemini',
+    async recognize({ model, request, credentials, signal }) {
+      const client = factory(credentials, model.params.timeoutMs);
+      const { system, turns } = splitSystem(request.messages);
+      const data = Buffer.from(request.document).toString('base64');
+      try {
+        const response = await client.models.generateContent({
+          model: model.modelId,
+          contents: attachToLastUser(turns, (text) => [
+            { inlineData: { mimeType: request.mimeType, data } },
+            { text: text || OCR_DEFAULT_INSTRUCTION },
+          ]).map((m) => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: typeof m.content === 'string' ? [{ text: m.content }] : m.content,
+          })),
+          config: {
+            abortSignal: signal,
+            ...(system ? { systemInstruction: system } : {}),
+            maxOutputTokens: request.maxOutputTokens ?? model.params.maxOutputTokens,
+          },
+        });
+        return resultOf(response, model.modelId);
+      } catch (err) {
+        throw mapError(err, signal);
       }
     },
   };

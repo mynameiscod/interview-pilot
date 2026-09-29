@@ -3,10 +3,28 @@ export { createSmtpEmailProvider, type SmtpEmailOptions } from './email/smtp.js'
 export { createEmailProvider, type EmailSettings } from './email/factory.js';
 export type { EmailMessage, EmailProvider, SendResult } from './email/types.js';
 export { NotConfiguredError, ProviderError } from './errors.js';
-export { createAnthropicLlmAdapter, type AnthropicAdapterOptions } from './llm/anthropic.js';
-export { createGeminiLlmAdapter, type GeminiAdapterOptions } from './llm/gemini.js';
-export { createMockLlmAdapter, MOCK_MODEL_ID } from './llm/mock.js';
-export { createOpenAiLlmAdapter, type OpenAiAdapterOptions } from './llm/openai.js';
+export {
+  createAnthropicLlmAdapter,
+  createAnthropicOcrAdapter,
+  type AnthropicAdapterOptions,
+} from './llm/anthropic.js';
+export {
+  createGeminiLlmAdapter,
+  createGeminiOcrAdapter,
+  type GeminiAdapterOptions,
+} from './llm/gemini.js';
+export {
+  createMockLlmAdapter,
+  createMockOcrAdapter,
+  MOCK_MODEL_ID,
+  MOCK_OCR_MODEL_ID,
+  MOCK_OCR_TEXT,
+} from './llm/mock.js';
+export {
+  createOpenAiLlmAdapter,
+  createOpenAiOcrAdapter,
+  type OpenAiAdapterOptions,
+} from './llm/openai.js';
 export { createDevMailboxSmsProvider } from './sms/dev-mailbox.js';
 export { createMsg91OtpProvider, type Msg91Options } from './sms/msg91.js';
 export type { OtpSms, OtpSmsProvider } from './sms/types.js';

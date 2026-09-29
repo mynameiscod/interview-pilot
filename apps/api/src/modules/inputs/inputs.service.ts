@@ -16,6 +16,10 @@ import type { StorageProvider } from '@cbi/provider-adapters';
 import {
   DOCUMENT_MIME,
   type CreateJobTargetBody,
+  type CreateResumeTextBody,
+  type ResumeSource,
+  type UpdateJdStructuredBody,
+  type UpdateResumeStructuredBody,
   type DocumentMime,
   type Extraction,
   type JobTargetSummary,
@@ -62,8 +66,13 @@ export function resumeSummary(r: ResumeRecord): ResumeSummary {
     originalName: r.originalName,
     mime: r.mime,
     size: r.size,
+    source: r.source ?? 'UPLOAD',
+    format: r.format ?? 'STANDARD',
     extraction: extractionSummary(r.extraction),
+    layout: r.layout ?? null,
     structured: r.structured,
+    edited: r.edited ?? null,
+    editedAt: r.editedAt ? iso(r.editedAt) : null,
     createdAt: iso(r.createdAt),
   };
 }
@@ -80,6 +89,8 @@ export async function jobTargetSummary(t: JobTargetRecord): Promise<JobTargetSum
     originalName: t.originalName,
     extraction: extractionSummary(t.extraction),
     structured: t.structured,
+    edited: t.edited ?? null,
+    editedAt: t.editedAt ? iso(t.editedAt) : null,
     company: company ? { id: String(company._id), name: company.name } : null,
     companyName: t.companyName,
     role: role ? { id: String(role._id), title: role.title } : null,
@@ -101,6 +112,27 @@ function sniff(file: UploadedFile): DocumentMime {
 }
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * Explains why an edit matched nothing: 404 when the input is not the
+ * candidate's, 409 while it is still being read (or failed, or is role-only).
+ * Always throws.
+ */
+async function assertReadable(
+  model: typeof ResumeModel | typeof JobTargetModel,
+  id: string,
+  userId: string,
+  label: string,
+  extra: Record<string, unknown> = {},
+): Promise<never> {
+  const exists = await (model as typeof ResumeModel).exists({ _id: id, userId, ...extra });
+  if (!exists) throw AppError.notFound(`${label} not found`);
+  throw new AppError(
+    409,
+    'INVALID_STATE',
+    'This document has not been read successfully, so there is nothing to edit yet.',
+  );
+}
 
 interface Deps {
   storage: StorageProvider;
@@ -186,48 +218,77 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
     }
   }
 
+  /**
+   * Stores a resume file and queues its extraction. The same content again
+   * (same SHA-256) returns the existing resume instead of a duplicate.
+   */
+  async function storeResume(
+    userId: string,
+    file: UploadedFile,
+    mime: DocumentMime,
+    source: ResumeSource,
+    ctx: ClientContext,
+  ) {
+    const hash = sha256(file.buffer);
+    const existing = await ResumeModel.findOne({
+      userId,
+      sha256: hash,
+      'extraction.status': { $ne: 'FAILED' },
+    }).lean();
+    if (existing) return { created: false, resume: resumeSummary(existing) };
+    await enforceDailyQuota('resumes', userId);
+    if ((await ResumeModel.countDocuments({ userId })) >= MAX_RESUMES_PER_USER) {
+      throw AppError.conflict(
+        `You can keep up to ${MAX_RESUMES_PER_USER} resumes. Delete one to upload another.`,
+      );
+    }
+    const id = new mongoose.Types.ObjectId();
+    const storageKey = `resumes/${userId}/${id}.${EXTENSION[mime]}`;
+    await storage.put(storageKey, file.buffer, mime);
+    const resume = await ResumeModel.create({
+      _id: id,
+      userId,
+      storageKey,
+      originalName: safeFileName(file.originalname),
+      mime,
+      size: file.buffer.length,
+      sha256: hash,
+      source,
+    });
+    await audit.record(
+      {
+        actorType: 'USER',
+        actorId: userId,
+        action: 'resume.uploaded',
+        resourceType: 'resume',
+        resourceId: String(id),
+        details: { mime, size: file.buffer.length, source },
+      },
+      ctx,
+    );
+    await enqueue('resume', String(id), () => jobs.extractResume(String(id)));
+    return { created: true, resume: resumeSummary(resume.toObject()) };
+  }
+
   return {
     async uploadResume(userId: string, file: UploadedFile, ctx: ClientContext) {
-      const mime = sniff(file);
-      const hash = sha256(file.buffer);
-      // Re-uploading the same file returns the existing resume instead of a duplicate.
-      const existing = await ResumeModel.findOne({
+      return storeResume(userId, file, sniff(file), 'UPLOAD', ctx);
+    },
+
+    /**
+     * A resume from pasted text (for example a LinkedIn profile copied from
+     * the candidate's own page). It is stored as a text file and goes through
+     * the same extraction as an upload; the worker recognises LinkedIn text.
+     */
+    async createResumeFromText(userId: string, body: CreateResumeTextBody, ctx: ClientContext) {
+      const label = body.label?.trim() || 'Pasted profile';
+      return storeResume(
         userId,
-        sha256: hash,
-        'extraction.status': { $ne: 'FAILED' },
-      }).lean();
-      if (existing) return { created: false, resume: resumeSummary(existing) };
-      await enforceDailyQuota('resumes', userId);
-      if ((await ResumeModel.countDocuments({ userId })) >= MAX_RESUMES_PER_USER) {
-        throw AppError.conflict(
-          `You can keep up to ${MAX_RESUMES_PER_USER} resumes. Delete one to upload another.`,
-        );
-      }
-      const id = new mongoose.Types.ObjectId();
-      const storageKey = `resumes/${userId}/${id}.${EXTENSION[mime]}`;
-      await storage.put(storageKey, file.buffer, mime);
-      const resume = await ResumeModel.create({
-        _id: id,
-        userId,
-        storageKey,
-        originalName: safeFileName(file.originalname),
-        mime,
-        size: file.buffer.length,
-        sha256: hash,
-      });
-      await audit.record(
-        {
-          actorType: 'USER',
-          actorId: userId,
-          action: 'resume.uploaded',
-          resourceType: 'resume',
-          resourceId: String(id),
-          details: { mime, size: file.buffer.length },
-        },
+        { buffer: Buffer.from(body.text, 'utf8'), originalname: `${label}.txt` },
+        DOCUMENT_MIME.TXT,
+        'PASTE',
         ctx,
       );
-      await enqueue('resume', String(id), () => jobs.extractResume(String(id)));
-      return { created: true, resume: resumeSummary(resume.toObject()) };
     },
 
     async listResumes(userId: string) {
@@ -245,6 +306,35 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
       ).lean();
       if (!resume) throw AppError.notFound('Resume not found');
       return resumeSummary(resume as ResumeRecord);
+    },
+
+    /**
+     * Saves the candidate's corrected resume as a revision beside the AI parse
+     * (`edited`), or with `null` goes back to the AI parse. Only once read.
+     */
+    async setResumeRevision(
+      userId: string,
+      id: string,
+      revision: UpdateResumeStructuredBody | null,
+      ctx: ClientContext,
+    ) {
+      const updated = await ResumeModel.findOneAndUpdate(
+        { _id: objectId(id, 'Resume'), userId, 'extraction.status': 'READY' },
+        { $set: { edited: revision, editedAt: revision ? new Date() : null } },
+        { returnDocument: 'after', projection: { rawText: 0 } },
+      ).lean();
+      if (!updated) await assertReadable(ResumeModel, id, userId, 'Resume');
+      await audit.record(
+        {
+          actorType: 'USER',
+          actorId: userId,
+          action: revision ? 'resume.edited' : 'resume.edit_reverted',
+          resourceType: 'resume',
+          resourceId: id,
+        },
+        ctx,
+      );
+      return resumeSummary(updated as ResumeRecord);
     },
 
     async deleteResume(userId: string, id: string, ctx: ClientContext) {
@@ -330,6 +420,38 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
       return jobTargetSummary(updated as JobTargetRecord);
     },
 
+    /** The job-description counterpart of `setResumeRevision`. */
+    async setJobTargetRevision(
+      userId: string,
+      id: string,
+      revision: UpdateJdStructuredBody | null,
+      ctx: ClientContext,
+    ) {
+      const updated = await JobTargetModel.findOneAndUpdate(
+        {
+          _id: objectId(id, 'Job target'),
+          userId,
+          ...LIVE_TARGET,
+          source: { $ne: 'ROLE_ONLY' },
+          'extraction.status': 'READY',
+        },
+        { $set: { edited: revision, editedAt: revision ? new Date() : null } },
+        { returnDocument: 'after', projection: { rawText: 0 } },
+      ).lean();
+      if (!updated) await assertReadable(JobTargetModel, id, userId, 'Job target', LIVE_TARGET);
+      await audit.record(
+        {
+          actorType: 'USER',
+          actorId: userId,
+          action: revision ? 'job_target.edited' : 'job_target.edit_reverted',
+          resourceType: 'jobTarget',
+          resourceId: id,
+        },
+        ctx,
+      );
+      return jobTargetSummary(updated as JobTargetRecord);
+    },
+
     async listJobTargets(userId: string) {
       const rows = await JobTargetModel.find({ userId, ...LIVE_TARGET }, { rawText: 0 })
         .sort({ createdAt: -1 })
@@ -381,6 +503,7 @@ export function createInputsService({ storage, jobs, audit, logger, dailyLimits 
               url: null,
               finalUrl: null,
               originalName: null,
+              edited: null,
             },
           },
         );

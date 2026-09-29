@@ -178,6 +178,7 @@
         "paragraphs": [
           "To run interviews and produce reports, we send relevant parts of your data, such as your answers, transcripts, resume and job description, to specialised AI providers. They act as our processors and handle the data only to deliver the service to us.",
           "Where a provider offers it, we choose settings that do not allow your data to be used to train their models.",
+          "Before we send your resume or job description text, we mask contact details such as your email address, phone number and your name. A scanned document (an image with no selectable text) is different: to read it, we send the whole file to one of these AI providers, and personal details in the image cannot be masked first. If you prefer, upload a PDF or Word file with selectable text, or paste the text instead.",
           "Our current AI providers are:"
         ],
         "points": [

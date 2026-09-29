@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router';
 import { RouteLoading } from '../../app/RouteStates';
 import { useTrackOnce } from '../../lib/use-analytics';
 import { CampaignBanner } from '../campaigns/CampaignBanner';
+import { ResumeToolsSection } from '../resume-tools/ResumeToolsSection';
 import { queryKeys, useInterview, useInterviewsApi } from './interviews-api';
 import { formatMinutes, inputErrorMessage } from './messages';
 
@@ -328,6 +329,7 @@ export function AnalysisPage() {
     body = (
       <>
         <AnalysisResult interview={data} analysis={data.analysis} />
+        <ResumeToolsSection interview={data} />
         {data.state === 'READY' && (
           <div className="d-flex flex-wrap gap-2 mt-4">
             <Link to={`/app/interviews/${data.id}/setup`} className="btn btn-primary btn-lg">

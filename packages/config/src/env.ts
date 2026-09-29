@@ -370,6 +370,8 @@ const apiObjectSchema = baseEnvSchema.extend({
   INPUT_DAILY_LIMIT_JOBS: z.coerce.number().int().min(1).max(1000).default(40),
   /** Resume uploads a candidate may make per rolling 24 hours. */
   INPUT_DAILY_LIMIT_RESUMES: z.coerce.number().int().min(1).max(1000).default(20),
+  /** Resume tailoring requests (one billed AI call each) per candidate per rolling 24 hours. */
+  RESUME_TAILOR_DAILY_LIMIT: z.coerce.number().int().min(1).max(200).default(10),
 
   // --- Legal pages (served publicly by GET /legal) --------------------------
   /** Grievance Officer (DPDP Act s.8(10)) shown on the legal pages; never hard-coded. */
@@ -540,6 +542,12 @@ export const workerEnvSchema = baseEnvSchema
       .min(64 * 1024)
       .max(10 * 1024 * 1024)
       .default(2 * 1024 * 1024),
+    /** Scanned PDFs are sent to the `ocr.document` route; `false` keeps them failing with NO_TEXT. */
+    OCR_ENABLED: booleanString.default(true),
+    /** Scanned PDFs with more pages than this are not sent for OCR (cost control). */
+    OCR_MAX_PAGES: z.coerce.number().int().min(1).max(30).default(10),
+    /** Largest scanned PDF sent for OCR, in MB. */
+    OCR_MAX_MB: z.coerce.number().int().min(1).max(25).default(8),
   })
   .superRefine((env, ctx) => {
     const issue = (path: string, message: string) =>

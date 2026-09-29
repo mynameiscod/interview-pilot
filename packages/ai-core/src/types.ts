@@ -255,10 +255,52 @@ export interface TtsStream {
   chunks: AsyncIterable<Uint8Array>;
 }
 
+// ---- OCR ---------------------------------------------------------------------
+
+export interface OcrRequest {
+  /** The scanned document (a PDF). Never logged. */
+  document: Uint8Array;
+  mimeType: 'application/pdf';
+  /** Pages in the document, when known (limits and metering). */
+  pages: number | null;
+  /**
+   * Instructions from the `ocr.document` prompt. Adapters attach the document
+   * to the last user message.
+   */
+  messages: ChatMessage[];
+  /** Lowers the model's configured maximum for this call; never raises it. */
+  maxOutputTokens?: number;
+}
+
+export interface OcrCallInput {
+  model: ModelTarget;
+  request: OcrRequest;
+  credentials: ProviderCredentials;
+  signal: AbortSignal;
+}
+
+export interface OcrCallResult {
+  /** Plain text read from the document. */
+  text: string;
+  servedModel: string | null;
+  finishReason: FinishReason;
+  usage: UsageUnits;
+}
+
+/**
+ * Text recognition for scanned documents with a document-capable model
+ * (PDF input). Same rules as LLM adapters: no retries, no logging of content.
+ */
+export interface OcrAdapter {
+  readonly providerKey: AiProviderKey;
+  recognize(input: OcrCallInput): Promise<OcrCallResult>;
+}
+
 export interface AdapterRegistry {
   llm(providerKey: AiProviderKey): LlmAdapter | undefined;
   stt?(providerKey: AiProviderKey): SttAdapter | undefined;
   tts?(providerKey: AiProviderKey): TtsAdapter | undefined;
+  ocr?(providerKey: AiProviderKey): OcrAdapter | undefined;
 }
 
 // ---- Runtime configuration (loaded from MongoDB, cached in-process) ----------

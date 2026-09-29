@@ -10,11 +10,18 @@ import {
   type LlmAdapter,
   type LlmCallInput,
   type LlmCallResult,
+  type OcrAdapter,
+  type OcrCallInput,
   type ProviderCredentials,
   type UsageUnits,
 } from '@cbi/ai-core';
 import { effortSupported, samplingParamsSupported } from '@cbi/shared-types';
-import { splitSystem, toProviderError } from './shared.js';
+import {
+  attachToLastUser,
+  OCR_DEFAULT_INSTRUCTION,
+  splitSystem,
+  toProviderError,
+} from './shared.js';
 
 type AnthropicClient = Pick<Anthropic, 'beta'>;
 
@@ -201,6 +208,50 @@ export function createAnthropicLlmAdapter(opts: AnthropicAdapterOptions = {}): L
           usage: usageOf(usage),
         },
       };
+    },
+  };
+}
+
+function ocrParams({ model, request }: Pick<OcrCallInput, 'model' | 'request'>) {
+  const { system, turns } = splitSystem(request.messages);
+  const data = Buffer.from(request.document).toString('base64');
+  return {
+    model: model.modelId,
+    max_tokens: request.maxOutputTokens ?? model.params.maxOutputTokens,
+    ...(system ? { system } : {}),
+    messages: attachToLastUser(turns, (text) => [
+      {
+        type: 'document' as const,
+        source: { type: 'base64' as const, media_type: 'application/pdf' as const, data },
+      },
+      { type: 'text' as const, text: text || OCR_DEFAULT_INSTRUCTION },
+    ]),
+    ...(SERVER_FALLBACK_MODELS.test(model.modelId)
+      ? { betas: [SERVER_FALLBACK_BETA], fallbacks: 'default' as const }
+      : {}),
+  };
+}
+
+/**
+ * OCR for scanned PDFs through Claude's PDF input: a base64 `document` block
+ * placed before the instruction text (up to 32 MB per request, far above the
+ * upload cap). Each page is read as text and as an image, so image-only
+ * pages are recognised.
+ */
+export function createAnthropicOcrAdapter(opts: AnthropicAdapterOptions = {}): OcrAdapter {
+  const factory = opts.clientFactory ?? defaultClient;
+  return {
+    providerKey: 'anthropic',
+    async recognize({ model, request, credentials, signal }) {
+      const client = factory(credentials, model.params.timeoutMs);
+      try {
+        const response = await client.beta.messages.create(ocrParams({ model, request }), {
+          signal,
+        });
+        return resultOf(response);
+      } catch (err) {
+        throw mapError(err, signal);
+      }
     },
   };
 }

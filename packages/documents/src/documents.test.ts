@@ -3,7 +3,13 @@ import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { detectDocumentType, looksLikeText } from './detect.js';
 import { cleanText, extractDocumentText, ExtractionError } from './extract.js';
-import { buildDocx, buildDocxBomb, buildPdf, SAMPLE_RESUME_LINES } from './testing.js';
+import {
+  buildDocx,
+  buildDocxBomb,
+  buildPdf,
+  buildScannedPdf,
+  SAMPLE_RESUME_LINES,
+} from './testing.js';
 import { assertZipWithinLimits, listZipEntries } from './zip.js';
 
 /** Parsing fixtures (Phase 3 exit criterion): every fixture is generated in code. */
@@ -79,6 +85,32 @@ describe('PDF extraction', () => {
         },
       }),
     ).toBe('NO_TEXT');
+  });
+
+  it('sends an image-only scan to OCR with its page count, and only then', async () => {
+    const scanned = buildScannedPdf(3);
+    const seen: { pages: number | null }[] = [];
+    const result = await extractDocumentText(scanned, {
+      ocr: async (_file, mime, info) => {
+        expect(mime).toBe(DOCUMENT_MIME.PDF);
+        seen.push(info);
+        return `  ${SAMPLE_RESUME_LINES.join('\n')}  `;
+      },
+    });
+    expect(seen).toEqual([{ pages: 3 }]);
+    expect(result).toMatchObject({ ocrUsed: true, parser: 'ocr', pages: 3 });
+    expect(result.text).toContain('idempotent payments ledger');
+    // Too little recognised text is not trusted either.
+    expect(await code(scanned, { ocr: async () => 'blurry' })).toBe('NO_TEXT');
+    // A PDF with a real text layer never reaches OCR.
+    let called = false;
+    await extractDocumentText(buildPdf([SAMPLE_RESUME_LINES]), {
+      ocr: async () => {
+        called = true;
+        return null;
+      },
+    });
+    expect(called).toBe(false);
   });
 
   it('keeps a little text but flags OCR_NEEDED', async () => {

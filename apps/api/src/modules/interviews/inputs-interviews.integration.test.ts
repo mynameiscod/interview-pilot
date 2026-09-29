@@ -6,7 +6,12 @@ import {
   ResumeModel,
   RoleModel,
 } from '@cbi/db';
-import { buildDocx, buildPdf, SAMPLE_RESUME_LINES } from '@cbi/documents/testing';
+import {
+  buildDocx,
+  buildPdf,
+  LINKEDIN_PASTED_TEXT,
+  SAMPLE_RESUME_LINES,
+} from '@cbi/documents/testing';
 import { InterviewSummary, JobTargetSummary, ResumeSummary } from '@cbi/shared-types';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -24,7 +29,7 @@ beforeEach(async () => {
 
 async function candidate(email = 'asha@example.com') {
   const { accessToken, user } = await signInWithEmail(t.app, t.email.sent, email);
-  const call = (method: 'get' | 'post' | 'patch' | 'delete', path: string) =>
+  const call = (method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string) =>
     request(t.app)
       [method](`/api/v1${path}`)
       .set('Origin', TEST_ORIGIN)
@@ -115,6 +120,67 @@ describe('resumes', () => {
     expect(t.storage.objects.size).toBe(0);
     await asha.call('get', `/resumes/${id}`).expect(404);
     await asha.call('get', '/resumes/not-an-id').expect(404);
+  });
+
+  it('accepts pasted profile text as a text resume and de-duplicates it', async () => {
+    const { call, userId } = await candidate();
+    const res = await call('post', '/resumes/text')
+      .send({ text: LINKEDIN_PASTED_TEXT, label: 'My LinkedIn' })
+      .expect(201);
+    const resume = ResumeSummary.parse(res.body.data);
+    expect(resume).toMatchObject({
+      source: 'PASTE',
+      mime: 'text/plain',
+      originalName: 'My LinkedIn.txt',
+      format: 'STANDARD',
+    });
+    const stored = await ResumeModel.findById(resume.id).lean();
+    expect(stored!.storageKey).toBe(`resumes/${userId}/${resume.id}.txt`);
+    expect(t.jobs.jobs).toEqual([{ kind: 'resume', id: resume.id }]);
+    await call('post', '/resumes/text').send({ text: LINKEDIN_PASTED_TEXT }).expect(200);
+    await call('post', '/resumes/text').send({ text: 'too short' }).expect(400);
+  });
+
+  it('keeps the candidate’s corrections as a revision beside the AI parse', async () => {
+    const asha = await candidate();
+    const ravi = await candidate('ravi@example.com');
+    const up = await asha
+      .call('post', '/resumes')
+      .attach('file', buildPdf([SAMPLE_RESUME_LINES]), 'a.pdf');
+    const id = up.body.data.id as string;
+    const revision = {
+      headline: 'Backend engineer',
+      totalExperienceYears: 4,
+      skills: [{ name: 'Go', level: null, evidence: null }],
+      experience: [],
+      projects: [],
+      education: [],
+      certifications: [],
+    };
+    // Still being read: nothing to edit yet.
+    await asha.call('put', `/resumes/${id}/structured`).send(revision).expect(409);
+    await ResumeModel.updateOne(
+      { _id: id },
+      { $set: { 'extraction.status': 'READY', structured: { ...revision, skills: [] } } },
+    );
+    await ravi.call('put', `/resumes/${id}/structured`).send(revision).expect(404);
+    await asha
+      .call('put', `/resumes/${id}/structured`)
+      .send({ ...revision, skills: 'Go' })
+      .expect(400);
+
+    const saved = ResumeSummary.parse(
+      (await asha.call('put', `/resumes/${id}/structured`).send(revision).expect(200)).body.data,
+    );
+    expect(saved.edited).toEqual(revision);
+    expect(saved.structured!.skills).toEqual([]);
+    expect(saved.editedAt).not.toBeNull();
+    expect(await AuditLogModel.countDocuments({ action: 'resume.edited' })).toBe(1);
+
+    const reverted = ResumeSummary.parse(
+      (await asha.call('delete', `/resumes/${id}/structured`).expect(200)).body.data,
+    );
+    expect(reverted).toMatchObject({ edited: null, editedAt: null });
   });
 
   it('requires a candidate session', async () => {

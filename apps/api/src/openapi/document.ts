@@ -131,6 +131,7 @@ import {
   CreateBlueprintVersionBody,
   CreateInterviewBody,
   CreateJobTargetBody,
+  CreateResumeTextBody,
   CreateTemplateVersionBody,
   Extraction,
   InterviewListQuery,
@@ -141,12 +142,17 @@ import {
   LibrarySearchQuery,
   PatternVerificationBody,
   PromoteBlueprintBody,
+  ResumeMatchReport,
   ResumeSummary,
+  ResumeTailoringSummary,
+  ResumeToolsBody,
   RoleSummary,
   StartInterviewBody,
   TemplateSummary,
   UpdateInterviewSetupBody,
+  UpdateJdStructuredBody,
   UpdateJobTargetBody,
+  UpdateResumeStructuredBody,
   UploadJobTargetFields,
   UpsertCompanyBody,
   UpsertRoleBody,
@@ -699,6 +705,15 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     status: 201,
     errors: [400, 401, 409, 413, 415, 429, 503],
   });
+  candidate('post', '/resumes/text', {
+    tag: 'Resumes',
+    summary:
+      'Add a resume from pasted text, e.g. a LinkedIn profile copied by the candidate (201 new, 200 duplicate)',
+    body: CreateResumeTextBody,
+    response: ResumeSummary,
+    status: 201,
+    errors: [400, 401, 409, 429, 503],
+  });
   candidate('get', '/resumes', {
     tag: 'Resumes',
     summary: 'My resumes, newest first',
@@ -718,6 +733,20 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     tag: 'Resumes',
     summary: 'Delete a resume and its file',
     response: null,
+  });
+  candidate('put', '/resumes/{id}/structured', {
+    tag: 'Resumes',
+    summary:
+      'Save my corrections to the parsed resume as a revision that analysis prefers (READY resumes only)',
+    body: UpdateResumeStructuredBody,
+    response: ResumeSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('delete', '/resumes/{id}/structured', {
+    tag: 'Resumes',
+    summary: 'Discard my corrections and go back to the AI-read version',
+    response: ResumeSummary,
+    errors: [400, 401, 404, 409, 429],
   });
   candidate('post', '/jobs', {
     tag: 'Job targets',
@@ -761,6 +790,42 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     tag: 'Job targets',
     summary: 'Extraction status',
     response: Extraction,
+  });
+  candidate('put', '/jobs/{id}/structured', {
+    tag: 'Job targets',
+    summary:
+      'Save my corrections to the parsed job description (skills, seniority, responsibilities) as a revision that analysis prefers',
+    body: UpdateJdStructuredBody,
+    response: JobTargetSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('delete', '/jobs/{id}/structured', {
+    tag: 'Job targets',
+    summary: 'Discard my corrections and go back to the AI-read version',
+    response: JobTargetSummary,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('post', '/resume-tools/match', {
+    tag: 'Resume tools',
+    summary:
+      'Resume ↔ job description match score (0-100, deterministic, itemised reasons); free and rate-limited',
+    body: ResumeToolsBody,
+    response: ResumeMatchReport,
+    errors: [400, 401, 404, 409, 429],
+  });
+  candidate('post', '/resume-tools/tailorings', {
+    tag: 'Resume tools',
+    summary:
+      'Ask for AI tailoring suggestions (202 queued; 200 reuses unchanged inputs). Poll GET /resume-tools/tailorings/{id}',
+    body: ResumeToolsBody,
+    response: ResumeTailoringSummary,
+    status: 202,
+    errors: [400, 401, 404, 409, 429, 503],
+  });
+  candidate('get', '/resume-tools/tailorings/{id}', {
+    tag: 'Resume tools',
+    summary: 'Tailoring suggestions (PENDING until the worker finishes)',
+    response: ResumeTailoringSummary,
   });
   route('get', '/companies', {
     tag: 'Library',

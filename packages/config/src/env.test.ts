@@ -239,6 +239,8 @@ describe('loadEnv', () => {
     expect(env.WORKER_HEALTH_PORT).toBe(4100);
     expect(env.JD_FETCH_MAX_BYTES).toBe(2 * 1024 * 1024);
     expect(env.UPLOAD_MAX_MB).toBe(8);
+    expect(env).toMatchObject({ OCR_ENABLED: true, OCR_MAX_PAGES: 10, OCR_MAX_MB: 8 });
+    expect(loadEnv(workerEnvSchema, { ...base, OCR_ENABLED: 'false' }).OCR_ENABLED).toBe(false);
   });
 
   it('applies the shared AI and storage rules to the worker too', () => {

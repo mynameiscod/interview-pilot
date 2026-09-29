@@ -119,7 +119,18 @@ At boot the API inserts missing providers, models and routes. It never modifies 
 - Routes: every LLM feature uses Claude Opus 5.5, then Claude Sonnet 5.5, then GPT-5.6 Terra, then Gemini 3.1 Pro (then the mock in development), with the seeded effort described above. The OpenAI and Gemini entries are skipped (`no_credentials`) until their keys are set, and then keep a single-provider outage from exhausting the route.
 - Existing databases keep their models and routes (the seed only inserts): the new models appear, but admins add them to routes and set effort themselves. Older model ids (Opus 5, Sonnet 5) stay usable.
 
-`stt.live`, `tts.live` and `ocr.document` have no adapters yet, so their routes stay empty. The document parser has an OCR hook ready for when an `ocr.document` adapter is added.
+- OCR (`ocr.document`): Claude Sonnet 5.5, then Gemini 3.1 Pro, then GPT-5.6 Terra (then the mock OCR model in development). These three models are seeded with the `OCR` capability; a database seeded before OCR existed gets the capability added to them when the route is first created (the only time the seed touches an existing model). See [scanned documents](#scanned-documents-ocr).
+
+### Scanned documents (OCR)
+
+A PDF whose text layer has fewer than 200 characters is treated as scanned. The worker then sends the **whole PDF** to the `ocr.document` route (`router.recognize`):
+
+- **Adapters.** Anthropic sends a base64 `document` block (`media_type: application/pdf`) before the instruction text, with the server-side refusal fallback on models that support it. Gemini sends the file as `inlineData`; OpenAI as an inline `input_file` data URL with `store: false`. Which one serves is the route's chain; a refusal or failure moves on to the next model like any other call.
+- **Prompt.** `ocr.document` (seeded version 1) asks for a faithful plain-text transcription and tells the model to treat the document as data. Its only variable is `documentKind` (`resume` or `job description`).
+- **Limits.** `OCR_MAX_PAGES` (default 10) and `OCR_MAX_MB` (default 8) are checked before anything is sent; `OCR_ENABLED=false` switches OCR off. Output is capped at 16,000 tokens.
+- **Metering.** Usage rows are billed by tokens like any LLM call; the page count is recorded as `images` (so a `PER_IMAGE` price, if an admin adds one, bills per page).
+- **Fallback.** No prompt, no route, over the limits or every model failing all mean "no OCR": the document fails with `NO_TEXT` and the `OCR_NEEDED` warning, exactly as before. Recognised text shorter than 200 characters is not used either.
+- **Privacy.** An image cannot be masked, so personal details in a scan reach the provider. The Privacy Notice says so (see `legal.json`). The recognised text is stored as the document's text and is masked like any other text before structuring and analysis.
 
 ## Prompt registry
 
@@ -143,7 +154,7 @@ API: `/api/v1/admin/ai/*` and `/api/v1/admin/prompts`. See the OpenAPI document 
 
 ## Not yet built
 
-- Streaming adapters for OpenAI and Gemini (they stream through `generate` as one delta for now), plus the OCR, embedding and translation adapters, arrive with the phases that need them.
+- Streaming adapters for OpenAI and Gemini (they stream through `generate` as one delta for now), plus the embedding and translation adapters, arrive with the phases that need them.
 - Worker-side AI calls now exist (Phase 3: resume/JD structuring, role analysis, blueprint generation). `buildAiRuntime` lives in `@cbi/ai-runtime`, so the worker needs `AI_SECRETS_MASTER_KEY` (and `AI_MOCK_MODE` in development) just like the API. Both subscribe to config-change broadcasts.
 - Latency and cost charts. The console shows tables for now (charts are planned for Phase 11 analytics).
 - Candidate-facing AI work runs in the background in Phase 3: an unavailable model shows up as a session `failure.code` (`AI_UNAVAILABLE`), which the analysis screen explains in English, Hindi and Telugu. Synchronous `AI_UNAVAILABLE` errors arrive with the live interview in Phase 4.

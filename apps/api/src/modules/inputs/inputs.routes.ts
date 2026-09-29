@@ -1,4 +1,11 @@
-import { CreateJobTargetBody, UpdateJobTargetBody, UploadJobTargetFields } from '@cbi/shared-types';
+import {
+  CreateJobTargetBody,
+  CreateResumeTextBody,
+  UpdateJdStructuredBody,
+  UpdateJobTargetBody,
+  UpdateResumeStructuredBody,
+  UploadJobTargetFields,
+} from '@cbi/shared-types';
 import { Router, type RequestHandler } from 'express';
 import type { Container } from '../../container.js';
 import { clientContext } from '../../lib/request-context.js';
@@ -21,6 +28,17 @@ export function resumesRouter(c: Container): Router {
     const { created, resume } = await c.inputs.uploadResume(userId, req.file!, clientContext(req));
     res.status(created ? 201 : 200).json({ data: resume });
   });
+  // Pasted text (e.g. a LinkedIn profile copied by the candidate) counts as an upload.
+  router.post('/text', c.limiters.upload, async (req, res) => {
+    const body = CreateResumeTextBody.parse(req.body);
+    const { userId } = requireAuth(req);
+    const { created, resume } = await c.inputs.createResumeFromText(
+      userId,
+      body,
+      clientContext(req),
+    );
+    res.status(created ? 201 : 200).json({ data: resume });
+  });
   router.get('/', async (req, res) => {
     res.json({ data: await c.inputs.listResumes(requireAuth(req).userId) });
   });
@@ -34,6 +52,28 @@ export function resumesRouter(c: Container): Router {
   router.delete('/:id', async (req, res) => {
     await c.inputs.deleteResume(requireAuth(req).userId, String(req.params.id), clientContext(req));
     res.status(204).end();
+  });
+  // The candidate's corrections to the parsed resume (a revision beside the AI parse).
+  router.put('/:id/structured', async (req, res) => {
+    const body = UpdateResumeStructuredBody.parse(req.body);
+    res.json({
+      data: await c.inputs.setResumeRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        body,
+        clientContext(req),
+      ),
+    });
+  });
+  router.delete('/:id/structured', async (req, res) => {
+    res.json({
+      data: await c.inputs.setResumeRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        null,
+        clientContext(req),
+      ),
+    });
   });
   return router;
 }
@@ -86,6 +126,27 @@ export function jobsRouter(c: Container): Router {
   router.get('/:id/status', async (req, res) => {
     const target = await c.inputs.getJobTarget(requireAuth(req).userId, String(req.params.id));
     res.json({ data: target.extraction });
+  });
+  router.put('/:id/structured', async (req, res) => {
+    const body = UpdateJdStructuredBody.parse(req.body);
+    res.json({
+      data: await c.inputs.setJobTargetRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        body,
+        clientContext(req),
+      ),
+    });
+  });
+  router.delete('/:id/structured', async (req, res) => {
+    res.json({
+      data: await c.inputs.setJobTargetRevision(
+        requireAuth(req).userId,
+        String(req.params.id),
+        null,
+        clientContext(req),
+      ),
+    });
   });
   return router;
 }

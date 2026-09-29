@@ -58,6 +58,8 @@ export const DataExportBundle = z.object({
   consents: z.array(loose),
   resumes: z.array(loose),
   jobDescriptions: z.array(loose),
+  /** Resume tailoring suggestions (kept for 30 days). */
+  resumeTailorings: z.array(loose),
   interviews: z.array(loose),
   transcripts: z.array(loose),
   reports: z.array(loose),

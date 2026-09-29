@@ -35,6 +35,7 @@ import { createCandidateAdminService } from './modules/admin/candidates.service.
 import { createPrivacyService } from './modules/users/privacy.service.js';
 import { createUserStateCache } from './modules/auth/user-state.js';
 import { createInputsService } from './modules/inputs/inputs.service.js';
+import { createResumeToolsService } from './modules/resume-tools/resume-tools.service.js';
 import { createInterviewService } from './modules/interviews/interviews.service.js';
 import { createLibraryAdminService } from './modules/library/library-admin.service.js';
 import { createLiveInterviewService, createRoomEmitter } from './modules/live/live.service.js';
@@ -205,6 +206,11 @@ export function buildContainer(opts: ContainerOptions) {
     logger,
     dailyLimits: { jobs: env.INPUT_DAILY_LIMIT_JOBS, resumes: env.INPUT_DAILY_LIMIT_RESUMES },
   });
+  const resumeTools = createResumeToolsService({
+    jobs,
+    logger,
+    tailorDailyLimit: env.RESUME_TAILOR_DAILY_LIMIT,
+  });
   const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
   // Flag and setting changes reach every API process over Redis pub/sub.
   const opsChanges = createOpsChangeBus({ redis, logger });
@@ -369,6 +375,7 @@ export function buildContainer(opts: ContainerOptions) {
     storage,
     jobs,
     inputs,
+    resumeTools,
     interviews,
     libraryAdmin,
     rooms,
