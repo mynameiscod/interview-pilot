@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { assertStorageKey, StorageNotFoundError, type StorageProvider } from './types.js';
 
@@ -30,6 +30,23 @@ export function createLocalStorage(rootDir: string): StorageProvider {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT')
           throw new StorageNotFoundError('local');
         throw err;
+      }
+    },
+    async getRange(key, start, end) {
+      let file;
+      try {
+        file = await open(pathOf(key), 'r');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new StorageNotFoundError('local');
+        throw err;
+      }
+      try {
+        const buffer = Buffer.alloc(Math.max(0, end - start + 1));
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, start);
+        return buffer.subarray(0, bytesRead);
+      } finally {
+        await file.close();
       }
     },
     async delete(key) {

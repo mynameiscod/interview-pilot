@@ -13,7 +13,12 @@ export type { OtpSms, OtpSmsProvider } from './sms/types.js';
 export { createBunnyStorage, type BunnyStorageOptions } from './storage/bunny.js';
 export { createStorage, type StorageSettings } from './storage/factory.js';
 export { createLocalStorage } from './storage/local.js';
-export { assertStorageKey, StorageNotFoundError, type StorageProvider } from './storage/types.js';
+export {
+  assertStorageKey,
+  readRange,
+  StorageNotFoundError,
+  type StorageProvider,
+} from './storage/types.js';
 export { extractReadableText, normalizeText } from './web/readable-text.js';
 export {
   isPublicAddress,

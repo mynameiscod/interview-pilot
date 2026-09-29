@@ -3,13 +3,19 @@ import { ProviderError } from '../errors.js';
 /**
  * Private object storage. Keys are generated server-side (never from user
  * input) and look like `resumes/<userId>/<id>.pdf`. Documents are small
- * (≤ 25 MB), so buffers are used; media streaming arrives in Phase 8.
+ * (≤ 25 MB), so buffers are used; recordings are played back through
+ * `getRange` so a large file is never read whole.
  */
 export interface StorageProvider {
   readonly name: string;
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   /** Throws StorageNotFoundError when the object does not exist. */
   get(key: string): Promise<Buffer>;
+  /**
+   * Bytes `start` … `end` (inclusive; shorter at the end of the object).
+   * Optional: `readRange` falls back to `get` for providers without it.
+   */
+  getRange?(key: string, start: number, end: number): Promise<Buffer>;
   /** Idempotent: deleting a missing object succeeds. */
   delete(key: string): Promise<void>;
 }
@@ -31,4 +37,15 @@ export function assertStorageKey(key: string): void {
   ) {
     throw new Error('invalid storage key');
   }
+}
+
+/** A byte range of an object, from the provider's range read when it has one. */
+export async function readRange(
+  storage: Pick<StorageProvider, 'get' | 'getRange'>,
+  key: string,
+  start: number,
+  end: number,
+): Promise<Buffer> {
+  if (storage.getRange) return storage.getRange(key, start, end);
+  return (await storage.get(key)).subarray(start, end + 1);
 }

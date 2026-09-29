@@ -11,6 +11,7 @@ import {
   createSmtpEmailProvider,
   JudgeUnavailableError,
   NotConfiguredError,
+  readRange,
   type EmailProvider,
   type JudgeAdapter,
   type OtpSmsProvider,
@@ -258,6 +259,7 @@ export function buildIntegrations(opts: IntegrationsOptions) {
     },
     put: async (key, body, type) => need('storage').put(key, body, type),
     get: async (key) => need('storage').get(key),
+    getRange: async (key, start, end) => readRange(need('storage'), key, start, end),
     delete: async (key) => need('storage').delete(key),
   };
   const payments: PaymentGateway = {

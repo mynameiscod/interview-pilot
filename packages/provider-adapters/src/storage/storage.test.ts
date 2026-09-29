@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { ProviderError } from '../errors.js';
 import { createBunnyStorage } from './bunny.js';
 import { createLocalStorage } from './local.js';
-import { assertStorageKey, StorageNotFoundError } from './types.js';
+import { assertStorageKey, readRange, StorageNotFoundError } from './types.js';
 
 describe('storage keys', () => {
   it.each(['resumes/u1/abc.pdf', 'jobs/u1/2026/x_y-z.txt'])('accepts %s', (key) => {
@@ -76,6 +76,19 @@ describe('Bunny storage', () => {
     expect(denied.retryable).toBe(false);
   });
 
+  it('reads byte ranges, slicing when Bunny ignores the Range header', async () => {
+    const partial = fake(206, 'llo');
+    expect((await partial.storage.getRange!('a/b.bin', 2, 4)).toString()).toBe('llo');
+    expect(partial.calls[0]!.init.headers).toMatchObject({ Range: 'bytes=2-4' });
+    expect((await fake(200, 'hello world').storage.getRange!('a/b.bin', 6, 10)).toString()).toBe(
+      'world',
+    );
+    expect(await fake(416).storage.getRange!('a/b.bin', 99, 120)).toHaveLength(0);
+    await expect(fake(404).storage.getRange!('a/b.bin', 0, 1)).rejects.toBeInstanceOf(
+      StorageNotFoundError,
+    );
+  });
+
   it('refuses unsafe keys before any request', async () => {
     const t = fake(200);
     await expect(t.storage.get('../other-zone/x')).rejects.toThrow('invalid storage key');
@@ -101,5 +114,25 @@ describe('local storage', () => {
     await expect(storage.put('../escape.txt', Buffer.from('x'), 'text/plain')).rejects.toThrow(
       'invalid storage key',
     );
+  });
+
+  it('reads byte ranges without loading the whole file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cbi-storage-'));
+    dirs.push(dir);
+    const storage = createLocalStorage(dir);
+    await storage.put('media/u1/rec.webm', Buffer.from('0123456789'), 'video/webm');
+    expect((await storage.getRange!('media/u1/rec.webm', 2, 5)).toString()).toBe('2345');
+    // Past the end: shortened, not padded.
+    expect((await storage.getRange!('media/u1/rec.webm', 8, 20)).toString()).toBe('89');
+    await expect(storage.getRange!('media/u1/none.webm', 0, 1)).rejects.toBeInstanceOf(
+      StorageNotFoundError,
+    );
+  });
+});
+
+describe('readRange', () => {
+  it('falls back to a whole read for providers without ranges', async () => {
+    const storage = { get: async () => Buffer.from('abcdef') };
+    expect((await readRange(storage, 'k', 1, 3)).toString()).toBe('bcd');
   });
 });
