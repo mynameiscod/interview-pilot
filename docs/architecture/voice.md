@@ -40,14 +40,18 @@ Speech goes through the same AI router as the LLM features. It has fallback chai
 
 - The room fetches the audio from `GET /interviews/:id/questions/:questionId/audio` with its bearer token and plays it. The question text stays on screen as captions.
 - Audio is cached in Redis for 2 hours, and concurrent requests share one synthesis. Replaying a question therefore costs nothing.
+- One synthesis per question **across API replicas**: the first replica to ask takes a short Redis lock (`cbi:voice:tts-lock:<question>`, 20 s, released by token) and synthesizes; the others poll the cache and read its result. If the holder fails (its lock goes without a result) or outlasts the lock, a waiter synthesizes itself. Within a process, concurrent requests share one promise. When Redis is down, each replica synthesizes on its own.
 
 **Answers.**
 
-1. The browser records the answer with MediaRecorder: WebM/Opus, Ogg/Opus or MP4. There is a maximum of 5 minutes per answer.
+1. The browser records the answer with MediaRecorder: WebM/Opus, Ogg/Opus or MP4. There is a maximum of 5 minutes per answer: the recorder stops itself there, once (the elapsed-time tick is cleared as soon as a stop begins, so a slow `onstop` cannot start a second finish).
 2. On **Done**, it uploads the recording to `POST /interviews/:id/voice/transcribe`. The API checks that:
    - this is the current, unanswered question and the interview is in voice mode;
    - the recording is at least 500 ms and at most 10 MB;
    - the container is audio, detected from the bytes. The declared type is ignored.
+
+   **Duration is measured on the server.** Speech usage and cost are billed by duration, and some models (OpenAI) report none, so the browser's `durationMs` is not trusted. `audio-duration.ts` reads the container: WebM (the declared Duration, or the last block's timestamp, since MediaRecorder writes none), Ogg (the last granule position, less Opus' pre-skip), MP4 (`mvhd`, or the sum of the fragments that Safari writes) and WAV. When it can't read the file (MP3, or a damaged file) it uses the browser's value, bounded by what the bytes can hold at 6 kbit/s (Opus' floor). Either way the result is capped at 5 minutes. A provider's own reported duration still wins.
+
 3. The transcript comes back for review with a `lowConfidence` hint. It is also stored server-side for 1 hour.
 4. **Submit** sends `answer:text` with the `voiceTranscriptId`. The **server's transcript becomes the answer**, whatever text the client sends.
 5. The turn records `source: 'VOICE'` and the speech metadata: duration, language, confidence and model.
@@ -76,6 +80,9 @@ Scoring is unchanged. It is based on the transcript text only: no voice-prosody 
 
 - `packages/ai-core/src/router-speech.test.ts`: speech routing, fallback, metering and route status.
 - `packages/provider-adapters/src/speech/speech.test.ts`: provider request formats, error mapping and the mocks.
+- `apps/api/src/modules/voice/audio-duration.test.ts`: container durations (WebM without Duration, Ogg Opus, fragmented MP4, WAV) and the bounded fallback.
+- `apps/api/src/modules/voice/voice.test.ts`: the question-audio cache shared by replicas (one synthesis, a failed holder, an expired wait, Redis down).
+- `apps/candidate-web/src/features/room/voice-hooks.test.ts`: the answer limit finishes the recording once, with fake timers.
 - `apps/api/src/modules/voice/voice.integration.test.ts`: the mocked voice end-to-end test. It covers the device check and consent gate, spoken questions and caching, a spoken answer becoming the server transcript, and degrade-to-text for STT and TTS.
 - **Mock speech (development/test only):**
   - The mock STT transcribes a clip made by `mockSpeech(text)` to `text`. `mockSpeechFailure()` simulates an outage. A real microphone recording gives a labelled placeholder.
