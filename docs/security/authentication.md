@@ -10,7 +10,7 @@ This describes how sign-in works in CareerPilot Interview (Phase 1) and the secu
 | Mobile one-time code | ✔ when `SMS_PROVIDER` ≠ `disabled` | ✔ if the admin has a linked mobile | MSG91 Flow API (DLT template required)        |
 | Google               | ✔ when `GOOGLE_CLIENT_ID` is set   | ✔ (existing admins only)           | Google Identity Services ID token             |
 
-There are no passwords. Signing in with a new email/mobile/Google account on the candidate app creates the account. **Admin accounts are never created by signing in**: a super admin invites them, and the first super admin is created with the seed CLI (see [local development](../deployment/local-development.md#admin-access)).
+Candidates have no passwords (admins may also set one on their account page). Signing in with a new email/mobile/Google account on the candidate app creates the account. **Admin accounts are never created by signing in**: a super admin invites them, and the first super admin is created with the seed CLI (see [local development](../deployment/local-development.md#admin-access)).
 
 ## One-time codes (OTP)
 
@@ -26,15 +26,34 @@ There are no passwords. Signing in with a new email/mobile/Google account on the
 |                   | Access token                                   | Refresh token                                                                                                                     |
 | ----------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | Format            | HS256 JWT (`sub`, `aud`, `sid`, `tv`, `roles`) | 256-bit random, opaque                                                                                                            |
-| Lifetime          | `JWT_ACCESS_TTL_SEC` (10 min)                  | candidate `REFRESH_TTL_CANDIDATE_DAYS` (30 d), admin `REFRESH_TTL_ADMIN_HOURS` (12 h), sliding                                    |
+| Lifetime          | `JWT_ACCESS_TTL_SEC` (10 min)                  | candidate `REFRESH_TTL_CANDIDATE_DAYS` (30 d), admin `REFRESH_TTL_ADMIN_HOURS` (12 h), sliding, capped by the absolute lifetime   |
 | Stored by browser | JavaScript memory only (never `localStorage`)  | httpOnly cookie, `SameSite=Lax`, `Secure` + `__Secure-` prefix outside dev, path-scoped to `/api/v1/auth` or `/api/v1/admin/auth` |
 | Stored by server  | not stored                                     | SHA-256 hash in `refreshTokens` (TTL-indexed)                                                                                     |
 
 - **Audience separation:** candidate and admin sessions use different JWT audiences, cookie names and cookie paths. A candidate token is rejected by admin endpoints and vice versa.
 - **Rotation:** every refresh atomically marks the presented token used and issues a new one in the same _family_ (one family per signed-in device).
 - **Replay detection:** presenting an already-used refresh token more than 10 s after it was rotated revokes the whole family and is audited (`auth.refresh_token_reuse_detected`). Within the 10 s grace window (two tabs, a lost response) the request is rejected without revoking. The web apps also serialize refreshes across tabs with the Web Locks API.
+- **Absolute lifetime:** every token in a family carries `familyCreatedAt` (the sign-in). Rotation slides the expiry by the refresh TTL but never past `familyCreatedAt + SESSION_MAX_AGE_CANDIDATE_DAYS` (90 d) or `SESSION_MAX_AGE_ADMIN_DAYS` (7 d), so an active refresh chain (stolen or not) still ends. Families created before this change start their cap at their next refresh.
+- **Signed-in devices:** `GET /auth/sessions` and `/admin/auth/sessions` list the person's families (browser, sign-in time, last refresh, end); `DELETE …/sessions/:id` revokes one (`auth.session_revoked`). The revoked device can no longer refresh; its current access token expires within `JWT_ACCESS_TTL_SEC`. Shown on the candidate profile page and the admin account page.
+- **Cross-tab sign-out:** the web apps' session manager posts sign-out and sign-in on a `BroadcastChannel` per app. Signing out in one tab signs every tab out at once (instead of each keeping its in-memory access token for up to 10 minutes); a signed-out tab picks up a sign-in made in another. The candidate app also clears the interview wizard's `sessionStorage` (it can hold pasted job descriptions) and its query cache on sign-out.
+- **Refresh rate limits:** `/refresh` has its own limits, separate from the sign-in limit: 600/min per IP (campus and office NATs put hundreds of students behind one address) and 20/min per session (keyed by a hash of the refresh cookie), so one runaway tab cannot starve its neighbours. Google and password sign-in keep the stricter 30/min per IP.
 - **Logout** revokes the device's family. **Logout-all** revokes every family and increments the user's `tokenVersion`, which invalidates live access tokens immediately.
 - **Live checks:** every authenticated request checks the user's current `tokenVersion`, status and (for admins) roles through a 60 s Redis read-through cache that is invalidated on every change. Role changes, revocations and suspensions therefore apply to live sessions immediately. If Redis is down the check falls back to MongoDB.
+
+## Admin two-factor authentication (TOTP)
+
+- Authenticator apps (RFC 6238: HMAC-SHA1, 30 s steps, 6 digits), implemented on `node:crypto` in [`packages/auth-core/src/totp.ts`](../../packages/auth-core/src/totp.ts) and tested against the RFC vectors.
+- **Required** for `SUPER_ADMIN` by default; `ADMIN_MFA_REQUIRED=all` requires it for every admin. Others can turn it on from **Your account**.
+- **Enforced after every first factor** (password, email/SMS code, Google): instead of a session the API answers `{ mfaRequired: true, mfaToken, mode }`. The token is random, single-use, lives 5 minutes in Redis (keyed by its SHA-256) and allows 5 wrong codes. `POST /admin/auth/mfa/verify` exchanges it for the session. No refresh cookie is set before the second factor.
+- **Enrolment at sign-in:** when 2FA is required but not set up, the challenge is `ENROLL` and carries a fresh secret and `otpauth://` URI (shown as a copyable setup key; there is no QR library). The first valid code turns it on. Admins can also set it up, replace recovery codes or (when not required) turn it off on the account page, each confirmed with a current code.
+- **Storage:** the secret is encrypted with the platform secret box (AES-256-GCM under `AI_SECRETS_MASTER_KEY`, bound to `adminMfa:<userId>`) in `users.mfa`, which is never selected by default. Ten recovery codes are shown once and stored as HMACs (`OTP_HMAC_SECRET`); each is removed when used.
+- **Replay:** the last accepted time step is stored and a code for the same or an earlier step is refused (a conditional update makes concurrent replays lose). ±1 step of clock drift is accepted.
+- Audited: `auth.mfa_challenged`, `auth.mfa_failed`, `auth.mfa_enabled`, `auth.mfa_recovery_code_used`, `auth.mfa_recovery_codes_regenerated`, `auth.mfa_disabled`.
+- Lost phone and recovery codes: an operator removes the admin's `mfa` field on the server (there is no self-service bypass); the next sign-in asks them to enrol again.
+
+## Account suspension
+
+Admins with `candidates.manage` suspend or reinstate candidate accounts from **Candidates** (`POST /admin/candidates/:id/suspend|reinstate`, reason required). Suspension sets `status: SUSPENDED`, records who and why, and revokes every refresh family and bumps `tokenVersion` in one transaction, so the candidate is signed out everywhere at once and sign-in is refused (`ACCOUNT_SUSPENDED`). Both actions, every search (`candidate.searched`) and every opened profile (`candidate.viewed`) are audited.
 
 ## CSRF and CORS
 
@@ -60,6 +79,7 @@ Endpoints check **permissions**, never role names. The matrix lives in [`package
 | `admin_users.manage` | ✔     |            |         |         |         |
 | `audit.read`         | ✔     | ✔          |         |         | ✔       |
 | `candidates.read`    | ✔     | ✔          |         | ✔       |         |
+| `candidates.manage`  | ✔     | ✔          |         |         |         |
 | `ai.read`            | ✔     | ✔          |         |         |         |
 | `ai.manage`          | ✔     |            |         |         |         |
 | `ai_usage.read`      | ✔     | ✔          |         |         | ✔       |
@@ -77,21 +97,23 @@ Safeguards: admins cannot demote or revoke themselves; the platform keeps at lea
 
 `auditLogs` is append-only. The Mongoose model rejects every update and delete operation. Entries record the actor, action, target, outcome, request id and a keyed hash of the IP (never the raw IP), plus minimal details (never codes, tokens or full contact details). Admin mutations write their audit entry inside the same transaction, so a change cannot happen unaudited. Security events outside a transaction (login, OTP failures) log an error and continue if the audit write fails, so an audit outage cannot lock everyone out.
 
-Recorded actions so far: `auth.otp_requested`, `auth.otp_verify_failed`, `auth.account_created`, `auth.login_succeeded`, `auth.logout`, `auth.logout_all`, `auth.identity_linked`, `auth.refresh_token_reuse_detected`, `admin.user_invited`, `admin.user_roles_changed`, `admin.user_access_revoked`, `admin.super_admin_seeded`.
+Recorded actions so far: `auth.otp_requested`, `auth.otp_verify_failed`, `auth.account_created`, `auth.login_succeeded`, `auth.logout`, `auth.logout_all`, `auth.session_revoked`, `auth.identity_linked`, `auth.refresh_token_reuse_detected`, the `auth.mfa_*` actions above, `admin.user_invited`, `admin.user_roles_changed`, `admin.user_access_revoked`, `admin.super_admin_seeded`, `candidate.searched`, `candidate.viewed`, `candidate.suspended`, `candidate.reinstated`, and the data-rights actions in [data protection](data-protection.md). Sign-outs from the admin app are recorded with actor type `ADMIN`.
 
 ## Secrets
 
 | Secret                       | Purpose                                        | Rules                                                                                        |
 | ---------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `JWT_ACCESS_SECRET`          | Signs access tokens                            | ≥ 32 chars; must differ from `OTP_HMAC_SECRET`; example values refused in staging/production |
-| `OTP_HMAC_SECRET`            | OTP hashes, pseudonymous IP/destination hashes | same                                                                                         |
+| `OTP_HMAC_SECRET`            | OTP hashes, pseudonymous IP/destination hashes | same; also keys admin recovery-code hashes                                                   |
+| `AI_SECRETS_MASTER_KEY`      | Also encrypts admin TOTP secrets               | rotate as in the key-rotation runbook (old keys stay for decryption)                         |
 | `SES_*`, `SMTP_*`, `MSG91_*` | Delivery providers                             | only in server env; never logged                                                             |
 
 Rotating `JWT_ACCESS_SECRET` signs everyone out of their current access token (they silently refresh). Rotating `OTP_HMAC_SECRET` invalidates outstanding codes only.
 
 ## Known limitations / follow-ups
 
-- Legal/consent text (terms, privacy) acceptance is not captured yet; it arrives with the consent module and needs legal review (DPDP Act).
+- The Terms of Use and Privacy Notice are drafts pending legal review (the banner shows until `LEGAL_DRAFT_BANNER=false`). Agreement is by the "By continuing, you agree…" notice on the sign-in page, not a recorded consent.
 - Transactional emails are English-only; localized templates come with the notifications module.
-- Account suspension is possible at the data layer (and enforced everywhere) but has no admin UI yet; it belongs to the Candidates module.
+- Signing out a single device does not invalidate that device's current access token (at most `JWT_ACCESS_TTL_SEC`); suspension and logout-all do (`tokenVersion`).
+- Admins have TOTP as a second factor; WebAuthn/passkeys are not offered yet.
 - Unlinking a sign-in method is not offered yet.
