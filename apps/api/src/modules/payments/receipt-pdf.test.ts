@@ -29,8 +29,10 @@ const input = (overrides: Partial<ReceiptInput> = {}): ReceiptInput => ({
 async function text(receipt: ReceiptInput) {
   const pdf = await renderReceiptPdf(receipt, { compress: false });
   expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
-  // pdfkit writes each text run as a hex string: <...> Tj / TJ.
-  const runs = [...pdf.toString('latin1').matchAll(/<([0-9a-f]+)>/g)].map((m) =>
+  // pdfkit writes each text run as a hex string: <...> Tj / TJ. The trailer's
+  // random file /ID is hex too; drop it so it cannot leak into the text.
+  const body = pdf.toString('latin1').replace(/\/ID\s*\[[^\]]*\]/g, '');
+  const runs = [...body.matchAll(/<([0-9a-f]+)>/g)].map((m) =>
     Buffer.from(m[1]!, 'hex').toString('latin1'),
   );
   return runs.join('');
