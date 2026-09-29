@@ -99,6 +99,8 @@ export interface InterviewSessionRecord {
   consents: SessionConsentRecord[];
   /** Video recording, decided at start from the template policy and the RECORDING consent. */
   recording: { enabled: boolean } | null;
+  /** Integrity observations stored so far (capped at MAX_INTEGRITY_EVENTS; saves a count per event). */
+  integrityEventCount: number;
 
   // ---- Campaigns and review (Phase 10) ----
   /** The campaign this interview belongs to (fixed role, template and rules). */
@@ -252,6 +254,7 @@ const sessionSchema = new Schema<InterviewSessionRecord>(
       type: new Schema({ enabled: { type: Boolean, required: true } }, { _id: false }),
       default: null,
     },
+    integrityEventCount: { type: Number, default: 0 },
     campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', default: null },
     sponsored: { type: Boolean, default: false },
     review: {

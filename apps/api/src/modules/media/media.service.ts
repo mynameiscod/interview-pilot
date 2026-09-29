@@ -390,8 +390,12 @@ export function createMediaService(deps: Deps) {
       ).lean<Session>();
       if (!s || !s.live) return false;
       if (!(s.consents ?? []).some((c) => c.type === 'INTEGRITY' && c.accepted)) return false;
-      const count = await IntegrityEventModel.countDocuments({ sessionId: s._id });
-      if (count >= MAX_INTEGRITY_EVENTS) return false;
+      // Reserve a slot atomically (no count query per event); a full session stores no more.
+      const reserved = await InterviewSessionModel.updateOne(
+        { _id: s._id, integrityEventCount: { $not: { $gte: MAX_INTEGRITY_EVENTS } } },
+        { $inc: { integrityEventCount: 1 } },
+      );
+      if (reserved.modifiedCount !== 1) return false;
       await IntegrityEventModel.create({
         sessionId: s._id,
         userId,
