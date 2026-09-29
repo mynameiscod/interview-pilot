@@ -199,10 +199,11 @@ describe('dashboard aggregation pipelines', () => {
     ]);
     // Each step needs only one matching record per user.
     for (const l of lookups) expect(l.pipeline).toContainEqual({ $limit: 1 });
+    // Practice drills are not interviews.
     expect(lookups.map((l) => l.pipeline[0]?.$match)).toEqual([
-      {},
-      { startedAt: { $ne: null } },
-      { state: { $in: ['PROCESSING', 'REPORT_READY'] } },
+      { kind: { $ne: 'DRILL' } },
+      { kind: { $ne: 'DRILL' }, startedAt: { $ne: null } },
+      { kind: { $ne: 'DRILL' }, state: { $in: ['PROCESSING', 'REPORT_READY'] } },
       { name: 'report_viewed' },
       { 'statusHistory.status': 'PAID' },
     ]);
