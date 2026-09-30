@@ -531,6 +531,11 @@ export const workerEnvSchema = baseEnvSchema
       .default(60 * 60_000),
     /** Parallel evaluation stages (AI calls and PDF rendering). */
     WORKER_EVALUATION_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(3),
+    /**
+     * Campaign coding submissions at least this similar (0.5–1, shared winnowed
+     * fingerprints) to another candidate's are flagged for reviewers; never scored.
+     */
+    CODE_SIMILARITY_THRESHOLD: z.coerce.number().min(0.5).max(1).default(0.8),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */
     EMAIL_PROVIDER: z.enum(['ses', 'smtp', 'disabled']).default('disabled'),
     ...emailFields,

@@ -13,6 +13,8 @@ import {
   ExportJob,
   QueueName,
   type CampaignPackageJobData,
+  codeSimilarityJobId,
+  type CodeSimilarityJobData,
   type EvaluationStageJobData,
   type ReportPdfJobData,
   type InterviewAnalyzeJobData,
@@ -46,6 +48,8 @@ import { runMediaFileBuilds, type FfmpegRunner } from './processors/media-file.j
 import { runMediaSweep } from './processors/media-sweep.js';
 import { runAccountErasure } from './processors/account-erasure.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
+import { processCodeSimilarity } from './processors/code-similarity.js';
+import { DEFAULT_THRESHOLD } from './integrity/code-similarity.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
@@ -90,8 +94,11 @@ export interface WorkerRuntimeOptions {
   erasure?: { storage: MediaStorage; intervalMs: number };
   /** Analytics rollups for today and yesterday; omit to disable. */
   analyticsRollupIntervalMs?: number;
-  /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
-  evaluation?: { deps: EvaluationDeps; concurrency: number };
+  /**
+   * The evaluation pipeline (evidence, scores, report, PDF, email) and, for
+   * campaign interviews, the code similarity check; omit to leave it unconsumed.
+   */
+  evaluation?: { deps: EvaluationDeps; concurrency: number; similarityThreshold?: number };
   /** Campaign package exports and the sweep of expired files; omit to leave the queue unconsumed. */
   exports?: { deps: CampaignExportDeps; concurrency: number; sweepIntervalMs: number };
 }
@@ -370,12 +377,27 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             await renderRevisionPdf(deps, sessionId, revision);
             return;
           }
+          if (job.name === EvaluationJob.CODE_SIMILARITY) {
+            await processCodeSimilarity({
+              sessionId: (job.data as CodeSimilarityJobData).sessionId,
+              threshold: opts.evaluation!.similarityThreshold ?? DEFAULT_THRESHOLD,
+              logger: opts.logger,
+            });
+            return;
+          }
           if (job.name !== EvaluationJob.STAGE)
             throw new Error(`Unknown evaluation job: ${job.name}`);
           const data = job.data as EvaluationStageJobData;
           const outcome = await runEvaluationStage(deps, data, isFinalAttempt(job));
           if (outcome.status === 'done' && outcome.next) {
             await ensureStageJob(evaluationQueue, { ...data, stage: outcome.next });
+          }
+          // Once the report exists, campaign submissions are compared (never part of the score).
+          if (outcome.status === 'done' && data.stage === 'BUILD_REPORT') {
+            const payload: CodeSimilarityJobData = { sessionId: data.sessionId };
+            await evaluationQueue.add(EvaluationJob.CODE_SIMILARITY, payload, {
+              jobId: codeSimilarityJobId(data.sessionId, data.run),
+            });
           }
         },
         // AI scoring and PDF rendering can take a while; keep the lock long enough.

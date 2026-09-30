@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CodingLanguage } from './coding.js';
 import { ReadinessBand } from './evaluation.js';
 import { InterviewState } from './interviews.js';
 import { InterviewMode } from './library.js';
@@ -103,5 +104,40 @@ export const AdminInterviewDetail = AdminInterviewRow.extend({
     }),
   ),
   aiCostMicros: z.number().int(),
+  /**
+   * Integrity observations: coding submissions very similar to another
+   * candidate's in the same campaign. For a reviewer to look at; never scored.
+   */
+  codeSimilarity: z
+    .array(
+      z.object({
+        problemTitle: z.string(),
+        language: CodingLanguage,
+        similarity: z.number(),
+        containment: z.number(),
+        threshold: z.number(),
+        otherInterviewId: z.string(),
+        otherCandidateEmail: z.string().nullable(),
+        computedAt: z.iso.datetime(),
+      }),
+    )
+    .optional(),
+  /** AI-allowed coding rounds: the whole conversation with the assistant, per problem. */
+  assistantTranscripts: z
+    .array(
+      z.object({
+        problemTitle: z.string(),
+        messages: z.array(
+          z.object({
+            role: z.enum(['CANDIDATE', 'ASSISTANT']),
+            text: z.string(),
+            at: z.iso.datetime(),
+            unavailable: z.boolean(),
+            redacted: z.boolean(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
 });
 export type AdminInterviewDetail = z.infer<typeof AdminInterviewDetail>;

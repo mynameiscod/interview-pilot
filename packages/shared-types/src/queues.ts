@@ -40,6 +40,8 @@ export const EvaluationJob = {
   STAGE: 'evaluation.stage',
   /** The PDF of a report revision created after the pipeline (manual review). */
   REPORT_PDF: 'evaluation.report_pdf',
+  /** Campaign interviews: compare coding submissions with the campaign's others (never scored). */
+  CODE_SIMILARITY: 'evaluation.code_similarity',
 } as const;
 export type EvaluationJob = (typeof EvaluationJob)[keyof typeof EvaluationJob];
 
@@ -54,6 +56,14 @@ export interface ReportPdfJobData {
   sessionId: string;
   revision: number;
 }
+
+export interface CodeSimilarityJobData {
+  sessionId: string;
+}
+
+/** One similarity check per session and pipeline run: enqueueing it twice is a no-op. */
+export const codeSimilarityJobId = (sessionId: string, run: number) =>
+  `code-similarity-${sessionId}-${run}`;
 
 /** Deterministic id per session, stage and run: enqueueing a stage twice is a no-op. */
 export const evaluationJobId = (sessionId: string, stage: ProcessingStage, run: number) =>

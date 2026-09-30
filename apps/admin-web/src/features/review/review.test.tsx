@@ -150,6 +150,51 @@ describe('interview review', () => {
     expect(screen.queryByRole('button', { name: 'Revise scores' })).not.toBeInTheDocument();
   });
 
+  it('shows similar campaign code and the AI assistant conversation as observations', async () => {
+    await renderAt('/interviews/int1', ['SUPPORT_ADMIN'], {
+      'GET /admin/interviews/int1': () =>
+        ok({
+          ...interviewDetail(),
+          codeSimilarity: [
+            {
+              problemTitle: 'Pair sum indices',
+              language: 'python',
+              similarity: 0.91,
+              containment: 0.95,
+              threshold: 0.8,
+              otherInterviewId: 'int9',
+              otherCandidateEmail: 'ravi@example.com',
+              computedAt: '2026-09-20T10:00:00.000Z',
+            },
+          ],
+          assistantTranscripts: [
+            {
+              problemTitle: 'Pair sum indices',
+              messages: [
+                {
+                  role: 'CANDIDATE',
+                  text: 'Is a map O(n)?',
+                  at: '2026-09-20T10:00:00.000Z',
+                  unavailable: false,
+                  redacted: false,
+                },
+              ],
+            },
+          ],
+        }),
+    });
+    const section = await screen.findByRole('region', { name: 'Similar code in this campaign' });
+    expect(within(section).getByText(/never affects scores/)).toBeInTheDocument();
+    expect(within(section).getByRole('link', { name: 'ravi@example.com' })).toHaveAttribute(
+      'href',
+      '/interviews/int9',
+    );
+    expect(within(section).getByText('91%')).toBeInTheDocument();
+    const ai = screen.getByRole('region', { name: 'Conversation with the AI assistant' });
+    expect(within(ai).getByText('Pair sum indices (1 message)')).toBeInTheDocument();
+    expect(within(ai).getByText('Is a map O(n)?')).toBeInTheDocument();
+  });
+
   it('flags an interview with a reason', async () => {
     const { api } = await renderAt('/interviews/int1', ['OPERATIONS_ADMIN'], {
       'GET /admin/interviews/int1': () => ok(interviewDetail()),

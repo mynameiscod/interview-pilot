@@ -1658,6 +1658,24 @@
       "confidence": "Confidence",
       "practical": "Practical",
       "uncertainty": "Uncertain: {{note}}"
+    },
+    "similarity": {
+      "title": "Similar code in this campaign",
+      "note": "These coding submissions are very similar to another candidate's in the same campaign (compared after normalising names, layout and comments). It is an observation to review, not proof of copying, and it never affects scores.",
+      "problem": "Problem",
+      "other": "Other interview",
+      "similarity": "Similarity",
+      "containment": "Overlap with the shorter",
+      "checked": "Checked"
+    },
+    "assistant": {
+      "title": "Conversation with the AI assistant",
+      "problem_one": "{{title}} ({{count}} message)",
+      "problem_other": "{{title}} ({{count}} messages)",
+      "candidate": "Candidate",
+      "ai": "Assistant",
+      "unavailable": "(the assistant was unavailable)",
+      "redacted": "(long code was removed from this reply)"
     }
   },
   "analytics": {
