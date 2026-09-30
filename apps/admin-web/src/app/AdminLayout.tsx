@@ -74,6 +74,13 @@ const NAV_ITEMS: NavItem[] = [
     group: 'library',
   },
   {
+    to: '/design-prompts',
+    key: 'nav.designPrompts',
+    icon: 'bi-diagram-3',
+    permission: 'library.read',
+    group: 'library',
+  },
+  {
     to: '/purchases',
     key: 'nav.purchases',
     icon: 'bi-receipt',

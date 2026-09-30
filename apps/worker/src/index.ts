@@ -135,6 +135,7 @@ async function main(): Promise<void> {
     analysis: { concurrency: env.WORKER_ANALYSIS_CONCURRENCY, deps: { ai, logger } },
     evaluation: {
       concurrency: env.WORKER_EVALUATION_CONCURRENCY,
+      similarityThreshold: env.CODE_SIMILARITY_THRESHOLD,
       deps: {
         ai,
         storage,

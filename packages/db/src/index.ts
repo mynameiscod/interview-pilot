@@ -10,6 +10,7 @@ export * from './identity.js';
 export * from './models/ops.js';
 export * from './analytics.js';
 export * from './models/coding.js';
+export * from './models/design.js';
 export * from './models/commerce.js';
 export * from './models/consent.js';
 export * from './models/credits.js';
@@ -39,6 +40,7 @@ export * from './redis.js';
 export * from './seed/consent-texts.js';
 export * from './seed/library.js';
 export * from './seed/problems.js';
+export * from './seed/design-prompts.js';
 export {
   DEFAULT_TEMPLATE_KEY,
   DRILL_TEMPLATE_KEY,

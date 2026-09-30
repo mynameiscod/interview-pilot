@@ -13,6 +13,7 @@ import { ErrorAlert, LoadingRow, ReasonForm } from '../ai/shared';
 import { campaignError } from '../campaigns/format';
 import { formatDateTime } from '../library/format';
 import { reviewKeys, useAdminInterview } from './queries';
+import { AssistantTranscripts, SimilarCode } from './CodingIntegrity';
 import { ReviseScoreForm } from './ReviseScoreForm';
 import { BandLabel, FlagBadge, InterviewStateBadge } from './shared';
 
@@ -521,6 +522,8 @@ export function InterviewDetailPage() {
           <Scores interview={interview.data} onNotice={setNotice} />
           <Reports interview={interview.data} />
           <Transcript interview={interview.data} />
+          <SimilarCode interview={interview.data} />
+          <AssistantTranscripts interview={interview.data} />
           <Evidence interview={interview.data} />
         </>
       )}

@@ -1,4 +1,4 @@
-import { AppEnv } from '@cbi/shared-types';
+import { AppEnv, parseLanguageIds } from '@cbi/shared-types';
 import { z } from 'zod';
 
 const booleanString = z
@@ -229,6 +229,14 @@ const judgeShape = {
   JUDGE0_AUTH_TOKEN: optionalString,
   /** Judge0 only: its MAX_SUBMISSION_BATCH_SIZE; larger test sets are sent in several batches. */
   JUDGE0_MAX_BATCH_SIZE: z.coerce.number().int().min(1).max(1000).default(20),
+  /**
+   * Judge0 only: language id overrides for this install, `language=id,…`
+   * (e.g. `typescript=94,go=95`); languages left out keep the Judge0 CE ids.
+   */
+  JUDGE0_LANGUAGE_IDS: optionalString.superRefine((value, ctx) => {
+    const parsed = parseLanguageIds(value);
+    if (!parsed.ok) ctx.addIssue({ code: 'custom', message: parsed.error });
+  }),
 };
 
 // --- Audit log retention ----------------------------------------------------------------------
@@ -542,6 +550,11 @@ export const workerEnvSchema = baseEnvSchema
     WORKER_WEBHOOK_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
     /** Longest a webhook receiver may take to answer before the attempt counts as failed. */
     WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30_000).default(10_000),
+    /**
+     * Campaign coding submissions at least this similar (0.5–1, shared winnowed
+     * fingerprints) to another candidate's are flagged for reviewers; never scored.
+     */
+    CODE_SIMILARITY_THRESHOLD: z.coerce.number().min(0.5).max(1).default(0.8),
     /** Report-ready emails; `disabled` skips them (the report is still shown in the app). */
     EMAIL_PROVIDER: z.enum(['ses', 'smtp', 'disabled']).default('disabled'),
     ...emailFields,

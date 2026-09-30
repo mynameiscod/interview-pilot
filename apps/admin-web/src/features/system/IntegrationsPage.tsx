@@ -84,6 +84,12 @@ const FIELDS: Record<Kind, { settings: SettingField[]; secrets: SecretField[] }>
         providers: ['codebegun', 'judge0'],
         placeholder: 'https://',
       },
+      {
+        name: 'languageIds',
+        type: 'text',
+        providers: ['judge0'],
+        placeholder: 'typescript=94,go=95',
+      },
     ],
     secrets: [
       { name: 'hmacSecret', providers: ['codebegun', 'judge0'] },

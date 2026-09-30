@@ -51,7 +51,8 @@
     "integrations": "Integrations",
     "account": "Your account",
     "candidates": "Candidates",
-    "orgs": "Organisations"
+    "orgs": "Organisations",
+    "designPrompts": "System design prompts"
   },
   "roles": {
     "SUPER_ADMIN": "Super admin",
@@ -523,7 +524,8 @@
       "PROBLEM_SOLVING": "Problem solving",
       "BEHAVIORAL": "Behavioral",
       "CODING": "Coding",
-      "WRAP_UP": "Wrap-up"
+      "WRAP_UP": "Wrap-up",
+      "SYSTEM_DESIGN": "System design"
     },
     "difficulty": {
       "EASY": "Easy",
@@ -773,7 +775,17 @@
       "reportSummary": "Dimension scores {{scores}} · transcript {{transcript}}",
       "saved": "{{key}} {{version}} was saved as a draft.",
       "activateExplain": "{{version}} becomes the version of {{key}} used by new interviews; the current active version is retired.",
-      "activated": "{{key}} {{version}} is now active."
+      "activated": "{{key}} {{version}} is now active.",
+      "aiAssist": {
+        "title": "AI assistant in coding rounds",
+        "hint": "Off by default. When allowed, candidates get an assistant chat in the editor (through the AI router, with a limit on messages). Candidates are told plainly, the whole conversation is kept, and it is evaluated as AI collaboration (prompt quality, verification, independence).",
+        "enable": "Allow the AI assistant in round {{n}}",
+        "maxTurns": "Messages",
+        "maxTurnsLabel": "Assistant messages per question in round {{n}}",
+        "allowFull": "Allow complete solutions in round {{n}} (otherwise hints and short snippets only)",
+        "badge_one": "AI assistant, {{count}} message",
+        "badge_other": "AI assistant, {{count}} messages"
+      }
     },
     "problems": {
       "title": "Coding problems",
@@ -849,8 +861,44 @@
         "hiddenTests": "Add 1–30 hidden tests; input and expected output up to 20,000 characters each.",
         "cpuMs": "Enter a whole number of milliseconds from 100 to 10000.",
         "memoryMb": "Enter a whole number of megabytes from 16 to 1024.",
-        "reason": "Enter a reason of 3–300 characters."
-      }
+        "reason": "Enter a reason of 3–300 characters.",
+        "companyTags": "Choose up to 4 company styles.",
+        "sqlSetup": "A SQL problem needs a schema script of up to 20,000 characters and the SQL language only."
+      },
+      "companyTags": "Company style (optional)",
+      "companyTagsHint": "Generic labels for the kind of employer that asks problems like this. Never use a real company's name.",
+      "companyTagNames": {
+        "product-company": "Product company",
+        "service-company": "Service company",
+        "fintech": "Fintech",
+        "startup": "Startup",
+        "e-commerce": "E-commerce",
+        "enterprise-saas": "Enterprise SaaS"
+      },
+      "sqlSettings": "SQL problem",
+      "sqlSetup": "Schema script",
+      "sqlSetupHint": "CREATE TABLE statements, run on SQLite before each test. Each test's input holds its rows (INSERT statements); the candidate's query runs after them and its rows are compared with the expected output (columns separated by |, one row per line). SQL problems use the SQL language only.",
+      "orderInsensitive": "Rows may come back in any order (compare after sorting the lines)"
+    },
+    "designPrompts": {
+      "title": "System design prompts",
+      "subtitle": "The prompts for system design rounds. Candidates see the prompt and the focus areas; the considerations are the rubric evaluation uses and are never shown to them. Versions are immutable: editing creates a new inactive version, and activating it makes it the one new interviews get.",
+      "new": "New design prompt",
+      "newTitle": "New system design prompt",
+      "newVersionTitle": "New version of {{key}} from v{{version}}",
+      "key": "Prompt key",
+      "titleField": "Title",
+      "prompt": "Prompt",
+      "difficulty": "Difficulty",
+      "tags": "Tags",
+      "focusAreas": "Focus areas (shown to candidates)",
+      "focusHint": "One per line, up to 8: what to think about, such as scale numbers or constraints.",
+      "considerations": "Considerations (the rubric)",
+      "considerationsHint": "One per line, 1–12: what a strong design covers. Never shown to candidates.",
+      "viewerLabel": "Design prompt {{label}}",
+      "activateExplain": "New system design rounds will get {{version}} of {{key}}. Interviews that already have it keep the version they started with.",
+      "deactivateExplain": "New system design rounds will not get {{key}} until another version is activated.",
+      "empty": "No design prompts yet."
     }
   },
   "payments": {
@@ -1649,6 +1697,24 @@
       "confidence": "Confidence",
       "practical": "Practical",
       "uncertainty": "Uncertain: {{note}}"
+    },
+    "similarity": {
+      "title": "Similar code in this campaign",
+      "note": "These coding submissions are very similar to another candidate's in the same campaign (compared after normalising names, layout and comments). It is an observation to review, not proof of copying, and it never affects scores.",
+      "problem": "Problem",
+      "other": "Other interview",
+      "similarity": "Similarity",
+      "containment": "Overlap with the shorter",
+      "checked": "Checked"
+    },
+    "assistant": {
+      "title": "Conversation with the AI assistant",
+      "problem_one": "{{title}} ({{count}} message)",
+      "problem_other": "{{title}} ({{count}} messages)",
+      "candidate": "Candidate",
+      "ai": "Assistant",
+      "unavailable": "(the assistant was unavailable)",
+      "redacted": "(long code was removed from this reply)"
     }
   },
   "analytics": {
@@ -2151,12 +2217,14 @@
           "fields": {
             "baseUrl": "Judge URL",
             "hmacSecret": "Signing secret",
-            "judge0AuthToken": "Judge0 auth token"
+            "judge0AuthToken": "Judge0 auth token",
+            "languageIds": "Language ids"
           },
           "hints": {
             "baseUrl": "The http(s) address of the judge.",
             "hmacSecret": "At least 32 characters. The judge’s verifying proxy must use the same secret.",
-            "judge0AuthToken": "Optional."
+            "judge0AuthToken": "Optional.",
+            "languageIds": "Optional. Only for languages whose id on your Judge0 install differs from Judge0 CE 1.13 (python=71, javascript=63, java=62, cpp=54, typescript=74, go=60, csharp=51, c=50, kotlin=78, rust=73, sql=82). Write language=id pairs separated by commas, e.g. typescript=94,go=95."
           }
         }
       }

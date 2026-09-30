@@ -164,6 +164,13 @@ export interface PdfMessages {
   /** Tips; {min} and {max} are the target pace. */
   deliveryTips: Record<DeliveryTip, string>;
   deliveryNote: string;
+  /** Coding line suffix when the round allowed the AI assistant. */
+  aiAssisted: string;
+  systemDesign: string;
+  aiCollaboration: string;
+  panelNote: string;
+  panelUnavailable: string;
+  notScored: string;
 }
 
 const PDF: Record<OutputLanguage, PdfMessages> = {
@@ -255,6 +262,13 @@ const PDF: Record<OutputLanguage, PdfMessages> = {
     },
     deliveryNote:
       'Delivery is coaching only and never affects your scores: pace and filler words vary with accent, language and speech differences.',
+    aiAssisted: 'AI assistant allowed',
+    systemDesign: 'System design',
+    aiCollaboration: 'AI collaboration',
+    panelNote:
+      'Assessed separately from the dimensions above; not part of the overall readiness score.',
+    panelUnavailable: 'The assessment model was unavailable, so this part was not scored.',
+    notScored: 'Not scored',
   },
   hi: {
     title: 'इंटरव्यू रेडीनेस रिपोर्ट',
@@ -345,6 +359,12 @@ const PDF: Record<OutputLanguage, PdfMessages> = {
     },
     deliveryNote:
       'बोलने का तरीका सिर्फ़ सलाह के लिए है और आपके स्कोर पर कभी असर नहीं डालता: गति और भराव शब्द लहजे, भाषा और बोलने के अंतर के साथ बदलते हैं।',
+    aiAssisted: 'AI सहायक की अनुमति थी',
+    systemDesign: 'सिस्टम डिज़ाइन',
+    aiCollaboration: 'AI के साथ काम',
+    panelNote: 'ऊपर के क्षेत्रों से अलग आँका गया; कुल तैयारी स्कोर का हिस्सा नहीं।',
+    panelUnavailable: 'आकलन मॉडल उपलब्ध नहीं था, इसलिए इस हिस्से का स्कोर नहीं दिया गया।',
+    notScored: 'स्कोर नहीं दिया गया',
   },
   te: {
     title: 'ఇంటర్వ్యూ సంసిద్ధత నివేదిక',
@@ -436,6 +456,12 @@ const PDF: Record<OutputLanguage, PdfMessages> = {
     },
     deliveryNote:
       'మాట్లాడే తీరు కేవలం సలహా కోసమే, మీ స్కోర్‌పై ఎప్పుడూ ప్రభావం చూపదు: వేగం, పూరక పదాలు యాస, భాష, మాట్లాడే తేడాలతో మారుతుంటాయి.',
+    aiAssisted: 'AI సహాయకుడికి అనుమతి ఉంది',
+    systemDesign: 'సిస్టమ్ డిజైన్',
+    aiCollaboration: 'AIతో కలిసి పని',
+    panelNote: 'పై అంశాల నుంచి వేరుగా అంచనా వేశాం; మొత్తం సంసిద్ధత స్కోర్‌లో భాగం కాదు.',
+    panelUnavailable: 'అంచనా మోడల్ అందుబాటులో లేదు, కాబట్టి ఈ భాగానికి స్కోర్ ఇవ్వలేదు.',
+    notScored: 'స్కోర్ ఇవ్వలేదు',
   },
 };
 

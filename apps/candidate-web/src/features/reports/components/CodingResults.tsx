@@ -36,6 +36,12 @@ export function CodingResults({ items }: { items: CodingReportItem[] }) {
                   {t('report.coding.language', { language: CODING_LANGUAGE_LABELS[item.language] })}
                 </>
               )}
+              {item.aiAssisted && (
+                <>
+                  {' · '}
+                  {t('report.coding.aiAssisted')}
+                </>
+              )}
             </p>
             <p className="mb-0">{outcome(t, item)}</p>
           </li>

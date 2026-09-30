@@ -57,6 +57,8 @@ import {
   loadCoding,
   mergeCodingEvidence,
 } from './coding.js';
+import { loadDesign } from './design.js';
+import { aiCollaborationPanel, systemDesignPanel } from './panels.js';
 
 export interface EvaluationDeps {
   ai: AiRuntime;
@@ -132,10 +134,11 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
   const keys = new Set(blueprint.competencies.map((c) => c.key));
   const rounds = [...new Set(turns.map((t) => t.roundIdx))].sort((a, b) => a - b);
   const coding = await loadCoding(s._id);
+  const design = await loadDesign(s._id);
 
   for (const roundIdx of rounds) {
     const roundTurns = turns.filter((t) => t.roundIdx === roundIdx);
-    const answered = answeredWithCode(roundTurns, coding);
+    const answered = answeredWithCode(roundTurns, coding, design);
     // Idempotent per run and round: a retried job replaces its own previous output.
     await InterviewEvidenceModel.deleteMany({ sessionId: s._id, run, roundIdx });
     if (answered.length === 0) continue;
@@ -193,6 +196,18 @@ async function extractEvidence(deps: EvaluationDeps, s: Session) {
       );
     }
   }
+
+  // Panels scored beside the role's dimensions (never part of the overall score).
+  const systemDesign = await systemDesignPanel(
+    deps,
+    { role: roleOf(blueprint), design, turns },
+    ctxOf(s),
+  );
+  const aiCollaboration = await aiCollaborationPanel(deps, coding, ctxOf(s));
+  await InterviewSessionModel.updateOne(
+    { _id: s._id },
+    { $set: { 'processing.draft.panels': { systemDesign, aiCollaboration } } },
+  );
 }
 
 /** Dimensions scored at the same time (each is an independent AI call). */
@@ -529,7 +544,7 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
         )
       : null;
 
-    const codingItems = codingReport(await loadCoding(s._id), turns);
+    const codingItems = codingReport(await loadCoding(s._id), turns, template.rounds);
     const now = deps.now?.() ?? new Date();
     const family = s.analysis?.detectedRole.family ?? null;
     const benchmark = await peerBenchmark({
@@ -540,6 +555,7 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
       family,
       now,
     });
+    const panels = s.processing?.draft.panels;
 
     const content: ReportContent = buildReportContent({
       integrity,
@@ -556,6 +572,8 @@ async function buildReport(deps: EvaluationDeps, s: Session) {
           : [],
       ),
       benchmark,
+      systemDesign: panels?.systemDesign ?? null,
+      aiCollaboration: panels?.aiCollaboration ?? null,
       header: {
         title: s.analysis?.detectedRole.title ?? template.name,
         companyName: target?.companyName ?? target?.structured?.companyName ?? null,

@@ -1,6 +1,12 @@
 import {
   AiUsageModel,
   CampaignModel,
+  CodeSimilarityFlagModel,
+  CodingAttemptModel,
+  ProblemModel,
+  type CodeSimilarityFlagRecord,
+  type CodingAttemptRecord,
+  type ProblemRecord,
   InterviewEvidenceModel,
   InterviewReportModel,
   InterviewScoreModel,
@@ -188,7 +194,7 @@ export function createReviewService(deps: {
     /** The full record for a reviewer; every view is audited (it shows a candidate's answers). */
     async detail(id: string, actorId: string, ctx: ClientContext): Promise<AdminInterviewDetail> {
       const s = await session(id);
-      const [[row], turns, evidence, scores, reports, cost] = await Promise.all([
+      const [[row], turns, evidence, scores, reports, cost, similar, assisted] = await Promise.all([
         rows([s]),
         InterviewTurnModel.find({ sessionId: s._id }).sort({ seq: 1 }).lean(),
         s.processing
@@ -204,7 +210,30 @@ export function createReviewService(deps: {
           { $match: { sessionId: String(s._id) } },
           { $group: { _id: null, total: { $sum: '$costMicros' } } },
         ]),
+        CodeSimilarityFlagModel.find({ $or: [{ 'a.sessionId': s._id }, { 'b.sessionId': s._id }] })
+          .sort({ similarity: -1 })
+          .limit(50)
+          .lean<CodeSimilarityFlagRecord[]>(),
+        CodingAttemptModel.find(
+          { sessionId: s._id, 'assistant.messages.0': { $exists: true } },
+          { problemId: 1, assistant: 1 },
+        ).lean<CodingAttemptRecord[]>(),
       ]);
+      const otherSide = (f: CodeSimilarityFlagRecord) =>
+        String(f.a.sessionId) === String(s._id) ? f.b : f.a;
+      const others = await UserModel.find(
+        { _id: { $in: similar.map((f) => otherSide(f).userId) } },
+        { primaryEmail: 1 },
+      ).lean();
+      const emails = new Map(others.map((u) => [String(u._id), u.primaryEmail ?? null]));
+      const problemTitles = new Map(
+        (
+          await ProblemModel.find(
+            { _id: { $in: assisted.map((a) => a.problemId) } },
+            { 'content.title': 1 },
+          ).lean<ProblemRecord[]>()
+        ).map((p) => [String(p._id), p.content.title]),
+      );
       await audit.record(
         {
           actorType: 'ADMIN',
@@ -244,6 +273,26 @@ export function createReviewService(deps: {
           generatedAt: iso(r.generatedAt),
         })),
         aiCostMicros: cost[0]?.total ?? 0,
+        codeSimilarity: similar.map((f) => ({
+          problemTitle: f.problemTitle,
+          language: f.language,
+          similarity: f.similarity,
+          containment: f.containment,
+          threshold: f.threshold,
+          otherInterviewId: String(otherSide(f).sessionId),
+          otherCandidateEmail: emails.get(String(otherSide(f).userId)) ?? null,
+          computedAt: iso(f.computedAt),
+        })),
+        assistantTranscripts: assisted.map((a) => ({
+          problemTitle: problemTitles.get(String(a.problemId)) ?? 'Coding problem',
+          messages: (a.assistant?.messages ?? []).map((m) => ({
+            role: m.role,
+            text: m.text,
+            at: iso(m.at),
+            unavailable: m.unavailable,
+            redacted: m.redacted,
+          })),
+        })),
       };
     },
 

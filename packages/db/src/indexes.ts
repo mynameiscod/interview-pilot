@@ -38,7 +38,8 @@ import {
   ShareLinkModel,
   SystemSettingModel,
 } from './models/ops.js';
-import { CodingAttemptModel, ProblemModel } from './models/coding.js';
+import { CodeSimilarityFlagModel, CodingAttemptModel, ProblemModel } from './models/coding.js';
+import { DesignAttemptModel, DesignPromptModel } from './models/design.js';
 import {
   BadgeAwardModel,
   CertificateModel,
@@ -119,6 +120,9 @@ const MODELS = [
   IntegrityEventModel,
   ProblemModel,
   CodingAttemptModel,
+  CodeSimilarityFlagModel,
+  DesignPromptModel,
+  DesignAttemptModel,
   CampaignModel,
   CampaignApplicationModel,
   CampaignExportModel,

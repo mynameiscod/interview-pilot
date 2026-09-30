@@ -29,6 +29,7 @@ import { usersRouter } from './modules/users/users.routes.js';
 import { legalRouter } from './modules/users/legal.routes.js';
 import { voiceInterviewRouter, voiceRouter } from './modules/voice/voice.routes.js';
 import { codingInterviewRouter } from './modules/coding/coding.routes.js';
+import { designInterviewRouter } from './modules/design/design.routes.js';
 import {
   mediaInterviewRouter,
   mediaPlaybackRouter,
@@ -145,6 +146,7 @@ export function createApp(deps: AppDependencies): Express {
   v1.use('/interviews', mediaInterviewRouter(c));
   v1.use('/interviews', codingInterviewRouter(c));
   v1.use('/interviews', identityInterviewRouter(c));
+  v1.use('/interviews', designInterviewRouter(c));
   v1.use('/media', mediaPlaybackRouter(c));
   v1.use('/interviews', interviewsRouter(c));
   v1.use('/drills', drillsRouter(c));

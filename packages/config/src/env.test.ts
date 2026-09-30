@@ -323,6 +323,17 @@ describe('judge settings', () => {
     );
     expect(() => loadEnv(apiEnvSchema, withoutJudge)).toThrow(/mock judge/);
   });
+
+  it('accepts Judge0 language id overrides and refuses malformed ones', () => {
+    expect(
+      loadEnv(workerEnvSchema, { ...base, JUDGE0_LANGUAGE_IDS: 'typescript=94,go=95' })
+        .JUDGE0_LANGUAGE_IDS,
+    ).toBe('typescript=94,go=95');
+    expect(loadEnv(apiEnvSchema, base).JUDGE0_LANGUAGE_IDS).toBeUndefined();
+    expect(() => loadEnv(apiEnvSchema, { ...base, JUDGE0_LANGUAGE_IDS: 'cobol=5' })).toThrow(
+      /JUDGE0_LANGUAGE_IDS/,
+    );
+  });
 });
 
 describe('audit log retention', () => {

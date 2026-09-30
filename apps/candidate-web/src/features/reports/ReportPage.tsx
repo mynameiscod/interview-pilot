@@ -9,6 +9,7 @@ import { RecordingCard } from '../media/RecordingCard';
 import { CertificatePanel } from '../progress/CertificatePanel';
 import { SharePanel } from '../proof/SharePanel';
 import { BenchmarkCard } from './components/BenchmarkCard';
+import { AssessmentPanelView } from './components/AssessmentPanelView';
 import { CodingResults } from './components/CodingResults';
 import { DeliverySection } from './components/DeliverySection';
 import { DimensionBars } from './components/DimensionBars';
@@ -92,6 +93,12 @@ function ReportView({ report }: { report: ReportSummary }) {
           <DimensionBars dimensions={content.dimensions} />
           <StrengthsAndGaps content={content} />
           {content.coding && content.coding.length > 0 && <CodingResults items={content.coding} />}
+          {content.systemDesign && (
+            <AssessmentPanelView kind="systemDesign" panel={content.systemDesign} />
+          )}
+          {content.aiCollaboration && (
+            <AssessmentPanelView kind="aiCollaboration" panel={content.aiCollaboration} />
+          )}
           <RoundsAndCoverage content={content} />
         </>
       ),

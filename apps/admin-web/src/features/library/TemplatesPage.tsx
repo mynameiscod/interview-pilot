@@ -55,7 +55,14 @@ function TemplateViewer({ template }: { template: TemplateSummary }) {
             {c.rounds.map((r, i) => (
               <tr key={i}>
                 <th scope="row">{i + 1}</th>
-                <td>{t(`library.roundTypes.${r.type}`)}</td>
+                <td>
+                  {t(`library.roundTypes.${r.type}`)}
+                  {r.aiAssist?.enabled && (
+                    <span className="badge text-bg-light border ms-1">
+                      {t('library.templates.aiAssist.badge', { count: r.aiAssist.maxTurns })}
+                    </span>
+                  )}
+                </td>
                 <td className="text-end">{minutes(r.durationSec)}</td>
                 <td className="text-end">{r.questionCount}</td>
                 <td>{t(`library.difficulty.${r.difficulty}`)}</td>

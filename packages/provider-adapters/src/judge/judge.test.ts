@@ -3,6 +3,7 @@ import {
   createCodeBegunJudge,
   createJudge0Adapter,
   createMockJudge,
+  judge0LanguageIds,
   judge0Verdict,
 } from './adapters.js';
 import {
@@ -236,6 +237,56 @@ describe('Judge0 adapter', () => {
     expect(posted).toEqual([8, 8, 4]);
   });
 
+  it('uses per-install language ids, prepends SQL preludes and leaves unordered checks to the caller', async () => {
+    const bodies: { submissions: Record<string, unknown>[] }[] = [];
+    const fetchImpl = vi.fn(async (url: string, init: { method: string; body?: string }) => {
+      if (init.method === 'POST') {
+        bodies.push(JSON.parse(init.body!));
+        return json(201, [{ token: 'a' }, { token: 'b' }]);
+      }
+      if (String(url).endsWith('/languages')) return json(200, [{ id: 94 }, { id: 82 }]);
+      return json(200, { submissions: [{ status_id: 3 }, { status_id: 3 }] });
+    });
+    const judge = createJudge0Adapter({
+      baseUrl: 'http://judge0.internal:2358',
+      hmacSecret: 'k',
+      languageIds: judge0LanguageIds('typescript=94'),
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await judge.submit({
+      language: 'typescript',
+      source: 'console.log(1)',
+      tests: [{ input: '', expectedOutput: '1\n' }],
+      limits: { cpuMs: 1000, memoryMb: 64 },
+    });
+    expect(bodies[0]!.submissions[0]).toMatchObject({ language_id: 94 });
+    await judge.submit({
+      language: 'sql',
+      source: 'SELECT 1;',
+      tests: [
+        {
+          input: '',
+          expectedOutput: '1\n',
+          prelude: 'CREATE TABLE t(x);',
+          compare: 'UNORDERED_LINES',
+        },
+        { input: '', expectedOutput: '1\n', prelude: 'CREATE TABLE t(x);', compare: 'EXACT' },
+      ],
+      limits: { cpuMs: 1000, memoryMb: 64 },
+    });
+    const [unordered, exact] = bodies[1]!.submissions;
+    expect(unordered).toMatchObject({ language_id: 82 });
+    expect(Buffer.from(String(unordered!.source_code), 'base64').toString()).toBe(
+      'CREATE TABLE t(x);\nSELECT 1;',
+    );
+    expect(unordered).not.toHaveProperty('expected_output');
+    expect(exact).toHaveProperty('expected_output');
+    // Only languages whose (overridden) id the install has are offered.
+    expect(await judge.listLanguages()).toEqual(['typescript', 'sql']);
+    expect(judge0LanguageIds('nonsense')).toEqual({});
+    expect(judge0LanguageIds(undefined)).toEqual({});
+  });
+
   it('maps every Judge0 status to a verdict', () => {
     expect([3, 4, 5, 6, 7, 11, 13, 14].map(judge0Verdict)).toEqual([
       'ACCEPTED',
@@ -269,5 +320,29 @@ describe('mock judge', () => {
     await expect(run('print(1)')).rejects.toBeInstanceOf(JudgeUnavailableError);
     mock.setDown(false);
     expect(await mock.adapter.listLanguages()).toContain('cpp');
+    expect(await mock.adapter.listLanguages()).toContain('sql');
+  });
+
+  it('answers custom-input runs with a fixed line and reports crashes', async () => {
+    const mock = createMockJudge();
+    const custom = await runOnJudge(
+      mock.adapter,
+      {
+        ...request,
+        source: 'print(input()) # MOCK_PASS_0',
+        tests: [{ input: 'hello\n', expectedOutput: '', compare: 'NONE' }],
+      },
+      { waitMs: 1000, sleep: noSleep },
+    );
+    expect(custom.tests[0]).toMatchObject({
+      verdict: 'ACCEPTED',
+      stdout: '[mock judge] read 6 characters of input\n',
+    });
+    const crashed = await runOnJudge(
+      mock.adapter,
+      { ...request, source: 'MOCK_RUNTIME_ERROR' },
+      { waitMs: 1000, sleep: noSleep },
+    );
+    expect(crashed.tests.every((t) => t.verdict === 'RUNTIME_ERROR' && t.stderr)).toBe(true);
   });
 });

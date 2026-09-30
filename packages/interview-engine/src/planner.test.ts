@@ -364,6 +364,27 @@ describe('planner basics', () => {
     expect(competenciesForRound('BEHAVIORAL', tagged).map((c) => c.key)).toEqual(['collaboration']);
     expect(competenciesForRound('WRAP_UP', BLUEPRINT.competencies)).toEqual([]);
   });
+
+  it('assesses system design rounds with the competencies that name them, else technical ones', () => {
+    // Older blueprints never name SYSTEM_DESIGN: technical and problem-solving competencies stand in.
+    expect(competenciesForRound('SYSTEM_DESIGN', BLUEPRINT.competencies).map((c) => c.key)).toEqual(
+      ['api-design', 'data-modelling', 'system-design', 'debugging'],
+    );
+    const named = BLUEPRINT.competencies.map((c) =>
+      c.key === 'system-design'
+        ? { ...c, roundTypes: [...c.roundTypes, 'SYSTEM_DESIGN' as const] }
+        : c,
+    );
+    expect(competenciesForRound('SYSTEM_DESIGN', named).map((c) => c.key)).toEqual([
+      'system-design',
+    ]);
+    const p = started([round('SYSTEM_DESIGN', { questionCount: 2, followUpDepth: 1 })]);
+    const step = nextStep(p, { ...BLUEPRINT, competencies: named }, 0);
+    expect(step).toMatchObject({
+      kind: 'ASK',
+      target: { roundType: 'SYSTEM_DESIGN', competencyKey: 'system-design', probeTopic: null },
+    });
+  });
 });
 
 function mulberry32(seed: number) {

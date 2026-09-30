@@ -1,8 +1,10 @@
 import {
   CODING_LIMITS,
+  type AssistantState,
   type CodeRunResult,
   type CodingLanguage,
   type CodingSubmission,
+  type CustomRunResult,
   type SaveCodeBody,
 } from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
@@ -20,7 +22,9 @@ import { codingKeys, useCodingApi } from './coding-api';
  */
 export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'retrying' | 'tooLong' | 'closed';
 
-export type RunProblem = 'rateLimited' | 'runFailed' | 'submitFailed' | 'closed';
+export type RunProblem = 'rateLimited' | 'runFailed' | 'submitFailed' | 'closed' | 'inputTooLong';
+
+export type AssistProblem = 'rateLimited' | 'usedUp' | 'failed';
 
 const encoder = new TextEncoder();
 export const codeBytes = (code: string) => encoder.encode(code).length;
@@ -55,9 +59,13 @@ export function useCodingWorkspace(
   const [lastRun, setLastRun] = useState<CodeRunResult | null | undefined>(undefined);
   const [submission, setSubmission] = useState<CodingSubmission | null | undefined>(undefined);
   const [status, setStatus] = useState<SaveStatus>('saved');
-  const [busy, setBusy] = useState<'run' | 'submit' | null>(null);
+  const [busy, setBusy] = useState<'run' | 'custom' | 'submit' | null>(null);
   const [judgeDown, setJudgeDown] = useState(false);
   const [problem, setProblem] = useState<RunProblem | null>(null);
+  const [customResult, setCustomResult] = useState<CustomRunResult | null>(null);
+  const [assistant, setAssistant] = useState<AssistantState | null | undefined>(undefined);
+  const [assistBusy, setAssistBusy] = useState(false);
+  const [assistProblem, setAssistProblem] = useState<AssistProblem | null>(null);
 
   const shownRun = lastRun === undefined ? (data?.lastRun ?? null) : lastRun;
   const shownSubmission = submission === undefined ? (data?.submission ?? null) : submission;
@@ -232,6 +240,66 @@ export function useCodingWorkspace(
     }
   }
 
+  /** Sends one message to the round's AI assistant (the code goes with it and is saved). */
+  async function assist(message: string): Promise<boolean> {
+    const body = latest.current;
+    if (!body || assistBusy || submitted || tooLong) return false;
+    setAssistBusy(true);
+    setAssistProblem(null);
+    try {
+      const ws = await api.assist(sessionId, questionId, { ...body, message });
+      saved.current = keyOf(body);
+      setAssistant(ws.assistant);
+      if (mounted.current) {
+        const now = latest.current;
+        if (now && keyOf(now) === saved.current) setStatus('saved');
+      }
+      return true;
+    } catch (err) {
+      const code = errorCode(err);
+      setAssistProblem(
+        code === 'QUOTA_EXCEEDED' ? 'usedUp' : code === 'RATE_LIMITED' ? 'rateLimited' : 'failed',
+      );
+      return false;
+    } finally {
+      if (mounted.current) setAssistBusy(false);
+    }
+  }
+
+  /** Runs the code once with the candidate's own input; nothing is compared or counted. */
+  async function customRun(stdin: string) {
+    const body = latest.current;
+    if (!body || busy || submitted || tooLong) return;
+    clearTimer();
+    setBusy('custom');
+    setProblem(null);
+    try {
+      const result = await api.customRun(sessionId, questionId, { ...body, stdin });
+      saved.current = keyOf(body);
+      setCustomResult(result);
+      setJudgeDown(false);
+    } catch (err) {
+      const code = errorCode(err);
+      if (code === 'JUDGE_UNAVAILABLE') {
+        saved.current = keyOf(body);
+        setJudgeDown(true);
+      } else if (code === 'RATE_LIMITED') {
+        setProblem('rateLimited');
+      } else if (code === 'PAYLOAD_TOO_LARGE') {
+        setProblem('inputTooLong');
+      } else {
+        setProblem('runFailed');
+      }
+    } finally {
+      if (mounted.current) {
+        setBusy(null);
+        const now = latest.current;
+        if (now && keyOf(now) === saved.current) setStatus('saved');
+        else void saveNow();
+      }
+    }
+  }
+
   async function submit(): Promise<boolean> {
     const body = latest.current;
     if (!body || busy || submitted || tooLong) return false;
@@ -284,10 +352,16 @@ export function useCodingWorkspace(
     dismissProblem: () => setProblem(null),
     lastRun: shownRun,
     submission: shownSubmission,
+    customResult,
+    assistant: assistant === undefined ? (data?.assistant ?? null) : assistant,
+    assistBusy,
+    assistProblem,
+    assist,
     setCode,
     setLanguage,
     saveNow,
     run,
+    customRun,
     submit,
   };
 }

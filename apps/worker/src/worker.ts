@@ -14,6 +14,8 @@ import {
   QueueName,
   type CampaignPackageJobData,
   type CertificatePdfJobData,
+  codeSimilarityJobId,
+  type CodeSimilarityJobData,
   type EvaluationStageJobData,
   type ReportPdfJobData,
   type InterviewAnalyzeJobData,
@@ -57,6 +59,8 @@ import { runPracticeNudges, type PracticeNudgeDeps } from './processors/practice
 import { rollupProviderHealth } from './processors/provider-health.js';
 import { runInviteMailer, type InviteMailerDeps } from './processors/invite-mailer.js';
 import { runWebhookDispatch, type WebhookDispatchDeps } from './processors/webhook-dispatch.js';
+import { processCodeSimilarity } from './processors/code-similarity.js';
+import { DEFAULT_THRESHOLD } from './integrity/code-similarity.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
@@ -106,8 +110,11 @@ export interface WorkerRuntimeOptions {
   analyticsRollupIntervalMs?: number;
   /** Practice nudge emails (opted-in candidates, one per 3 days at most); omit to disable. */
   nudges?: { deps: Omit<PracticeNudgeDeps, 'logger' | 'now'>; intervalMs: number };
-  /** The evaluation pipeline (evidence, scores, report, PDF, email); omit to leave it unconsumed. */
-  evaluation?: { deps: EvaluationDeps; concurrency: number };
+  /**
+   * The evaluation pipeline (evidence, scores, report, PDF, email) and, for
+   * campaign interviews, the code similarity check; omit to leave it unconsumed.
+   */
+  evaluation?: { deps: EvaluationDeps; concurrency: number; similarityThreshold?: number };
   /** Campaign package exports and the sweep of expired files; omit to leave the queue unconsumed. */
   exports?: { deps: CampaignExportDeps; concurrency: number; sweepIntervalMs: number };
   /** Organisations' campaign invites and reminders; omit to disable. */
@@ -456,12 +463,27 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             await processCertificatePdf(deps, certificateId);
             return;
           }
+          if (job.name === EvaluationJob.CODE_SIMILARITY) {
+            await processCodeSimilarity({
+              sessionId: (job.data as CodeSimilarityJobData).sessionId,
+              threshold: opts.evaluation!.similarityThreshold ?? DEFAULT_THRESHOLD,
+              logger: opts.logger,
+            });
+            return;
+          }
           if (job.name !== EvaluationJob.STAGE)
             throw new Error(`Unknown evaluation job: ${job.name}`);
           const data = job.data as EvaluationStageJobData;
           const outcome = await runEvaluationStage(deps, data, isFinalAttempt(job));
           if (outcome.status === 'done' && outcome.next) {
             await ensureStageJob(evaluationQueue, { ...data, stage: outcome.next });
+          }
+          // Once the report exists, campaign submissions are compared (never part of the score).
+          if (outcome.status === 'done' && data.stage === 'BUILD_REPORT') {
+            const payload: CodeSimilarityJobData = { sessionId: data.sessionId };
+            await evaluationQueue.add(EvaluationJob.CODE_SIMILARITY, payload, {
+              jobId: codeSimilarityJobId(data.sessionId, data.run),
+            });
           }
         },
         // AI scoring and PDF rendering can take a while; keep the lock long enough.

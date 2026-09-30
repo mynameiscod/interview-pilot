@@ -44,6 +44,8 @@ export const EvaluationJob = {
   REPORT_PDF: 'evaluation.report_pdf',
   /** A readiness certificate's PDF (progress hub). */
   CERTIFICATE_PDF: 'evaluation.certificate_pdf',
+  /** Campaign interviews: compare coding submissions with the campaign's others (never scored). */
+  CODE_SIMILARITY: 'evaluation.code_similarity',
 } as const;
 export type EvaluationJob = (typeof EvaluationJob)[keyof typeof EvaluationJob];
 
@@ -65,6 +67,14 @@ export interface CertificatePdfJobData {
 
 /** One job per certificate: issuing it twice is a no-op. */
 export const certificatePdfJobId = (certificateId: string) => `certificate-pdf-${certificateId}`;
+
+export interface CodeSimilarityJobData {
+  sessionId: string;
+}
+
+/** One similarity check per session and pipeline run: enqueueing it twice is a no-op. */
+export const codeSimilarityJobId = (sessionId: string, run: number) =>
+  `code-similarity-${sessionId}-${run}`;
 
 /** Deterministic id per session, stage and run: enqueueing a stage twice is a no-op. */
 export const evaluationJobId = (sessionId: string, stage: ProcessingStage, run: number) =>

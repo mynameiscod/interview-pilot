@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import type { CodingLanguage, JudgeVerdict } from '@cbi/shared-types';
+import type { CodingLanguage, JudgeTestSpec, JudgeVerdict } from '@cbi/shared-types';
 import { ProviderError } from '../errors.js';
 
 /**
@@ -7,10 +7,14 @@ import { ProviderError } from '../errors.js';
  * judge on a separate host; this package never executes it. Requests are
  * signed with HMAC-SHA256 over `timestamp.METHOD.path.sha256(body)`.
  */
-export interface JudgeTestCase {
-  input: string;
-  expectedOutput: string;
-}
+
+/**
+ * One test: stdin and expected stdout, an optional prelude that runs before
+ * the source in the same program (SQL schema and rows), and how the output is
+ * compared. Judges compare only `EXACT` tests; `UNORDERED_LINES` is checked by
+ * the caller after the run and `NONE` (custom input) is never compared.
+ */
+export type JudgeTestCase = JudgeTestSpec;
 
 export interface JudgeRequest {
   language: CodingLanguage;

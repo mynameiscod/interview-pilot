@@ -16,7 +16,7 @@ import {
   type RoleAnalysis,
   type RoundType,
 } from '@cbi/shared-types';
-import type { CodingReportItem, IntegritySummary } from '@cbi/shared-types';
+import type { AssessmentPanel, CodingReportItem, IntegritySummary } from '@cbi/shared-types';
 import type { OutputLanguage } from './language.js';
 import { quoteFound } from './quotes.js';
 import { structureInsight } from './star.js';
@@ -105,6 +105,9 @@ export interface ReportInputs {
   delivery?: readonly { questionId: string; seq: number; metrics: DeliveryMetrics }[];
   /** Percentile among other candidates, when the sample is large enough. */
   benchmark?: PeerBenchmark | null;
+  /** System design and AI collaboration panels (null when the interview had none). */
+  systemDesign?: AssessmentPanel | null;
+  aiCollaboration?: AssessmentPanel | null;
 }
 
 const mentions = (haystack: string, needle: string) =>
@@ -232,6 +235,8 @@ export function buildReportContent(input: ReportInputs): ReportContent {
     integrity: input.integrity ?? null,
     ...(input.coding?.length ? { coding: input.coding } : {}),
     ...coaching(input),
+    ...(input.systemDesign ? { systemDesign: input.systemDesign } : {}),
+    ...(input.aiCollaboration ? { aiCollaboration: input.aiCollaboration } : {}),
     disclaimer: REPORT_DISCLAIMER,
   });
 }

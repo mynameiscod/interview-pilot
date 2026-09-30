@@ -35,8 +35,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - analytics events: telemetry, not a state change;
  * - unsubscribing from emails: opting out must always work;
  * - an interview that is already running: ending it, switching mode,
- *   transcribing, coding answers and recording segments (maintenance stops
- *   new interviews only; creating, setting up and starting one is refused).
+ *   transcribing, coding and design answers and recording segments
+ *   (maintenance stops new interviews only; creating, setting up and
+ *   starting one is refused).
  */
 export const MAINTENANCE_EXEMPT_PATHS: readonly RegExp[] = [
   /^\/auth\//,
@@ -45,7 +46,7 @@ export const MAINTENANCE_EXEMPT_PATHS: readonly RegExp[] = [
   /^\/payments\/(webhooks\/|verify$|mock\/)/,
   /^\/analytics\/events$/,
   /^\/email\/unsubscribe$/,
-  /^\/interviews\/[^/]+\/(end|mode|voice\/transcribe|coding\/.+|media\/segments\/[^/]+|media\/finalize)$/,
+  /^\/interviews\/[^/]+\/(end|mode|voice\/transcribe|coding\/.+|design\/.+|media\/segments\/[^/]+|media\/finalize)$/,
 ];
 
 /** Whether maintenance mode refuses this request (a candidate write outside the exemptions). */

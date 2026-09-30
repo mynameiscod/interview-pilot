@@ -2,6 +2,7 @@ import {
   CODING_LANGUAGE_LABELS,
   CODING_LIMITS,
   CodingLanguage,
+  CompanyStyleTag,
   CreateProblemVersionBody,
   Difficulty,
   type ProblemContent,
@@ -38,8 +39,12 @@ type ProblemFormValues = {
   statement: string;
   difficulty: Difficulty;
   tags: string;
+  companyTags: CompanyStyleTag[];
   languages: CodingLanguage[];
   starterCode: Record<CodingLanguage, string>;
+  /** SQL problems: the schema script and whether row order matters. */
+  sqlSetup: string;
+  orderInsensitive: boolean;
   visibleTests: TestRow[];
   hiddenTests: TestRow[];
   cpuMs: string;
@@ -53,7 +58,9 @@ type ProblemField =
   | 'statement'
   | 'difficulty'
   | 'tags'
+  | 'companyTags'
   | 'languages'
+  | 'sqlSetup'
   | 'starterCode'
   | 'visibleTests'
   | 'hiddenTests'
@@ -66,6 +73,7 @@ const CONTENT_FIELDS: ReadonlySet<string> = new Set([
   'statement',
   'difficulty',
   'tags',
+  'companyTags',
   'languages',
   'starterCode',
   'visibleTests',
@@ -78,6 +86,7 @@ function problemField(path: string): ProblemField | null {
   const [root, key, sub] = path.split('.');
   if (root !== 'content' || !key) return null;
   if (key === 'limits') return sub === 'cpuMs' || sub === 'memoryMb' ? sub : null;
+  if (key === 'sql') return 'sqlSetup';
   return CONTENT_FIELDS.has(key) ? (key as ProblemField) : null;
 }
 
@@ -89,7 +98,10 @@ const toForm = (key: string | null, content: ProblemContent | null): ProblemForm
   statement: content?.statement ?? '',
   difficulty: content?.difficulty ?? 'EASY',
   tags: content?.tags.join(', ') ?? '',
+  companyTags: content?.companyTags ? [...content.companyTags] : [],
   languages: content ? [...content.languages] : ['python'],
+  sqlSetup: content?.sql?.setup ?? '',
+  orderInsensitive: content?.sql?.orderInsensitive ?? true,
   starterCode: Object.fromEntries(
     CodingLanguage.options.map((lang) => [lang, content?.starterCode[lang] ?? '']),
   ) as Record<CodingLanguage, string>,
@@ -105,11 +117,14 @@ const toForm = (key: string | null, content: ProblemContent | null): ProblemForm
 });
 
 /** A checkbox group reads back as an array, but be safe about a lone value. */
-const selectedLanguages = (value: unknown): CodingLanguage[] => {
-  const list = Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
-  // Keep the canonical order whatever order the boxes were ticked in.
-  return CodingLanguage.options.filter((lang) => list.includes(lang));
-};
+const checked = (value: unknown): unknown[] =>
+  Array.isArray(value) ? value : typeof value === 'string' ? [value] : [];
+
+// Keep the canonical order whatever order the boxes were ticked in.
+const selectedLanguages = (value: unknown): CodingLanguage[] =>
+  CodingLanguage.options.filter((lang) => checked(value).includes(lang));
+const selectedCompanyTags = (value: unknown): CompanyStyleTag[] =>
+  CompanyStyleTag.options.filter((tag) => checked(value).includes(tag));
 
 /**
  * The API body. Test input and expected output are compared exactly by the
@@ -124,6 +139,7 @@ const toProblemBody = (values: ProblemFormValues) => {
       statement: values.statement.trim(),
       difficulty: values.difficulty,
       tags: splitList(values.tags),
+      companyTags: selectedCompanyTags(values.companyTags),
       languages,
       starterCode: Object.fromEntries(
         languages.map((lang) => [lang, values.starterCode[lang] ?? '']),
@@ -139,6 +155,10 @@ const toProblemBody = (values: ProblemFormValues) => {
         explanation: null,
       })),
       limits: { cpuMs: requiredInt(values.cpuMs), memoryMb: requiredInt(values.memoryMb) },
+      // The schema is run as typed (like test input), so it is not trimmed.
+      sql: languages.includes('sql')
+        ? { setup: values.sqlSetup, orderInsensitive: values.orderInsensitive }
+        : null,
     },
     reason: values.reason.trim(),
   };
@@ -430,6 +450,67 @@ export function ProblemEditor({
         </div>
         <FieldError id={errorId('languages')} message={message('languages')} />
       </fieldset>
+
+      <fieldset
+        className="mb-3"
+        aria-invalid={hasError('companyTags') ? true : undefined}
+        aria-describedby={[describedBy('companyTags'), `${id}-companyTags-hint`].join(' ').trim()}
+      >
+        <legend className="form-label fs-6">{t('library.problems.companyTags')}</legend>
+        <div className="d-flex flex-wrap gap-3">
+          {CompanyStyleTag.options.map((tag) => (
+            <div className="form-check" key={tag}>
+              <input
+                id={`${id}-company-${tag}`}
+                type="checkbox"
+                className="form-check-input"
+                value={tag}
+                {...register('companyTags')}
+              />
+              <label htmlFor={`${id}-company-${tag}`} className="form-check-label">
+                {t(`library.problems.companyTagNames.${tag}`)}
+              </label>
+            </div>
+          ))}
+        </div>
+        <div id={`${id}-companyTags-hint`} className="form-text">
+          {t('library.problems.companyTagsHint')}
+        </div>
+        <FieldError id={errorId('companyTags')} message={message('companyTags')} />
+      </fieldset>
+
+      {languages.includes('sql') && (
+        <fieldset className="mb-3" aria-describedby={describedBy('sqlSetup')}>
+          <legend className="form-label fs-6">{t('library.problems.sqlSettings')}</legend>
+          <label htmlFor={`${id}-sqlSetup`} className="form-label small mb-0">
+            {t('library.problems.sqlSetup')}
+          </label>
+          <textarea
+            id={`${id}-sqlSetup`}
+            rows={6}
+            spellCheck={false}
+            className={`form-control form-control-sm font-monospace ${invalidClass('sqlSetup')}`}
+            aria-invalid={hasError('sqlSetup') ? true : undefined}
+            aria-describedby={`${id}-sqlSetup-hint`}
+            {...register('sqlSetup')}
+          />
+          <div id={`${id}-sqlSetup-hint`} className="form-text mb-2">
+            {t('library.problems.sqlSetupHint')}
+          </div>
+          <div className="form-check">
+            <input
+              id={`${id}-orderInsensitive`}
+              type="checkbox"
+              className="form-check-input"
+              {...register('orderInsensitive')}
+            />
+            <label htmlFor={`${id}-orderInsensitive`} className="form-check-label">
+              {t('library.problems.orderInsensitive')}
+            </label>
+          </div>
+          <FieldError id={errorId('sqlSetup')} message={message('sqlSetup')} />
+        </fieldset>
+      )}
 
       <fieldset className="mb-3" aria-describedby={describedBy('starterCode')}>
         <legend className="form-label fs-6">{t('library.problems.starterCode')}</legend>

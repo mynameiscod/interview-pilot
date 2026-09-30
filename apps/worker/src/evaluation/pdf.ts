@@ -11,6 +11,7 @@ import {
   DELIVERY_TARGETS,
   INTEGRITY_NOTE,
   STAR_PARTS,
+  type AssessmentPanel,
   type ReportContent,
 } from '@cbi/shared-types';
 import PDFDocument from 'pdfkit';
@@ -266,10 +267,31 @@ function render(
             ? fill(m.testsPassed, { passed: c.passed, total: c.total ?? '-' })
             : m.noSolution;
         bullet(
-          `${c.title} (${m.difficulties[c.difficulty]}${c.language ? `, ${c.language}` : ''}): ${outcome}${c.submitted ? '' : ` - ${m.notSubmitted}`}`,
+          `${c.title} (${m.difficulties[c.difficulty]}${c.language ? `, ${c.language}` : ''}${c.aiAssisted ? `, ${m.aiAssisted}` : ''}): ${outcome}${c.submitted ? '' : ` - ${m.notSubmitted}`}`,
         );
       }
     }
+
+    // Panels are reported beside the dimensions, never in the overall score.
+    const panel = (title: string, x: AssessmentPanel) => {
+      h2(title);
+      write(m.panelNote, 'italic', 8).fontSize(10);
+      if (x.fallback) {
+        p(m.panelUnavailable);
+        return;
+      }
+      p(
+        `${x.score === null ? m.notScored : `${x.score} / 100`}${x.subjects.length ? ` - ${x.subjects.join(', ')}` : ''}`,
+        11,
+      );
+      if (x.summary) p(x.summary, 9);
+      for (const d of x.dimensions) {
+        write(`${d.name}: ${d.score === null ? m.notAssessed : `${d.score} / 100`}`, 'bold', 10);
+        if (d.rationale) p(d.rationale, 9);
+      }
+    };
+    if (content.systemDesign) panel(m.systemDesign, content.systemDesign);
+    if (content.aiCollaboration) panel(m.aiCollaboration, content.aiCollaboration);
 
     if (content.integrity) {
       h2(m.observations);

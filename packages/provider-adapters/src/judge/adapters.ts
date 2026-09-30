@@ -1,4 +1,4 @@
-import type { CodingLanguage, JudgeVerdict } from '@cbi/shared-types';
+import { CodingLanguage, parseLanguageIds, type JudgeVerdict } from '@cbi/shared-types';
 import {
   JudgeUnavailableError,
   signJudgeRequest,
@@ -89,12 +89,25 @@ export function createCodeBegunJudge(opts: HttpOptions): JudgeAdapter {
 
 // ---- Judge0 (interim, self-hosted on a separate host) ------------------------------------------
 
-/** Judge0 CE language ids. */
+/**
+ * Judge0 CE language ids (the ids of the Judge0 CE 1.13 image: Python 3.8.1,
+ * Node.js 12.14.0, OpenJDK 13.0.1, GCC 9.2.0, TypeScript 3.7.4, Go 1.13.5,
+ * Mono 6.6.0.161, Kotlin 1.3.70, Rust 1.40.0 and SQLite 3.27.2). Installs with
+ * newer compilers use other ids (e.g. TypeScript 5.0.3 is 94): override them
+ * per language with `JUDGE0_LANGUAGE_IDS` or the admin integration settings.
+ */
 export const JUDGE0_LANGUAGE_IDS: Readonly<Record<CodingLanguage, number>> = {
   python: 71,
   javascript: 63,
   java: 62,
   cpp: 54,
+  typescript: 74,
+  go: 60,
+  csharp: 51,
+  c: 50,
+  kotlin: 78,
+  rust: 73,
+  sql: 82,
 };
 
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
@@ -140,13 +153,22 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
  * HMAC headers too, for a verifying proxy in front of the judge host.
  */
 export function createJudge0Adapter(
-  opts: HttpOptions & { authToken?: string; maxBatchSize?: number },
+  opts: HttpOptions & {
+    authToken?: string;
+    maxBatchSize?: number;
+    /** Per-language id overrides for this install (the rest keep JUDGE0_LANGUAGE_IDS). */
+    languageIds?: Partial<Record<CodingLanguage, number>>;
+  },
 ): JudgeAdapter {
   const call = client('judge0', {
     ...opts,
     headers: { ...opts.headers, ...(opts.authToken ? { 'X-Auth-Token': opts.authToken } : {}) },
   });
   const batchSize = Math.max(1, Math.floor(opts.maxBatchSize ?? JUDGE0_DEFAULT_BATCH_SIZE));
+  const languageIds: Record<CodingLanguage, number> = {
+    ...JUDGE0_LANGUAGE_IDS,
+    ...opts.languageIds,
+  };
   const decode = (token: string) =>
     JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as string[];
   const fetchBatch = async (token: string, fields: string) => {
@@ -165,7 +187,7 @@ export function createJudge0Adapter(
     async listLanguages() {
       const langs = await call<{ id: number }[]>('GET', '/languages');
       const available = new Set(langs.map((l) => l.id));
-      return (Object.entries(JUDGE0_LANGUAGE_IDS) as [CodingLanguage, number][])
+      return (Object.entries(languageIds) as [CodingLanguage, number][])
         .filter(([, id]) => available.has(id))
         .map(([lang]) => lang);
     },
@@ -178,10 +200,14 @@ export function createJudge0Adapter(
           '/submissions/batch?base64_encoded=true',
           {
             submissions: tests.map((t) => ({
-              language_id: JUDGE0_LANGUAGE_IDS[request.language],
-              source_code: b64(request.source),
+              language_id: languageIds[request.language],
+              // SQL: the schema and the test's rows run first, in the same script.
+              source_code: b64(t.prelude ? `${t.prelude}\n${request.source}` : request.source),
               stdin: b64(t.input),
-              expected_output: b64(t.expectedOutput),
+              // Only exact comparisons are left to Judge0; the others just run.
+              ...((t.compare ?? 'EXACT') === 'EXACT'
+                ? { expected_output: b64(t.expectedOutput) }
+                : {}),
               cpu_time_limit: request.limits.cpuMs / 1000,
               memory_limit: request.limits.memoryMb * 1024,
             })),
@@ -225,9 +251,11 @@ export function createJudge0Adapter(
  * - `MOCK_JUDGE_DOWN`: the judge is unreachable.
  * - `MOCK_COMPILE_ERROR`: compilation fails.
  * - `MOCK_TIMEOUT`: every test exceeds the time limit.
+ * - `MOCK_RUNTIME_ERROR`: every test crashes (with a message on stderr).
  * - `MOCK_PASS_<n>`: the first n tests pass, the rest are wrong answers.
  * - otherwise every test passes.
- * `setDown(true)` makes every call fail (a judge outage).
+ * Tests that compare nothing (custom input) report a fixed line, never a
+ * program's output. `setDown(true)` makes every call fail (a judge outage).
  */
 export function createMockJudge() {
   let down = false;
@@ -237,7 +265,7 @@ export function createMockJudge() {
     name: 'mock',
     async listLanguages() {
       if (down) throw new JudgeUnavailableError('mock-judge', 'judge down');
-      return ['python', 'javascript', 'java', 'cpp'];
+      return [...CodingLanguage.options];
     },
     async submit(request) {
       if (down || request.source.includes('MOCK_JUDGE_DOWN')) {
@@ -245,27 +273,33 @@ export function createMockJudge() {
       }
       const compileError = request.source.includes('MOCK_COMPILE_ERROR');
       const timeout = request.source.includes('MOCK_TIMEOUT');
+      const crash = request.source.includes('MOCK_RUNTIME_ERROR');
       const passN = /MOCK_PASS_(\d+)/.exec(request.source);
       const limit = passN ? Number(passN[1]) : Infinity;
       const result: JudgeResult = {
         compileOutput: compileError ? 'error: expected expression (mock)' : null,
         tests: request.tests.map((t, i) => {
+          const custom = t.compare === 'NONE';
           const verdict: JudgeVerdict = compileError
             ? 'COMPILE_ERROR'
             : timeout
               ? 'TIME_LIMIT'
-              : i < limit
-                ? 'ACCEPTED'
-                : 'WRONG_ANSWER';
+              : crash
+                ? 'RUNTIME_ERROR'
+                : custom || i < limit
+                  ? 'ACCEPTED'
+                  : 'WRONG_ANSWER';
           return {
             verdict,
             stdout:
               verdict === 'ACCEPTED'
-                ? t.expectedOutput
+                ? custom
+                  ? `[mock judge] read ${t.input.length} characters of input\n`
+                  : t.expectedOutput
                 : verdict === 'WRONG_ANSWER'
                   ? 'mock output\n'
                   : null,
-            stderr: null,
+            stderr: verdict === 'RUNTIME_ERROR' ? 'mock: the program crashed\n' : null,
             timeMs: verdict === 'TIME_LIMIT' ? request.limits.cpuMs : 12,
             memoryKb: 2048,
           };
@@ -305,6 +339,16 @@ export interface JudgeSettings {
   JUDGE0_AUTH_TOKEN?: string;
   /** Judge0's MAX_SUBMISSION_BATCH_SIZE (default 20). */
   JUDGE0_MAX_BATCH_SIZE?: number;
+  /** Judge0 language id overrides, `language=id,…` (validated with the environment). */
+  JUDGE0_LANGUAGE_IDS?: string;
+}
+
+/** Language id overrides from `language=id,…`; an invalid value is refused by env validation first. */
+export function judge0LanguageIds(
+  value: string | undefined,
+): Partial<Record<CodingLanguage, number>> {
+  const parsed = parseLanguageIds(value);
+  return parsed.ok ? parsed.ids : {};
 }
 
 let sharedMock: ReturnType<typeof createMockJudge> | null = null;
@@ -325,6 +369,7 @@ export function createJudge(env: JudgeSettings): JudgeAdapter | null {
         hmacSecret: env.JUDGE_HMAC_SECRET!,
         authToken: env.JUDGE0_AUTH_TOKEN,
         maxBatchSize: env.JUDGE0_MAX_BATCH_SIZE,
+        languageIds: judge0LanguageIds(env.JUDGE0_LANGUAGE_IDS),
       });
     case 'mock':
       sharedMock ??= createMockJudge();

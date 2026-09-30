@@ -8,6 +8,7 @@ export * from './coding.js';
 export * from './consent.js';
 export * from './credits.js';
 export * from './delivery.js';
+export * from './design.js';
 export * from './documents.js';
 export * from './environment.js';
 export * from './evaluation.js';

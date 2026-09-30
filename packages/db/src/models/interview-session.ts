@@ -8,6 +8,7 @@ import {
   type RoleAnalysis,
 } from '@cbi/shared-types';
 import type {
+  AssessmentPanel,
   ConsentType as ConsentTypeT,
   DeviceCheckBody,
   ProcessingStage,
@@ -47,6 +48,8 @@ export interface SessionProcessingRecord {
   draft: {
     dimensions?: DraftDimensionScore[];
     recommendations?: RecommendationsAi & { promptVersion: number | null; fallback: boolean };
+    /** System design and AI collaboration panels (null when the interview had none). */
+    panels?: { systemDesign: AssessmentPanel | null; aiCollaboration: AssessmentPanel | null };
   };
 }
 

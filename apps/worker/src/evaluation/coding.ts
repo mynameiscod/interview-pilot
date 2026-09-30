@@ -10,13 +10,18 @@ import { JudgeUnavailableError, runOnJudge, type JudgeAdapter } from '@cbi/provi
 import {
   CODING_LIMITS,
   codingStrength,
+  designAnswerText,
+  judgeTestsFor,
+  roundAiAssist,
   submissionAnswerText,
   toRunResult,
   type BlueprintContent,
   type CodeRunResult,
   type CodingReportItem,
+  type TemplateRound,
 } from '@cbi/shared-types';
 import type { Types } from 'mongoose';
+import { hasDesign, type DesignContext } from './design.js';
 
 /**
  * Coding in evaluation (Phase 9): judge-derived evidence merged with the AI's
@@ -54,24 +59,24 @@ export async function judgeUnsubmitted(
     const problem = problems.get(String(a.problemId));
     const starter = problem?.content.starterCode[a.language] ?? '';
     if (!problem || !a.code.trim() || a.code === starter) continue;
-    const tests = [
+    const cases = [
       ...problem.content.visibleTests.map((t) => ({ ...t, hidden: false })),
       ...problem.content.hiddenTests.map((t) => ({ ...t, hidden: true })),
     ];
+    const tests = judgeTestsFor(problem.content, cases);
     let result: CodeRunResult | null = null;
     if (judge) {
       try {
         const out = await runOnJudge(
           judge,
-          {
-            language: a.language,
-            source: a.code,
-            tests: tests.map((t) => ({ input: t.input, expectedOutput: t.expectedOutput })),
-            limits: problem.content.limits,
-          },
+          { language: a.language, source: a.code, tests, limits: problem.content.limits },
           { waitMs: CODING_LIMITS.judgeWaitMs },
         );
-        result = toRunResult(out, tests, now);
+        result = toRunResult(
+          out,
+          cases.map((c, i) => ({ ...c, compare: tests[i]!.compare })),
+          now,
+        );
       } catch (err) {
         if (!(err instanceof JudgeUnavailableError)) throw err;
         recordJudgeFailure(err, 'evaluation');
@@ -101,15 +106,26 @@ export async function judgeUnsubmitted(
   return judged;
 }
 
-/** Turns of a round with the answer text evaluation should read (unanswered coding turns use the saved code). */
+/**
+ * Turns of a round with the answer text evaluation should read: unanswered
+ * coding turns use the saved code, and unanswered design turns the saved
+ * design (both labelled as not submitted).
+ */
 export function answeredWithCode(
   turns: readonly InterviewTurnRecord[],
   coding: CodingContext,
+  design: DesignContext = { attempts: [], prompts: new Map() },
 ): { turn: InterviewTurnRecord; text: string; spoken: boolean }[] {
   const byQuestion = new Map(coding.attempts.map((a) => [a.questionId, a]));
+  const designs = new Map(design.attempts.map((a) => [a.questionId, a]));
   return turns.flatMap((t) => {
     if (t.answer?.text.trim()) {
       return [{ turn: t, text: t.answer.text, spoken: t.answer.source === 'VOICE' }];
+    }
+    const saved = t.question.design ? designs.get(t.questionId) : undefined;
+    if (saved && hasDesign(saved)) {
+      const text = designAnswerText(saved.notes, saved.diagram);
+      return [{ turn: t, text: `(Not submitted before time ran out.) ${text}`, spoken: false }];
     }
     const a = t.question.coding ? byQuestion.get(t.questionId) : undefined;
     if (a?.submission) {
@@ -202,6 +218,7 @@ export function mergeCodingEvidence(
 export function codingReport(
   coding: CodingContext,
   turns: readonly InterviewTurnRecord[],
+  rounds: readonly TemplateRound[] = [],
 ): CodingReportItem[] {
   return turns
     .filter((t) => t.question.coding)
@@ -218,6 +235,7 @@ export function codingReport(
         total: sub?.result?.total ?? null,
         verdict: sub?.result?.verdict ?? null,
         judgeUnavailable: Boolean(sub?.judgeUnavailable),
+        aiAssisted: roundAiAssist(rounds[t.roundIdx]) !== null,
       };
     });
 }

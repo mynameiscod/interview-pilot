@@ -285,6 +285,74 @@ describe('readiness report', () => {
   it('has no coding section for interviews without coding', async () => {
     await openReport();
     expect(screen.queryByRole('region', { name: 'Coding' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Working with the AI assistant' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'System design' })).not.toBeInTheDocument();
+  });
+
+  it('shows the AI collaboration and system design panels apart from the overall score', async () => {
+    const dimension = (key: string, score: number | null) => ({
+      key,
+      name: key,
+      score,
+      rationale: score === null ? null : `Rationale for ${key}.`,
+      evidence: score === null ? [] : [{ source: 'TRANSCRIPT' as const, quote: `quote ${key}` }],
+    });
+    await openReport(
+      reportApi(
+        makeReport({
+          content: {
+            coding: [
+              {
+                title: 'Two sum',
+                difficulty: 'EASY',
+                language: 'python',
+                submitted: true,
+                passed: 5,
+                total: 5,
+                verdict: 'ACCEPTED',
+                judgeUnavailable: false,
+                aiAssisted: true,
+              },
+            ],
+            aiCollaboration: {
+              subjects: ['Two sum'],
+              dimensions: [
+                dimension('prompt-quality', 80),
+                dimension('verification', 60),
+                dimension('independence', null),
+              ],
+              score: 70,
+              summary: 'Asked focused questions.',
+              fallback: false,
+              promptVersion: 1,
+            },
+            systemDesign: {
+              subjects: ['Link shortener'],
+              dimensions: [],
+              score: null,
+              summary: null,
+              fallback: true,
+              promptVersion: null,
+            },
+          },
+        }),
+      ),
+    );
+    expect(
+      within(screen.getByRole('region', { name: 'Coding' })).getByText(/AI assistant allowed/),
+    ).toBeInTheDocument();
+    const ai = screen.getByRole('region', { name: 'Working with the AI assistant' });
+    expect(within(ai).getByText(/not part of your overall readiness score/)).toBeInTheDocument();
+    expect(within(ai).getByText('70 / 100')).toBeInTheDocument();
+    expect(within(ai).getByText('Prompt quality: 80 / 100')).toBeInTheDocument();
+    expect(within(ai).getByText('Independence: not assessed')).toBeInTheDocument();
+    expect(within(ai).getByText('Rationale for verification.')).toBeInTheDocument();
+    const design = screen.getByRole('region', { name: 'System design' });
+    expect(
+      within(design).getByText('This part could not be assessed this time, so it has no score.'),
+    ).toBeInTheDocument();
   });
 
   it('shows the transcript collapsed', async () => {

@@ -16,6 +16,7 @@ import {
 } from '@cbi/db';
 import {
   CodingWorkspace,
+  CustomRunResult,
   ProblemSummary,
   RT_NAMESPACE,
   RtEvent,
@@ -23,6 +24,7 @@ import {
   type InterviewSnapshot,
   type LiveQuestion,
   type RtAck,
+  type TemplateRound,
 } from '@cbi/shared-types';
 import { io as connect, type Socket } from 'socket.io-client';
 import request from 'supertest';
@@ -87,7 +89,7 @@ async function adminAs(roles: AdminRole[], email = `${roles[0]!.toLowerCase()}@c
 }
 
 /** A READY text interview whose first round is a coding round (then a short wrap-up). */
-async function codingInterview(userId: string) {
+async function codingInterview(userId: string, coding: Partial<TemplateRound> = {}) {
   const base = await InterviewTemplateModel.findOne({ key: 'standard-practice' }).lean();
   const [template] = await InterviewTemplateModel.create([
     {
@@ -104,6 +106,7 @@ async function codingInterview(userId: string) {
             difficulty: 'EASY',
             followUpDepth: 0,
             minEvidence: 0,
+            ...coding,
           },
           {
             type: 'WRAP_UP',
@@ -197,7 +200,7 @@ describe('coding round', () => {
       .send({ language: 'python', code: 'print("draft")' })
       .expect(200);
     await call('put', `/interviews/${id}/coding/${question.questionId}`)
-      .send({ language: 'rust', code: 'x' })
+      .send({ language: 'sql', code: 'x' })
       .expect(400);
     const run = await call('post', `/interviews/${id}/coding/${question.questionId}/run`)
       .send({ language: 'python', code: 'print("draft")' })
@@ -206,6 +209,18 @@ describe('coding round', () => {
     expect(afterRun.lastRun).toMatchObject({ verdict: 'ACCEPTED' });
     expect(afterRun.lastRun!.tests.every((x) => !x.hidden)).toBe(true);
     expect(afterRun.lastRun!.total).toBe(ws.problem.visibleTests.length);
+
+    // A run with the candidate's own input: shown as is, never a test.
+    const custom = await call('post', `/interviews/${id}/coding/${question.questionId}/custom-run`)
+      .send({ language: 'python', code: 'print(input())', stdin: 'hello\n' })
+      .expect(200);
+    expect(CustomRunResult.parse(custom.body.data)).toMatchObject({
+      verdict: 'ACCEPTED',
+      stdout: '[mock judge] read 6 characters of input\n',
+    });
+    const attempt = await CodingAttemptModel.findOne({ sessionId: id }).lean();
+    expect(attempt).toMatchObject({ customRunCount: 1, runCount: 1, code: 'print(input())' });
+    expect(attempt!.lastRun).toMatchObject({ total: ws.problem.visibleTests.length });
 
     // Submit: visible + hidden tests; hidden outcomes carry no data; the interview moves on.
     const next = nextQuestion(socket);
@@ -246,6 +261,10 @@ describe('coding round', () => {
       .send({ language: 'python', code: 'print(input())' })
       .expect(503);
     expect(run.body.error.code).toBe('JUDGE_UNAVAILABLE');
+    const custom = await call('post', `/interviews/${id}/coding/${question.questionId}/custom-run`)
+      .send({ language: 'python', code: 'print(input())', stdin: '1' })
+      .expect(503);
+    expect(custom.body.error.code).toBe('JUDGE_UNAVAILABLE');
     // The code was saved anyway, and the interview is untouched.
     const ws = CodingWorkspace.parse(
       (await call('get', `/interviews/${id}/coding/${question.questionId}`)).body.data,
@@ -325,6 +344,50 @@ describe('coding round', () => {
     expect(await InterviewTurnModel.countDocuments({ sessionId: id })).toBe(2);
   });
 
+  it('gives AI-allowed rounds an assistant with a turn allowance and keeps the conversation', async () => {
+    const { userId, accessToken, call } = await candidate();
+    const id = await codingInterview(userId, {
+      aiAssist: { enabled: true, maxTurns: 2, allowFullSolutions: false },
+    });
+    const { question } = await startAndJoin(accessToken, call, id);
+    const path = `/interviews/${id}/coding/${question.questionId}`;
+    const ws = CodingWorkspace.parse((await call('get', path).expect(200)).body.data);
+    expect(ws.assistant).toEqual({
+      allowFullSolutions: false,
+      maxTurns: 2,
+      turnsUsed: 0,
+      messages: [],
+    });
+
+    const ask = (message: string) =>
+      call('post', `${path}/assist`).send({ language: 'python', code: 'print(1)', message });
+    const first = CodingWorkspace.parse((await ask('How should I start?').expect(200)).body.data);
+    expect(first.assistant).toMatchObject({ turnsUsed: 1 });
+    expect(first.assistant!.messages.map((m) => m.role)).toEqual(['CANDIDATE', 'ASSISTANT']);
+    expect(first.assistant!.messages[1]!.text).toMatch(/^\[mock\]/);
+    expect(first.code).toBe('print(1)'); // saved with the message
+    await ask('And the edge cases?').expect(200);
+    const used = await ask('One more?').expect(429);
+    expect(used.body.error.code).toBe('QUOTA_EXCEEDED');
+
+    const attempt = (await CodingAttemptModel.findOne({ sessionId: id }).lean())!;
+    expect(attempt.assistant!.messages).toHaveLength(4);
+    expect(attempt.assistant!.messages[0]).toMatchObject({
+      role: 'CANDIDATE',
+      codeSnapshot: 'print(1)',
+    });
+
+    // A round without the assistant refuses it.
+    const other = await candidate('ravi@example.com');
+    const plain = await codingInterview(other.userId);
+    const q = await startAndJoin(other.accessToken, other.call, plain);
+    const refused = await other
+      .call('post', `/interviews/${plain}/coding/${q.question.questionId}/assist`)
+      .send({ language: 'python', code: 'x', message: 'Help' })
+      .expect(403);
+    expect(refused.body.error.code).toBe('FEATURE_DISABLED');
+  });
+
   it('lets library admins manage the problem bank', async () => {
     const support = await adminAs(['SUPPORT_ADMIN']);
     await support('get', '/problems').expect(403);
@@ -335,7 +398,14 @@ describe('coding round', () => {
     expect(list.length).toBeGreaterThanOrEqual(4);
     const base = list.find((p) => p.key === 'balanced-brackets')!;
     expect(base.hiddenTests.length).toBeGreaterThan(0); // admins see hidden tests
-    const { id: _id, key, version: _v, active: _a, createdAt: _c, ...contentFields } = base;
+    const { id: _id, key, version: _v, active: _a, createdAt: _c, ...seeded } = base;
+    // A small version (the test server's body limit is 4 KB).
+    const contentFields = {
+      ...seeded,
+      languages: ['python'],
+      starterCode: { python: seeded.starterCode.python },
+      hiddenTests: seeded.hiddenTests.slice(0, 3),
+    };
     const created = await content('post', '/problems')
       .send({
         key,

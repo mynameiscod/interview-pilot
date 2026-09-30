@@ -74,7 +74,14 @@ import {
   RotateInviteBody,
   ScoreRevisionSummary,
   UpdateCampaignBody,
+  AssistBody,
   CodingWorkspace,
+  CreateDesignPromptVersionBody,
+  CustomRunBody,
+  DesignPromptSummary,
+  DesignWorkspace,
+  SaveDesignBody,
+  CustomRunResult,
   CreateProblemVersionBody,
   ProblemActivationBody,
   ProblemSummary,
@@ -1207,6 +1214,22 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     response: CodingWorkspace,
     errors: [400, 401, 404, 409, 413, 429, 503],
   });
+  candidate('post', '/interviews/{id}/coding/{questionId}/custom-run', {
+    tag: 'Coding',
+    summary:
+      'Run the code once with your own input (SQL: statements after the schema). Nothing is compared and it is not a test. Own rate limit; 503 JUDGE_UNAVAILABLE when the judge cannot run it',
+    body: CustomRunBody,
+    response: CustomRunResult,
+    errors: [400, 401, 404, 409, 413, 429, 503],
+  });
+  candidate('post', '/interviews/{id}/coding/{questionId}/assist', {
+    tag: 'Coding',
+    summary:
+      'AI-allowed rounds only: send one message to the in-editor assistant (the code is saved with it). The whole conversation is kept and evaluated. 403 FEATURE_DISABLED when the round has no assistant, 429 QUOTA_EXCEEDED when its turns are used up',
+    body: AssistBody,
+    response: CodingWorkspace,
+    errors: [400, 401, 403, 404, 409, 413, 429],
+  });
   candidate('post', '/interviews/{id}/coding/{questionId}/submit', {
     tag: 'Coding',
     summary:
@@ -1234,6 +1257,50 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Stop asking this problem (library.manage)',
     body: ProblemActivationBody,
     response: ProblemSummary,
+  });
+
+  // ---- System design rounds ----------------------------------------------------------------------
+  candidate('get', '/interviews/{id}/design/{questionId}', {
+    tag: 'Design',
+    summary:
+      'The design workspace: the prompt (without its rubric), your notes and diagram, and whether it was submitted',
+    response: DesignWorkspace,
+    errors: [401, 404],
+  });
+  candidate('put', '/interviews/{id}/design/{questionId}', {
+    tag: 'Design',
+    summary: 'Autosave the whiteboard and notes (every few seconds while you work)',
+    body: SaveDesignBody,
+    response: DesignWorkspace,
+    errors: [400, 401, 404, 409],
+  });
+  candidate('post', '/interviews/{id}/design/{questionId}/submit', {
+    tag: 'Design',
+    summary:
+      'Submit the design: it becomes read-only and answers the design question; the interviewer then asks probes about it',
+    body: SaveDesignBody,
+    response: DesignWorkspace,
+    errors: [400, 401, 404, 409, 429],
+  });
+  lib('get', '/admin/design-prompts', {
+    summary: 'System design prompt versions, with their rubric (library.read)',
+    response: z.array(DesignPromptSummary),
+  });
+  lib('post', '/admin/design-prompts', {
+    summary: 'Add the next version of a design prompt, inactive (library.manage)',
+    body: CreateDesignPromptVersionBody,
+    response: DesignPromptSummary,
+    status: 201,
+  });
+  lib('post', '/admin/design-prompts/{id}/activate', {
+    summary: 'Make this version the one asked for its key (library.manage)',
+    body: ProblemActivationBody,
+    response: DesignPromptSummary,
+  });
+  lib('post', '/admin/design-prompts/{id}/deactivate', {
+    summary: 'Stop asking this design prompt (library.manage)',
+    body: ProblemActivationBody,
+    response: DesignPromptSummary,
   });
 
   // ---- Consent, recordings and integrity (Phase 8) ------------------------------------------

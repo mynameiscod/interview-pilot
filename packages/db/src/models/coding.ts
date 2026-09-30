@@ -21,6 +21,12 @@ export interface ProblemRecord {
   content: ProblemContent;
   createdBy: Types.ObjectId | null;
   reason: string | null;
+  /**
+   * The seed revision this version was created from (null when an admin
+   * created it). A newer seed revision adds a version only while every
+   * version of the key came from the seed.
+   */
+  seedRevision?: number | null;
   createdAt: Date;
 }
 
@@ -32,6 +38,7 @@ const problemSchema = new Schema<ProblemRecord>(
     content: { type: Schema.Types.Mixed, required: true },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     reason: { type: String, default: null },
+    seedRevision: { type: Number, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false }, collection: 'problems', minimize: false },
 );
@@ -78,10 +85,32 @@ export interface CodingAttemptRecord {
   code: string;
   autosavedAt: Date | null;
   runCount: number;
+  /** "Run with my input" runs (never tests). Absent on older attempts. */
+  customRunCount?: number;
   lastRun: CodeRunResult | null;
   submission: CodingSubmissionRecord | null;
+  /** AI-assisted rounds: the whole assistant conversation, kept for evaluation. */
+  assistant?: AssistantRecord | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface AssistantMessageRecord {
+  role: 'CANDIDATE' | 'ASSISTANT';
+  text: string;
+  at: Date;
+  unavailable: boolean;
+  redacted: boolean;
+  /** The code as it was when the candidate asked (candidate messages only). */
+  codeSnapshot: string | null;
+  model: string | null;
+  promptVersion: number | null;
+}
+
+export interface AssistantRecord {
+  /** Candidate messages the assistant answered (an unavailable reply does not count). */
+  turnsUsed: number;
+  messages: AssistantMessageRecord[];
 }
 
 const codingAttemptSchema = new Schema<CodingAttemptRecord>(
@@ -109,10 +138,75 @@ const codingAttemptSchema = new Schema<CodingAttemptRecord>(
       ),
       default: null,
     },
+    customRunCount: { type: Number, default: 0 },
+    // Messages are appended with $push; the reply cap keeps the document small.
+    assistant: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true, collection: 'codingAttempts', minimize: false },
 );
 codingAttemptSchema.index({ sessionId: 1, questionId: 1 }, { unique: true });
 codingAttemptSchema.index({ userId: 1, problemId: 1, createdAt: -1 });
+// Code similarity: the other submissions to the same problem.
+codingAttemptSchema.index({ problemId: 1, sessionId: 1 });
 
 export const CodingAttemptModel = model<CodingAttemptRecord>('CodingAttempt', codingAttemptSchema);
+
+// ---- codeSimilarityFlags (integrity observations, never scored) -------------------------------
+
+/**
+ * Two campaign submissions to the same problem whose normalised token
+ * fingerprints overlap above the threshold. An observation for reviewers:
+ * it never changes a score. One record per pair (ids in sorted order).
+ */
+export interface CodeSimilarityFlagRecord {
+  _id: Types.ObjectId;
+  campaignId: Types.ObjectId;
+  problemKey: string;
+  problemTitle: string;
+  /** The pair, `a` < `b` by attempt id. */
+  a: { attemptId: Types.ObjectId; sessionId: Types.ObjectId; userId: Types.ObjectId };
+  b: { attemptId: Types.ObjectId; sessionId: Types.ObjectId; userId: Types.ObjectId };
+  language: CodingLanguageT;
+  /** Jaccard similarity of the winnowed fingerprints (0–1). */
+  similarity: number;
+  /** Share of the smaller submission's fingerprints found in the other (0–1). */
+  containment: number;
+  threshold: number;
+  algorithmVersion: number;
+  computedAt: Date;
+}
+
+const pairSide = new Schema(
+  {
+    attemptId: { type: Schema.Types.ObjectId, required: true },
+    sessionId: { type: Schema.Types.ObjectId, ref: 'InterviewSession', required: true },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  },
+  { _id: false },
+);
+
+const codeSimilarityFlagSchema = new Schema<CodeSimilarityFlagRecord>(
+  {
+    campaignId: { type: Schema.Types.ObjectId, ref: 'Campaign', required: true },
+    problemKey: { type: String, required: true },
+    problemTitle: { type: String, required: true },
+    a: { type: pairSide, required: true },
+    b: { type: pairSide, required: true },
+    language: { type: String, enum: CodingLanguage.options, required: true },
+    similarity: { type: Number, required: true },
+    containment: { type: Number, required: true },
+    threshold: { type: Number, required: true },
+    algorithmVersion: { type: Number, required: true },
+    computedAt: { type: Date, required: true },
+  },
+  { collection: 'codeSimilarityFlags' },
+);
+codeSimilarityFlagSchema.index({ 'a.attemptId': 1, 'b.attemptId': 1 }, { unique: true });
+codeSimilarityFlagSchema.index({ 'a.sessionId': 1 });
+codeSimilarityFlagSchema.index({ 'b.sessionId': 1 });
+codeSimilarityFlagSchema.index({ campaignId: 1, similarity: -1 });
+
+export const CodeSimilarityFlagModel = model<CodeSimilarityFlagRecord>(
+  'CodeSimilarityFlag',
+  codeSimilarityFlagSchema,
+);

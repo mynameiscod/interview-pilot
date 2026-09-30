@@ -227,6 +227,7 @@ describe('coding problems', () => {
           'Given `n` numbers and a target, print the indices of the two numbers that add up to the target.\n\nPrint them in increasing order.',
         difficulty: 'EASY',
         tags: ['arrays', 'hashing'],
+        companyTags: [],
         languages: ['python'],
         starterCode: { python: 'import sys\n\ndef solve():\n    pass\n' },
         visibleTests: [
@@ -238,8 +239,50 @@ describe('coding problems', () => {
           { input: '1\n  5\n', expectedOutput: ' 0 0 \n\n', explanation: null },
         ],
         limits: { cpuMs: 2000, memoryMb: 512 },
+        sql: null,
       },
       reason: 'Add an edge case',
+    });
+  });
+
+  it('creates a SQL problem with its schema, row-order rule and company styles', async () => {
+    const { api } = await renderAt(
+      '/problems',
+      ['CONTENT_ADMIN'],
+      listHandlers({
+        'POST /admin/problems': () => ({
+          status: 201,
+          body: { data: problem({ id: 'prob-two-sum-3', version: 3, active: false }) },
+        }),
+      }),
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'New version from two-sum v2' }));
+    // SQL together with another language is refused.
+    await user.click(screen.getByLabelText('SQL (SQLite)'));
+    await user.type(screen.getByLabelText('Schema script'), 'CREATE TABLE t (x INTEGER);');
+    await user.type(screen.getByLabelText(REASON), 'Make it SQL');
+    await user.click(screen.getByRole('button', { name: 'Create version' }));
+    expect(
+      await screen.findByText(
+        'A SQL problem needs a schema script of up to 20,000 characters and the SQL language only.',
+      ),
+    ).toBeInTheDocument();
+    expect(posted(api, 'POST /admin/problems')).toBe(false);
+
+    await user.click(screen.getByLabelText('Python 3'));
+    await user.click(screen.getByLabelText('JavaScript (Node.js)'));
+    await user.click(
+      screen.getByLabelText('Rows may come back in any order (compare after sorting the lines)'),
+    );
+    await user.click(screen.getByLabelText('Fintech'));
+    await user.click(screen.getByRole('button', { name: 'Create version' }));
+    await screen.findByText('Created two-sum v3 (inactive). Activate it so new interviews get it.');
+    const body = bodyOf(api, 'POST /admin/problems') as { content: Record<string, unknown> };
+    expect(body.content).toMatchObject({
+      languages: ['sql'],
+      companyTags: ['fintech'],
+      sql: { setup: 'CREATE TABLE t (x INTEGER);', orderInsensitive: false },
     });
   });
 
