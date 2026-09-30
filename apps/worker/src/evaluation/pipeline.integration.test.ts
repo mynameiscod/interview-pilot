@@ -491,7 +491,8 @@ describe('evaluation pipeline', () => {
     }).lean();
     const byQ = new Map(judged.map((e) => [e.questionId, e]));
     expect(byQ.get(q.a)).toMatchObject({ strength: 2, confidence: 0.9 });
-    expect(byQ.get(q.b)!.claim).toMatch(/2 of 7 tests.*not submitted/);
+    const testCount = problem.content.visibleTests.length + problem.content.hiddenTests.length;
+    expect(byQ.get(q.b)!.claim).toMatch(new RegExp(`2 of ${testCount} tests.*not submitted`));
     const report = ReportContent.parse(
       (await InterviewReportModel.findOne({ sessionId: up.id }).lean())!.content,
     );

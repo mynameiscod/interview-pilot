@@ -47,7 +47,7 @@ For the active round the planner (`nextStep`) returns either a question target o
 
 1. **Follow-up first.** If the last assessment asked for a follow-up and the round's `followUpDepth` allows it, the next question follows up on the same thread, even in the round's last minute. A non-answer never gets a follow-up.
 2. **End the round** when its primary question count is reached, its time is up, or less than a minute is left.
-3. **Otherwise pick a competency** that this round assesses (by `roundTypes`, falling back to categories), least-covered first, then heaviest. After the first technical question, resume and JD **probe areas** from the blueprint are used once each.
+3. **Otherwise pick a competency** that this round assesses (by `roundTypes`, falling back to categories; system design rounds fall back to technical and problem-solving competencies, see [system-design.md](system-design.md)), least-covered first, then heaviest. After the first technical question, resume and JD **probe areas** from the blueprint are used once each.
 4. **Difficulty**: fixed per round, or `ADAPTIVE`: one step up after a strong answer and one step down after a weak one or a non-answer. A competency that has not been assessed yet starts from the candidate's overall recent performance (the last 3 assessed answers across competencies, `planner.recent`): one step up when they average strong, one step down when they average weak, the competency's own level otherwise.
 
 The target carries the objective, expected evidence, source (`ROLE`, `JD`, `RESUME`, `COMPANY`, `FOLLOW_UP`) and follow-up depth. These are stored with the question in `interviewTurns`, which is the question ledger that [evaluation](evaluation-and-reports.md) reads.

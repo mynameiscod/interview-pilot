@@ -6,6 +6,7 @@ A template can include a `CODING` round. The round opens with a problem from the
 - Judge adapters: [`packages/provider-adapters/src/judge/`](../../packages/provider-adapters/src/judge/)
 - API: [`apps/api/src/modules/coding/`](../../apps/api/src/modules/coding/)
 - Evaluation: [`apps/worker/src/evaluation/coding.ts`](../../apps/worker/src/evaluation/coding.ts)
+- System design rounds (whiteboard, notes and design probes): [system-design.md](system-design.md)
 
 ## Code never runs on the interview servers (D9)
 
@@ -15,22 +16,26 @@ Candidate code runs only on an **external judge on a separate host**, through `J
 - **Adapters.**
   - `codebegun`: the target CodeBegun Judge API (`/v1/languages`, `/v1/submissions`).
   - `judge0`: the interim adapter for a self-hosted Judge0 CE on its own VPS. It uses the batch API with one Judge0 submission per test and base64 payloads, sent and read back in batches of at most `JUDGE0_MAX_BATCH_SIZE` (Judge0's own `MAX_SUBMISSION_BATCH_SIZE`, 20 by default), so a problem with 5 visible and 30 hidden tests goes out as batches of 20 and 15 and the results are merged in test order. Requests carry the HMAC headers for a verifying proxy, plus `X-Auth-Token` when Judge0 authentication is on.
-  - `mock`: for development and tests only, and refused when deployed. It **never executes code**. The result comes from markers in the source: `MOCK_PASS_<n>`, `MOCK_COMPILE_ERROR`, `MOCK_TIMEOUT` and `MOCK_JUDGE_DOWN`.
+  - `mock`: for development and tests only, and refused when deployed. It **never executes code**. The result comes from markers in the source: `MOCK_PASS_<n>`, `MOCK_COMPILE_ERROR`, `MOCK_TIMEOUT`, `MOCK_RUNTIME_ERROR` and `MOCK_JUDGE_DOWN`. Custom-input runs get a fixed line (`[mock judge] read N characters of input`), never a program's output.
 - **Waiting and failure.** `runOnJudge` submits, then polls with backoff for up to 20 seconds. Any transport failure, refusal or timeout becomes `JudgeUnavailableError`. The caller treats that as "the judge is down", never as a failure of the interview.
-- **Languages:** Python 3, JavaScript (Node.js), Java and C++. Judge0 CE language ids are 71, 63, 62 and 54.
+- **Languages:** Python 3, JavaScript (Node.js), Java, C++, TypeScript, Go, C#, C, Kotlin, Rust and SQL (SQLite). The Judge0 defaults are the Judge0 CE 1.13 ids: 71, 63, 62, 54, 74, 60, 51, 50, 78, 73 and 82. Self-hosted installs with newer compilers use other ids (for example TypeScript 5.0.3 is 94, Go 1.18 is 95), so any of them can be overridden with `JUDGE0_LANGUAGE_IDS=typescript=94,go=95` or the **Language ids** setting of the Judge0 integration (System → Integrations). The judge only offers languages whose id the install has. Monaco registers a tokenizer for each (a 1–4 KB lazy chunk each); its ids are the language names.
+- **Test comparison.** Each judge test has a `compare` mode: `EXACT` (the judge compares, as before), `UNORDERED_LINES` (the judge only runs it; `toRunResult` compares the output lines after sorting) and `NONE` (custom input, never compared).
+- **SQL problems** have a `sql` setting: a schema script and whether row order matters. The schema and each test's `input` (its rows, as `INSERT` statements) are sent as a **prelude** that the judge runs before the candidate's query in the same program (Judge0 prepends it to the source); the output is SQLite's list mode (columns separated by `|`). A SQL problem uses the `sql` language only, and other problems never offer it. Coding rounds ask SQL problems only when the round targets a SQL competency, may ask them when the role mentions SQL, and never otherwise.
 
 ## Problem bank
 
 `problems` holds append-only versions per `key`, with one active version per key. Each version holds:
 
-- the title, statement, difficulty, tags and languages;
-- starter code for each language;
+- the title, statement, difficulty, topic tags, optional company-style tags (generic labels only, such as `product-company`, `service-company` or `fintech`, never company names) and languages;
+- starter code for each language (and, for SQL problems, the schema and the row-order rule);
 - 1 to 5 **visible** tests and 1 to 30 **hidden** tests, as stdin and expected stdout;
 - CPU and memory limits.
 
 **Hidden tests never leave the server.** The workspace reports only how many there are, and run results for hidden tests carry only a verdict: no input and no output.
 
-Four problems are seeded: two easy and two medium. Admins with `library.manage` add versions and activate them under **Library → Coding problems**.
+**Forty original problems are seeded** (13 easy, 17 medium, 10 hard; `packages/db/src/seed/problem-bank/`) across arrays and strings, hashing, two pointers, sliding windows, stacks and queues, trees, graphs, heaps, dynamic programming, intervals and SQL (joins, grouping, window functions). Each has 1–2 visible tests, 8 or more hidden tests with edge cases, starter code for every language and a **reference solution** (Python 3, or a SQLite query). The expected outputs come from the references, and when the bank was generated every test was also checked against an independent brute-force solution. `problem-bank.test.ts` re-runs every reference on every test with a local Python 3 (`verify_references.py`; skipped when no Python is installed — it never runs on a server), and a worker test runs every problem through the judge harness (preludes, unordered rows, hidden-test redaction).
+
+The seed is **versioned**: each seed problem has a `revision`. A key with no versions gets version 1; a key whose versions all came from an older seed revision gets the new revision as its next version (active if the key had an active version); a key with any admin-created version is never touched. Admins with `library.manage` add versions and activate them under **Library → Coding problems** (including SQL settings and company-style tags).
 
 A coding round gets a problem at the round's difficulty (or any problem if none matches) that the candidate hasn't seen in their last 10 attempts. The choice is deterministic for each interview and round. If the bank is empty, the round asks an ordinary question.
 
@@ -50,6 +55,19 @@ A coding round gets a problem at the round's difficulty (or any problem if none 
 - The submit request waits for the judge (up to 20 seconds) and for the answer to be saved, but not for the AI: the answer's assessment and the next question follow in the background, as for any answer (see [A turn](live-interview.md#a-turn)), and arrive in the room as events.
 - **Recoverable.** The submission is saved before the question is answered. If answering fails (the interview was busy, a restart), the submission stays and submitting again answers the question with the saved code (idempotent per question: `clientMsgId` `coding-<questionId>`). The editor accepts saves, runs and submits in the states the answer path accepts: `ACTIVE`, and `RECONNECTING`, where the submission resumes the interview first.
 - Runs and submissions share the `coding` rate limit: 60 per 10 minutes per user.
+
+### Run with my input
+
+`POST …/custom-run` (`{language, code, stdin}`, stdin up to 16 KB) runs the code once on the judge with the candidate's own input; for SQL problems the input is extra statements run after the schema. The output, error output and compiler output are shown as they are: nothing is compared, it is never a test, and it does not change the last run. The code is saved with it, the attempt counts `customRunCount`, and it has its own limit (`codingCustom`, 30 per 10 minutes per user). A judge that is down gives the usual 503 `JUDGE_UNAVAILABLE` notice.
+
+### AI-allowed rounds
+
+A template's coding round can allow an **AI assistant** (`aiAssist: {enabled, maxTurns, allowFullSolutions}`; off by default; admin: Library → Templates). The candidate sees a banner saying the assistant is allowed and that the conversation is saved and reviewed, and a chat panel beside the problem.
+
+- `POST …/assist` (`{language, code, message}`) saves the code and asks the `coding.assist` feature through the AI router (output capped at 700 tokens) with the problem, the code and the last messages as data. The prompt tells the model to guide rather than solve; when `allowFullSolutions` is false, code blocks or unfenced code longer than 12 lines are also removed from the reply (`redactLongCode`) and the reply is marked.
+- Each question allows `maxTurns` messages (1–30, default 12; 429 `QUOTA_EXCEEDED` after that, guarded atomically); an unavailable model leaves a marked reply and does not use a turn. Messages have their own limit (`codingAssist`, 40 per 10 minutes per user). Rounds without the assistant answer 403 `FEATURE_DISABLED`.
+- Every message is kept on the attempt with the code at the time; admins see the conversation in interview review.
+- Evaluation scores an **AI collaboration** panel (prompt quality, verification of AI output, independence) with `evaluation.aiCollaboration`, keeping only quotes that appear in the material. It is shown in the report and PDF beside the dimensions and is **not** part of the overall score; the coding section marks AI-allowed problems.
 
 ## When the judge is down
 
@@ -76,13 +94,15 @@ A coding round gets a problem at the round's difficulty (or any problem if none 
 
 ## Configuration
 
-| Variable                | Where       | Notes                                                                                     |
-| ----------------------- | ----------- | ----------------------------------------------------------------------------------------- |
-| `JUDGE_PROVIDER`        | API, worker | `mock` (default; development and test only), `judge0` or `codebegun`                      |
-| `JUDGE_BASE_URL`        | API, worker | For example `https://judge.internal.example`; required for a real judge                   |
-| `JUDGE_HMAC_SECRET`     | API, worker | At least 32 characters, shared with the judge or its proxy                                |
-| `JUDGE0_AUTH_TOKEN`     | API, worker | Judge0's `X-Auth-Token`, when enabled                                                     |
-| `JUDGE0_MAX_BATCH_SIZE` | API, worker | Judge0's `MAX_SUBMISSION_BATCH_SIZE` (default 20); tests are sent in batches of this size |
+| Variable                    | Where       | Notes                                                                                     |
+| --------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| `JUDGE_PROVIDER`            | API, worker | `mock` (default; development and test only), `judge0` or `codebegun`                      |
+| `JUDGE_BASE_URL`            | API, worker | For example `https://judge.internal.example`; required for a real judge                   |
+| `JUDGE_HMAC_SECRET`         | API, worker | At least 32 characters, shared with the judge or its proxy                                |
+| `JUDGE0_AUTH_TOKEN`         | API, worker | Judge0's `X-Auth-Token`, when enabled                                                     |
+| `JUDGE0_MAX_BATCH_SIZE`     | API, worker | Judge0's `MAX_SUBMISSION_BATCH_SIZE` (default 20); tests are sent in batches of this size |
+| `JUDGE0_LANGUAGE_IDS`       | API, worker | Optional `language=id,…` overrides for this Judge0 install (admin setting: Language ids)  |
+| `CODE_SIMILARITY_THRESHOLD` | worker      | Campaign submissions at least this similar (0.5–1, default 0.8) are flagged for review    |
 
 **Deploying Judge0 (interim).** Run it on a **separate** VPS, never on the interview host. Put a proxy in front of it that checks the HMAC headers, and don't expose Judge0 directly to the internet. Turn on its own authentication, and keep its resource limits at least as strict as the problem limits.
 
@@ -103,3 +123,10 @@ Known behaviour:
 - Monaco is a lazy 745 KB (gzip) chunk; Vite warns about its size.
 - Switching languages replaces the code with the new language's starter code, after a confirmation.
 - The report's transcript shows the candidate's own code for coding answers.
+
+## Code similarity in campaigns
+
+After a campaign interview's report is built, the worker (`evaluation.code_similarity`, one job per session and run) compares each of its coding submissions with every other submission to the same problem (any version of the key) in the same language within the campaign, skipping the candidate's own.
+
+- **Method** (`apps/worker/src/integrity/code-similarity.ts`): comments are removed; the code becomes a token stream where names are `V`, numbers `N` and strings `S` (keywords and operators stay; SQL keywords case-insensitively); hashes of every 7-token k-gram are **winnowed** (the minimum of each window of 4) into fingerprints. Fingerprints of the problem's starter code are removed, and submissions with fewer than 12 of their own are not compared. Similarity is the Jaccard index of the fingerprint sets; containment is the share of the smaller one found in the other.
+- Pairs at or above `CODE_SIMILARITY_THRESHOLD` (default 0.8) are stored once per pair in `codeSimilarityFlags` (refreshed on a re-run) and listed in admin interview review as an **integrity observation**, with a link to the other interview. They are never scored and are erased with either candidate's account.
