@@ -58,8 +58,14 @@ function copyFor(lang: string | undefined): { lang: UiLocale; copy: OtpCopy } {
   return { lang: key, copy: OTP_COPY[key] };
 }
 
+const PRODUCT_NAME: Record<SessionAudience, string> = {
+  candidate: 'CareerPilot Interview',
+  admin: 'CareerPilot Interview Admin',
+  org: 'CareerPilot Interview for Organisations',
+};
+
 function productName(audience: SessionAudience): string {
-  return audience === 'admin' ? 'CareerPilot Interview Admin' : 'CareerPilot Interview';
+  return PRODUCT_NAME[audience];
 }
 
 export function otpEmail(
@@ -95,6 +101,27 @@ export function otpSms(
   lang: UiLocale = 'en',
 ): string {
   return copyFor(lang).copy.sms(code, productName(audience), ttlMinutes);
+}
+
+/** An organisation member's invitation (English, like the rest of the org portal). */
+export function orgMemberInviteEmail(
+  to: string,
+  portalUrl: string,
+  orgName: string,
+  role: string,
+): EmailMessage {
+  const roleName = role.replace(/^ORG_/, '').toLowerCase();
+  return {
+    to,
+    subject: `You have been invited to ${orgName} on CareerPilot Interview`,
+    text: [
+      `You have been invited to the ${orgName} organisation on CareerPilot Interview as a ${roleName}.`,
+      '',
+      `Sign in with this email address at ${portalUrl}`,
+      '',
+      'If you were not expecting this, you can ignore this email.',
+    ].join('\n'),
+  };
 }
 
 export function adminInviteEmail(to: string, adminUrl: string, roles: AdminRole[]): EmailMessage {

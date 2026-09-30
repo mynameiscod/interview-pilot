@@ -107,11 +107,14 @@ export function MfaStep({
   challenge,
   onSignedIn,
   onRestart,
+  verifyPath = '/admin/auth/mfa/verify',
 }: {
   api: ApiClient;
   challenge: MfaChallenge;
   onSignedIn: (session: MfaSessionResponse) => Promise<void>;
   onRestart: () => void;
+  /** The org portal verifies at /org/auth/mfa/verify. */
+  verifyPath?: string;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -136,7 +139,7 @@ export function MfaStep({
     setPending(true);
     try {
       const session = await api.post<MfaSessionResponse>(
-        '/admin/auth/mfa/verify',
+        verifyPath,
         useRecovery
           ? { mfaToken: challenge.mfaToken, recoveryCode: value.trim() }
           : { mfaToken: challenge.mfaToken, code },

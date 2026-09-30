@@ -25,7 +25,8 @@ export type RateLimiterName =
   | 'jobCreate'
   | 'dataExport'
   | 'resumeMatch'
-  | 'resumeTailor';
+  | 'resumeTailor'
+  | 'orgApi';
 
 /**
  * Separate limits per endpoint class (a single global limit would block
@@ -73,6 +74,8 @@ const LIMITS: Record<RateLimiterName, { windowMs: number; limit: number; failOpe
   resumeMatch: { windowMs: 10 * 60_000, limit: 60, failOpen: false },
   /** Tailoring suggestions: one billed AI call each (plus a daily quota in the service). */
   resumeTailor: { windowMs: 60 * 60_000, limit: 10, failOpen: false },
+  /** Org API keys (ATS integrations), per key. */
+  orgApi: { windowMs: 60_000, limit: 120, failOpen: false },
 };
 
 /**
@@ -115,9 +118,11 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
       keyGenerator: (req) =>
         name === 'refreshSession'
           ? sessionKey(req.headers.cookie, req.ip ?? '')
-          : PER_USER.has(name) && req.auth
-            ? `user:${req.auth.userId}`
-            : ipKeyGenerator(req.ip ?? ''),
+          : name === 'orgApi' && req.apiKey
+            ? `key:${req.apiKey.id}`
+            : PER_USER.has(name) && req.auth
+              ? `user:${req.auth.userId}`
+              : ipKeyGenerator(req.ip ?? ''),
       handler: (_req, _res, next) =>
         next(new AppError(429, 'RATE_LIMITED', 'Too many requests. Please wait and try again.')),
     };
@@ -151,5 +156,6 @@ export function createRateLimiters(redis: Redis | null): Record<RateLimiterName,
     dataExport: make('dataExport'),
     resumeMatch: make('resumeMatch'),
     resumeTailor: make('resumeTailor'),
+    orgApi: make('orgApi'),
   };
 }

@@ -20,6 +20,12 @@ import {
   PlanItemProgressModel,
   UserProgressModel,
 } from './models/progress.js';
+import {
+  CampaignInviteModel,
+  IdentityCaptureModel,
+  OrgNoteModel,
+  OrgScorecardModel,
+} from './models/org.js';
 import { OtpChallengeModel } from './models/otp-challenge.js';
 import { RefreshTokenModel } from './models/refresh-token.js';
 import { UserProfileModel } from './models/user-profile.js';
@@ -32,7 +38,9 @@ import { UserModel } from './models/user.js';
  * their turns (transcripts), evidence, scores, reports and PDFs, feedback,
  * coding attempts, integrity observations, recordings, review revisions,
  * campaign applications, proof share links, sign-in identities, refresh
- * sessions, OTP challenges and the profile.
+ * sessions, OTP challenges and the profile. From organisations' campaigns:
+ * identity-capture images, the organisation's notes and scorecards about
+ * the person, and the invites they joined through.
  *
  * Retained, pseudonymised: purchases, payments, coupon redemptions and the
  * credit ledger (Indian tax and accounting law). They only reference the user
@@ -57,11 +65,15 @@ export function erasureStorageKeys(input: {
   resumes: { storageKey: string | null }[];
   jobTargets: { storageKey: string | null }[];
   reports: { pdf?: { storageKey: string | null } | null }[];
+  identity?: { images?: Partial<Record<string, { storageKey: string } | undefined>> }[];
 }): string[] {
   const keys = [
     ...input.resumes.map((r) => r.storageKey),
     ...input.jobTargets.map((t) => t.storageKey),
     ...input.reports.map((r) => r.pdf?.storageKey ?? null),
+    ...(input.identity ?? []).flatMap((c) =>
+      Object.values(c.images ?? {}).map((i) => i?.storageKey ?? null),
+    ),
   ].filter((k): k is string => typeof k === 'string' && k.length > 0);
   return [...new Set(keys)];
 }
@@ -109,18 +121,26 @@ export async function eraseAccount(
   if (!user) return null;
   const uid = user._id;
 
-  const [resumes, jobTargets, sessions, reports, media, certificates] = await Promise.all([
-    ResumeModel.find({ userId: uid }, { storageKey: 1 }).lean(),
-    JobTargetModel.find({ userId: uid }, { storageKey: 1 }).lean(),
-    InterviewSessionModel.find({ userId: uid }, { _id: 1 }).lean(),
-    InterviewReportModel.find({ userId: uid }, { pdf: 1 }).lean(),
-    MediaAssetModel.find({ userId: uid }, { _id: 1 }).lean(),
-    CertificateModel.find({ userId: uid }, { pdf: 1 }).lean(),
-  ]);
+  const [resumes, jobTargets, sessions, reports, media, certificates, identity] = await Promise.all(
+    [
+      ResumeModel.find({ userId: uid }, { storageKey: 1 }).lean(),
+      JobTargetModel.find({ userId: uid }, { storageKey: 1 }).lean(),
+      InterviewSessionModel.find({ userId: uid }, { _id: 1 }).lean(),
+      InterviewReportModel.find({ userId: uid }, { pdf: 1 }).lean(),
+      MediaAssetModel.find({ userId: uid }, { _id: 1 }).lean(),
+      CertificateModel.find({ userId: uid }, { pdf: 1 }).lean(),
+      IdentityCaptureModel.find({ userId: uid }, { images: 1 }).lean(),
+    ],
+  );
 
   // 1. Stored objects (idempotent; a failure aborts before any record is removed).
   // Certificate PDFs are stored like report PDFs.
-  const keys = erasureStorageKeys({ resumes, jobTargets, reports: [...reports, ...certificates] });
+  const keys = erasureStorageKeys({
+    resumes,
+    jobTargets,
+    reports: [...reports, ...certificates],
+    identity,
+  });
   for (const key of keys) await storage.delete(key);
   for (const asset of media) {
     await deleteMediaAsset(asset._id, storage, { reason: 'ACCOUNT_ERASURE', by: 'SYSTEM', now });
@@ -144,6 +164,10 @@ export async function eraseAccount(
     mediaAssets: await hardDelete(MediaAssetModel, { userId: uid }),
     reviewRevisions: await hardDelete(ReviewRevisionModel, bySession),
     campaignApplications: await hardDelete(CampaignApplicationModel, { userId: uid }),
+    identityCaptures: await hardDelete(IdentityCaptureModel, { userId: uid }),
+    orgNotes: await hardDelete(OrgNoteModel, { candidateId: uid }),
+    orgScorecards: await hardDelete(OrgScorecardModel, { candidateId: uid }),
+    campaignInvites: await hardDelete(CampaignInviteModel, { userId: uid }),
     shareLinks: await hardDelete(ShareLinkModel, { userId: uid }),
     certificates: await hardDelete(CertificateModel, { userId: uid }),
     planItemProgress: await hardDelete(PlanItemProgressModel, { userId: uid }),

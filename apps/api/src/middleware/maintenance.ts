@@ -29,6 +29,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * - `/auth/**`: signing in and out, OTP, refresh and identity linking, so
  *   nobody is locked out of reading their reports;
  * - `/admin/**`: admins run the maintenance;
+ * - `/org/**`: organisations keep managing campaigns and candidates (joins stay closed);
  * - payment webhooks and verification: the money has already moved, the
  *   purchase must be recorded (the mock checkout is the dev equivalent);
  * - analytics events: telemetry, not a state change;
@@ -40,6 +41,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 export const MAINTENANCE_EXEMPT_PATHS: readonly RegExp[] = [
   /^\/auth\//,
   /^\/admin(\/|$)/,
+  /^\/org(\/|$)/,
   /^\/payments\/(webhooks\/|verify$|mock\/)/,
   /^\/analytics\/events$/,
   /^\/email\/unsubscribe$/,

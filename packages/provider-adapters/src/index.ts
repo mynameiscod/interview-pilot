@@ -41,12 +41,14 @@ export { extractReadableText, normalizeText } from './web/readable-text.js';
 export {
   isPublicAddress,
   safeFetchText,
+  safePostJson,
   SafeFetchError,
   UrlBlockedError,
   type BlockReason,
   type FetchFailure,
   type SafeFetchOptions,
   type SafeFetchResult,
+  type SafePostOptions,
 } from './web/safe-fetch.js';
 export {
   createPaymentGateway,

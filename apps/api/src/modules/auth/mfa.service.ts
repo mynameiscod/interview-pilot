@@ -34,8 +34,16 @@ export function mfaRequiredFor(roles: readonly AdminRole[], policy: MfaPolicy): 
   return policy === 'all' || roles.includes('SUPER_ADMIN');
 }
 
+/** Staff (admin console) or organisation members (org portal) use the same factor. */
+export type MfaAudience = 'admin' | 'org';
+
+const actorOf = (audience: MfaAudience | undefined) =>
+  audience === 'org' ? ('ORG_MEMBER' as const) : ('ADMIN' as const);
+
 interface ChallengeState {
   userId: string;
+  /** Which app the sign-in belongs to; absent on challenges created before org sign-in. */
+  audience?: MfaAudience;
   method: string;
   mode: 'VERIFY' | 'ENROLL';
   /** ENROLL only: the new secret, encrypted, until the first code confirms it. */
@@ -154,14 +162,17 @@ export function createMfaService(deps: {
     async beginSignIn(
       user: { id: string; account: string; roles: AdminRole[] },
       method: string,
+      opts: { audience?: MfaAudience; required?: boolean } = {},
     ): Promise<MfaChallenge | null> {
       const mfa = await loadMfa(user.id);
-      const required = mfaRequiredFor(user.roles, deps.policy);
+      // Org members: required when their organisation requires it (not by staff role).
+      const required = opts.required ?? mfaRequiredFor(user.roles, deps.policy);
       if (!mfa && !required) return null;
       const token = randomBytes(32).toString('base64url');
       const enrollment = mfa ? null : newSecret(user.id, user.account);
       const state: ChallengeState = {
         userId: user.id,
+        audience: opts.audience ?? 'admin',
         method,
         mode: mfa ? 'VERIFY' : 'ENROLL',
         pending: enrollment?.encrypted ?? null,
@@ -183,18 +194,22 @@ export function createMfaService(deps: {
     async completeSignIn(
       input: { mfaToken: string; code?: string; recoveryCode?: string },
       ctx: ClientContext,
+      audience: MfaAudience = 'admin',
     ): Promise<{ userId: string; method: string; recoveryCodes: string[] | null }> {
       const key = challengeKey(input.mfaToken);
       const raw = await deps.redis.get(key);
       if (!raw) throw expired();
       const state = JSON.parse(raw) as ChallengeState;
+      // A challenge from one app's sign-in never completes a session in the other.
+      if ((state.audience ?? 'admin') !== audience) throw expired();
+      const actorType = actorOf(state.audience);
       const fail = async () => {
         state.attempts += 1;
         if (state.attempts >= MFA_MAX_ATTEMPTS) await deps.redis.del(key);
         else await deps.redis.set(key, JSON.stringify(state), 'KEEPTTL');
         await deps.audit.record(
           {
-            actorType: 'ADMIN',
+            actorType,
             actorId: state.userId,
             action: 'auth.mfa_failed',
             outcome: 'FAILURE',
@@ -216,7 +231,7 @@ export function createMfaService(deps: {
         recoveryCodes = await enable(state.userId, state.pending, step);
         await deps.audit.record(
           {
-            actorType: 'ADMIN',
+            actorType,
             actorId: state.userId,
             action: 'auth.mfa_enabled',
             details: { at: 'sign_in' },
@@ -234,7 +249,7 @@ export function createMfaService(deps: {
         if (input.recoveryCode) {
           await deps.audit.record(
             {
-              actorType: 'ADMIN',
+              actorType,
               actorId: state.userId,
               action: 'auth.mfa_recovery_code_used',
               details: { remaining: mfa.recoveryCodeHashes.length - 1 },
@@ -246,11 +261,15 @@ export function createMfaService(deps: {
       return { userId: state.userId, method: state.method, recoveryCodes };
     },
 
-    async status(userId: string, roles: readonly AdminRole[]): Promise<MfaStatus> {
+    async status(
+      userId: string,
+      roles: readonly AdminRole[],
+      requiredOverride?: boolean,
+    ): Promise<MfaStatus> {
       const mfa = await loadMfa(userId);
       return {
         enabled: Boolean(mfa),
-        required: mfaRequiredFor(roles, deps.policy),
+        required: requiredOverride ?? mfaRequiredFor(roles, deps.policy),
         enabledAt: mfa?.enabledAt?.toISOString() ?? null,
         recoveryCodesRemaining: mfa?.recoveryCodeHashes.length ?? 0,
       };
@@ -315,8 +334,14 @@ export function createMfaService(deps: {
       return { recoveryCodes: codes };
     },
 
-    async disable(userId: string, roles: readonly AdminRole[], code: string, ctx: ClientContext) {
-      if (mfaRequiredFor(roles, deps.policy)) {
+    async disable(
+      userId: string,
+      roles: readonly AdminRole[],
+      code: string,
+      ctx: ClientContext,
+      requiredOverride?: boolean,
+    ) {
+      if (requiredOverride ?? mfaRequiredFor(roles, deps.policy)) {
         throw AppError.forbidden('Two-factor authentication is required for your role.');
       }
       const mfa = await loadMfa(userId);

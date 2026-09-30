@@ -32,7 +32,7 @@ Removed at every depth: password, MFA, token, OTP and IP hashes, storage keys an
 3. **Cancel** — signing in again on the candidate app before `scheduledFor` restores the account (`privacy.deletion_cancelled`). Admin sign-in never cancels it.
 4. **Erase** — the worker's `account-erasure` job (every `WORKER_ACCOUNT_ERASURE_INTERVAL_MS`, default hourly) calls `eraseAccount()` in `packages/db/src/erasure.ts` for each account past its date:
    - storage objects first (resume and JD files, report PDFs, recording segments and manifests); a storage failure aborts that account and it is retried on the next run;
-   - then records: resumes, job targets, interview sessions, turns (transcripts), evidence, scores, reports, feedback, coding attempts, integrity observations, media assets, review revisions, campaign applications, proof share links, readiness certificates (and their PDFs), plan checklist ticks, goals and nudge state, badges, auth identities, refresh tokens, OTP challenges and the profile. Immutable evaluation collections are deleted through the driver, the one lawful exception to their append-only rule;
+   - then records: resumes, job targets, interview sessions, turns (transcripts), evidence, scores, reports, feedback, coding attempts, integrity observations, media assets, review revisions, campaign applications, identity captures (photos first), organisations' notes and scorecards about the person, the campaign invites they joined through, proof share links, readiness certificates (and their PDFs), plan checklist ticks, goals and nudge state, badges, auth identities, refresh tokens, OTP challenges and the profile. Immutable evaluation collections are deleted through the driver, the one lawful exception to their append-only rule;
    - analytics events lose their user id;
    - the user document becomes a **tombstone** (status `DELETED`, no email, mobile, password, MFA or roles) so retained records keep a valid reference;
    - audited as `privacy.account_erased` (ids and counts only).
@@ -47,16 +47,33 @@ Removed at every depth: password, MFA, token, OTP and IP hashes, storage keys an
 
 ## Campaign data shared with an employer or college
 
-A candidate who applies through a campaign link agrees (per campaign, `CAMPAIGN_SHARING` consent) that the organisation's reviewers see that campaign's interviews and reports **inside the admin console**. There is no bulk export of candidate personal data to organisations from the platform.
+A candidate who applies through a campaign link agrees (per campaign, `CAMPAIGN_SHARING` consent) that the organisation's reviewers see that campaign's interviews and reports. For campaigns run by CodeBegun admins this happens inside the admin console. Organisations on the org portal see it themselves (below).
 
 - On erasure, the campaign application, its sessions and reports are deleted, so they disappear from the organisation's results.
-- Anything the organisation copied out of the platform before that (notes, screenshots, its own ATS) is held by the organisation as its own Data Fiduciary under its own policies; the Privacy Notice and Grievance page say so. Contracts with campaign organisations should require them to honour erasure requests the Grievance Officer forwards.
+- Anything the organisation copied out of the platform before that (notes, screenshots, CSV exports, its own ATS through webhooks or the API) is held by the organisation as its own Data Fiduciary under its own policies; the Privacy Notice and Grievance page say so. Contracts with campaign organisations should require them to honour erasure requests the Grievance Officer forwards.
+
+### Organisations (org portal)
+
+Employers and colleges with their own portal accounts ([org portal](../architecture/org-portal.md)) act on candidates' data directly. The platform limits what they get:
+
+- **Consent gate.** Results, candidate pages, CSV exports, cohort analytics, webhooks and API-key reads include **only applications whose interview has an accepted `CAMPAIGN_SHARING` consent**. A candidate who has joined but not agreed yet is invisible to the organisation (the organisation sees only the invite it sent itself).
+- **Employer view.** Each campaign states what reviewers see: scores only, or the report and transcript as well. Candidates are told on the landing page before joining (en, hi, te) and the API enforces it.
+- **Tenant isolation.** Every org query is filtered by the member's organisation; other organisations' ids answer 404. Integration tests cover each endpoint.
+- **Accountability.** Viewing a candidate, viewing identity photos, exports (with row counts), API reads, stage changes, notes and scorecards are audited with the organisation id. Note texts are not copied into the audit log.
+- **Exports** are CSV only (UTF-8, formula-neutralised), streamed; organisations cannot build report packages.
+- **Identity capture** (optional per campaign) needs its own required `IDENTITY_CAPTURE` consent. Photos are kept for the recording retention, deleted by the worker after it, and never matched automatically ([why](../architecture/org-portal.md#identity-check)). Candidates are asked to cover numbers they need not show (Aadhaar).
+- **Invites** hold the email address, name and cohort tags the organisation supplied; the invite token is stored encrypted (for reminders) and hashed (for lookups).
+- **Webhook delivery logs** keep the event body for 30 days (TTL index) for retries and the log; they contain the candidate's name, email and scores for `campaign.candidate_completed`, which the candidate agreed to share with that organisation.
+
+On erasure (below), the person's identity photos and records, the organisation's notes and scorecards about them, and the invites they joined through are deleted too.
 
 ## Retention
 
 | Data                        | Default                                         | Setting                        |
 | --------------------------- | ----------------------------------------------- | ------------------------------ |
 | Video/audio recordings      | 90 days, then deleted by the media sweep        | `MEDIA_RETENTION_DAYS_DEFAULT` |
+| Identity-capture photos     | as recordings (90 days), deleted by the sweep   | `MEDIA_RETENTION_DAYS_DEFAULT` |
+| Webhook delivery log        | 30 days (TTL index)                             | —                              |
 | Account data and interviews | until the candidate deletes them or the account | —                              |
 | Deleted account (grace)     | 7 days, then erased                             | `ACCOUNT_DELETION_GRACE_DAYS`  |
 | OTP challenges              | a day after expiry (TTL index)                  | —                              |

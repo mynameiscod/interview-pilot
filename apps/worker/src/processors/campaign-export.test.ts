@@ -69,6 +69,7 @@ const row = (i: number, overrides: Partial<CampaignResultRow> = {}): CampaignRes
   scoreRevision: 0,
   dimensions: { 'api-design': 70 },
   flagged: false,
+  stage: 'NEW',
   ...overrides,
 });
 

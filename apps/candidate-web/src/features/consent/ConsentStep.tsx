@@ -12,6 +12,7 @@ const TYPE_ICON = {
   RECORDING: 'bi-record-circle',
   INTEGRITY: 'bi-eye',
   CAMPAIGN_SHARING: 'bi-building',
+  IDENTITY_CAPTURE: 'bi-person-vcard',
 } as const satisfies Record<ConsentType, string>;
 
 /** Consent texts are plain text; a blank line starts a new paragraph. */

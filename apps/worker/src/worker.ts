@@ -55,6 +55,8 @@ import { runAccountErasure } from './processors/account-erasure.js';
 import { processCertificatePdf } from './processors/certificate.js';
 import { runPracticeNudges, type PracticeNudgeDeps } from './processors/practice-nudge.js';
 import { rollupProviderHealth } from './processors/provider-health.js';
+import { runInviteMailer, type InviteMailerDeps } from './processors/invite-mailer.js';
+import { runWebhookDispatch, type WebhookDispatchDeps } from './processors/webhook-dispatch.js';
 
 export const HEARTBEAT_JOB = 'heartbeat' as const;
 export const PROVIDER_HEALTH_JOB = 'provider-health' as const;
@@ -66,6 +68,8 @@ export const ANALYTICS_ROLLUP_JOB = 'analytics-rollup' as const;
 export const EXPORT_SWEEP_JOB = 'export-sweep' as const;
 export const ACCOUNT_ERASURE_JOB = 'account-erasure' as const;
 export const PRACTICE_NUDGE_JOB = 'practice-nudge' as const;
+export const INVITE_MAIL_JOB = 'invite-mail' as const;
+export const WEBHOOK_DISPATCH_JOB = 'webhook-dispatch' as const;
 
 export interface WorkerRuntimeOptions {
   workerId: string;
@@ -106,6 +110,10 @@ export interface WorkerRuntimeOptions {
   evaluation?: { deps: EvaluationDeps; concurrency: number };
   /** Campaign package exports and the sweep of expired files; omit to leave the queue unconsumed. */
   exports?: { deps: CampaignExportDeps; concurrency: number; sweepIntervalMs: number };
+  /** Organisations' campaign invites and reminders; omit to disable. */
+  invites?: { deps: InviteMailerDeps; intervalMs: number };
+  /** Organisations' webhook deliveries and retries; omit to disable. */
+  webhooks?: { deps: WebhookDispatchDeps; intervalMs: number };
 }
 
 export interface WorkerRuntime {
@@ -226,6 +234,23 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
   const retryUnavailable = opts.mediaFiles
     ? createUnavailableRetry({ ffmpeg: opts.mediaFiles.ffmpeg, logger: opts.logger })
     : undefined;
+  // Invite emails and webhook posts wait on other services; they run beside the queue too.
+  let inviteRun: Promise<unknown> | null = null;
+  let webhookRun: Promise<unknown> | null = null;
+  if (opts.invites) {
+    await systemQueue.upsertJobScheduler(
+      INVITE_MAIL_JOB,
+      { every: opts.invites.intervalMs },
+      { name: INVITE_MAIL_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
+  if (opts.webhooks) {
+    await systemQueue.upsertJobScheduler(
+      WEBHOOK_DISPATCH_JOB,
+      { every: opts.webhooks.intervalMs },
+      { name: WEBHOOK_DISPATCH_JOB, opts: { removeOnComplete: 10, removeOnFail: 50 } },
+    );
+  }
   if (opts.erasure) {
     await systemQueue.upsertJobScheduler(
       ACCOUNT_ERASURE_JOB,
@@ -302,6 +327,24 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
             if (!opts.nudges) return;
             const counts = await runPracticeNudges({ ...opts.nudges.deps, logger: opts.logger });
             if (counts.sent + counts.failed > 0) opts.logger.info(counts, 'practice nudges sent');
+            return;
+          }
+          case INVITE_MAIL_JOB: {
+            if (!opts.invites || inviteRun) return;
+            inviteRun = runInviteMailer(opts.invites.deps)
+              .catch((err: unknown) => opts.logger.error({ err }, 'invite mailer failed'))
+              .finally(() => {
+                inviteRun = null;
+              });
+            return;
+          }
+          case WEBHOOK_DISPATCH_JOB: {
+            if (!opts.webhooks || webhookRun) return;
+            webhookRun = runWebhookDispatch(opts.webhooks.deps)
+              .catch((err: unknown) => opts.logger.error({ err }, 'webhook dispatch failed'))
+              .finally(() => {
+                webhookRun = null;
+              });
             return;
           }
           case ACCOUNT_ERASURE_JOB: {
@@ -467,6 +510,9 @@ export async function startWorkers(opts: WorkerRuntimeOptions): Promise<WorkerRu
         evaluationQueue?.close(),
         // An unfinished build is claimed again once its lease runs out.
         mediaFileRun,
+        // Claimed invites and deliveries are picked up again when their claims run out.
+        inviteRun,
+        webhookRun,
       ]);
     },
   };

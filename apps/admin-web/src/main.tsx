@@ -8,6 +8,7 @@ import { I18nextProvider } from 'react-i18next';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { routes } from './app/routes';
 import { loadAdminUser } from './app/session';
+import { OrgManagerProvider } from './org/guards';
 import { config } from './config';
 import { initI18n } from './i18n';
 
@@ -28,13 +29,17 @@ async function bootstrap() {
   );
   const i18n = await initI18n();
   const manager = createSessionManager({ baseUrl: config.apiUrl, audience: 'admin' });
+  // The org portal (/org) keeps its own session: a separate audience, cookie and tab channel.
+  const orgManager = createSessionManager({ baseUrl: config.apiUrl, audience: 'org' });
   const router = createBrowserRouter(routes);
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <I18nextProvider i18n={i18n}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider manager={manager} loadUser={loadAdminUser}>
-            <RouterProvider router={router} />
+            <OrgManagerProvider manager={orgManager}>
+              <RouterProvider router={router} />
+            </OrgManagerProvider>
           </AuthProvider>
         </QueryClientProvider>
       </I18nextProvider>

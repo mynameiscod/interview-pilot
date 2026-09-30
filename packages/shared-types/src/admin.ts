@@ -62,7 +62,15 @@ export const InviteAdminResponse = z.object({
 });
 export type InviteAdminResponse = z.infer<typeof InviteAdminResponse>;
 
-export const AuditActorType = z.enum(['USER', 'ADMIN', 'SYSTEM', 'ANONYMOUS']);
+/** `ORG_MEMBER`: a member of an employer or college in the org portal; `API_KEY`: an org API key. */
+export const AuditActorType = z.enum([
+  'USER',
+  'ADMIN',
+  'SYSTEM',
+  'ANONYMOUS',
+  'ORG_MEMBER',
+  'API_KEY',
+]);
 export type AuditActorType = z.infer<typeof AuditActorType>;
 
 export const AuditLogEntry = z.object({

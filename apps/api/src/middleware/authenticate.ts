@@ -2,7 +2,10 @@ import type { AccessTokenIssuer } from '@cbi/auth-core';
 import { AccessTokenError } from '@cbi/auth-core';
 import {
   CSRF_HEADER,
+  hasOrgPermission,
   hasPermission,
+  type OrgPermission,
+  type OrgRole,
   type Permission,
   type SessionAudience,
 } from '@cbi/shared-types';
@@ -52,11 +55,21 @@ export function authenticate(
     }
     // After the account checks, so suspension and lost admin access keep their own answers.
     if (revoked) throw ended();
+    // Org sessions follow the live membership: removal or suspension applies at once.
+    if (audience === 'org') {
+      if (!state.org) throw AppError.forbidden('This account is not a member of an organisation.');
+      if (state.org.orgStatus !== 'ACTIVE') {
+        throw new AppError(403, 'ACCOUNT_SUSPENDED', 'This organisation is suspended.');
+      }
+    }
     req.auth = {
       userId: claims.userId,
       audience,
       sessionId: claims.sessionId,
       adminRoles: state.adminRoles,
+      ...(audience === 'org' && state.org
+        ? { org: { orgId: state.org.orgId, role: state.org.role } }
+        : {}),
     };
     next();
   };
@@ -74,6 +87,22 @@ export function requirePermission(permission: Permission): RequestHandler {
     if (auth.audience !== 'admin' || !hasPermission(auth.adminRoles, permission)) {
       throw AppError.forbidden();
     }
+    next();
+  };
+}
+
+/** The signed-in org member's organisation and role (org routes only). */
+export function requireOrg(req: Request): { orgId: string; role: OrgRole; userId: string } {
+  const auth = requireAuth(req);
+  if (auth.audience !== 'org' || !auth.org) throw AppError.forbidden();
+  return { ...auth.org, userId: auth.userId };
+}
+
+/** Org portal permission check (org sessions only; admin and candidate tokens never pass). */
+export function requireOrgPermission(permission: OrgPermission): RequestHandler {
+  return (req, _res, next) => {
+    const { role } = requireOrg(req);
+    if (!hasOrgPermission(role, permission)) throw AppError.forbidden();
     next();
   };
 }

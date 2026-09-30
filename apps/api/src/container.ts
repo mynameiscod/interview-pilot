@@ -69,6 +69,11 @@ import { createCertificateService } from './modules/ops/certificates.service.js'
 import { createDrillService } from './modules/progress/drills.service.js';
 import { createProgressService } from './modules/progress/progress.service.js';
 import { createEmailPreferencesService } from './modules/users/email-preferences.service.js';
+import { createIdentityService } from './modules/orgs/identity.service.js';
+import { createOrgIntegrationsService } from './modules/orgs/integrations.service.js';
+import { createInviteService } from './modules/orgs/invites.service.js';
+import { createOrgService } from './modules/orgs/orgs.service.js';
+import { createPipelineService } from './modules/orgs/pipeline.service.js';
 import { createSystemService } from './modules/ops/system.service.js';
 
 export interface ContainerOptions {
@@ -166,13 +171,16 @@ export function buildContainer(opts: ContainerOptions) {
     revoked: revokedSessions,
     audit,
     hashSecret: env.OTP_HMAC_SECRET,
+    // Org members hold personal data of candidates: their sessions are as short as staff ones.
     refreshTtlMs: {
       candidate: env.REFRESH_TTL_CANDIDATE_DAYS * 24 * 3600 * 1000,
       admin: env.REFRESH_TTL_ADMIN_HOURS * 3600 * 1000,
+      org: env.REFRESH_TTL_ADMIN_HOURS * 3600 * 1000,
     },
     maxAgeMs: {
       candidate: env.SESSION_MAX_AGE_CANDIDATE_DAYS * 24 * 3600 * 1000,
       admin: env.SESSION_MAX_AGE_ADMIN_DAYS * 24 * 3600 * 1000,
+      org: env.SESSION_MAX_AGE_ADMIN_DAYS * 24 * 3600 * 1000,
     },
   });
   const otp = createOtpService({
@@ -228,12 +236,18 @@ export function buildContainer(opts: ContainerOptions) {
     logger,
     tailorDailyLimit: env.RESUME_TAILOR_DAILY_LIMIT,
   });
-  const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET });
+  // Identity capture (organisations' campaigns): images follow the recording retention.
+  const identity = createIdentityService({
+    storage,
+    audit,
+    retentionDays: env.MEDIA_RETENTION_DAYS_DEFAULT,
+  });
+  const consent = createConsentService({ audit, hashSecret: env.OTP_HMAC_SECRET, identity });
   // Flag and setting changes reach every API process over Redis pub/sub.
   const opsChanges = createOpsChangeBus({ redis, logger });
   const flags = createFlagService({ audit, changes: opsChanges });
   const settings = createSettingsService({ audit, changes: opsChanges });
-  const interviews = createInterviewService({ jobs, audit, logger, consent });
+  const interviews = createInterviewService({ jobs, audit, logger, consent, identity });
   const libraryAdmin = createLibraryAdminService({ audit });
   const rooms = createRoomEmitter();
   const transcripts = createTranscriptStore(redis);
@@ -331,6 +345,22 @@ export function buildContainer(opts: ContainerOptions) {
     maintenance: () => settings.get('maintenance'),
   });
   const review = createReviewService({ audit, jobs, logger });
+  const orgs = createOrgService({
+    accounts,
+    sessions,
+    userState,
+    audit,
+    email,
+    logger,
+    portalUrl: env.PUBLIC_ADMIN_URL,
+  });
+  const invites = createInviteService({ audit, secrets: ai.secrets });
+  const pipeline = createPipelineService({ audit, identity });
+  const orgIntegrations = createOrgIntegrationsService({
+    audit,
+    secrets: ai.secrets,
+    allowHttpWebhooks: env.APP_ENV === 'development' || env.APP_ENV === 'test',
+  });
   const analytics = createAnalyticsService({ audit, settings, logger });
   const queueAdmin = opts.overrides?.queueAdmin ?? createQueueAdmin(opts.queueRedis ?? redis);
   const system = createSystemService({
@@ -410,6 +440,11 @@ export function buildContainer(opts: ContainerOptions) {
     reports,
     campaigns,
     review,
+    identity,
+    orgs,
+    invites,
+    pipeline,
+    orgIntegrations,
     flags,
     settings,
     opsChanges,

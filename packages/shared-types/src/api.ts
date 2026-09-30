@@ -73,6 +73,9 @@ export const ErrorCode = z.enum([
   // Progress and practice drills
   /** Today's free practice drills are used up (India time); the next ones are free tomorrow. */
   'DRILL_LIMIT_REACHED',
+  // Organisation portal
+  /** The campaign only admits invited candidates, and this account's email was not invited. */
+  'INVITE_REQUIRED',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

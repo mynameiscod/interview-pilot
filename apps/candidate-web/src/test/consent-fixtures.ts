@@ -20,6 +20,10 @@ const TEXTS: Record<ConsentType, { title: string; body: string }> = {
     title: 'Session observations',
     body: 'Tab switches, focus changes and pastes are noted.\n\nThey are observations, never judgements.',
   },
+  IDENTITY_CAPTURE: {
+    title: 'Confirming your identity',
+    body: 'You take a selfie and a photo of an ID before the interview.\n\nReviewers compare them by eye.',
+  },
   CAMPAIGN_SHARING: {
     title: 'Sharing with the company',
     body: 'Your answers and report are shared with the company that invited you.\n\nThey use them to decide on next steps.',

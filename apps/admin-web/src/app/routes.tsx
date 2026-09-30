@@ -1,11 +1,101 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { AdminLayout } from './AdminLayout';
 import { RedirectIfSignedIn, RequireAdmin, RequirePermission, RouteLoading } from './guards';
+import {
+  OrgAuthRoot,
+  RedirectIfOrgSignedIn,
+  RequireOrgMember,
+  RequireOrgPermission,
+} from '../org/guards';
+
+const orgPage = (load: () => Promise<{ Component: () => React.ReactNode }>) => ({ lazy: load });
+
+/**
+ * The org portal (employers and colleges) under `/org`: its own session
+ * (the `org` audience), layout and navigation. Staff routes never accept an
+ * org session and org routes never accept a staff one.
+ */
+const orgRoutes: RouteObject = {
+  path: 'org',
+  element: <OrgAuthRoot />,
+  children: [
+    {
+      element: <RedirectIfOrgSignedIn />,
+      children: [
+        {
+          path: 'login',
+          ...orgPage(async () => ({
+            Component: (await import('../org/OrgLoginPage')).OrgLoginPage,
+          })),
+        },
+      ],
+    },
+    {
+      element: <RequireOrgMember />,
+      children: [
+        {
+          ...orgPage(async () => ({ Component: (await import('../org/OrgLayout')).OrgLayout })),
+          children: [
+            {
+              index: true,
+              ...orgPage(async () => ({
+                Component: (await import('../org/OrgCampaignsPage')).OrgCampaignsPage,
+              })),
+            },
+            {
+              path: 'campaigns/:campaignId',
+              ...orgPage(async () => ({
+                Component: (await import('../org/OrgCampaignPage')).OrgCampaignPage,
+              })),
+            },
+            {
+              path: 'campaigns/:campaignId/candidates/:applicationId',
+              ...orgPage(async () => ({
+                Component: (await import('../org/OrgCandidatePage')).OrgCandidatePage,
+              })),
+            },
+            {
+              path: 'cohort',
+              ...orgPage(async () => ({
+                Component: (await import('../org/OrgCohortPage')).OrgCohortPage,
+              })),
+            },
+            {
+              path: 'team',
+              ...orgPage(async () => ({
+                Component: (await import('../org/OrgTeamPage')).OrgTeamPage,
+              })),
+            },
+            {
+              path: 'integrations',
+              element: <RequireOrgPermission permission="org.integrations.manage" />,
+              children: [
+                {
+                  index: true,
+                  ...orgPage(async () => ({
+                    Component: (await import('../org/OrgIntegrationsPage')).OrgIntegrationsPage,
+                  })),
+                },
+              ],
+            },
+            {
+              path: '*',
+              ...orgPage(async () => ({
+                Component: (await import('../pages/NotFoundPage')).NotFoundPage,
+              })),
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
 
 export const routes: RouteObject[] = [
   {
     HydrateFallback: RouteLoading,
     children: [
+      orgRoutes,
       {
         element: <RedirectIfSignedIn />,
         children: [
@@ -371,6 +461,25 @@ export const routes: RouteObject[] = [
                     lazy: async () => ({
                       Component: (await import('../features/campaigns/CampaignDetailPage'))
                         .CampaignDetailPage,
+                    }),
+                  },
+                ],
+              },
+              {
+                // Employers and colleges on the self-serve portal (super admins manage them).
+                path: 'orgs',
+                element: <RequirePermission permission="orgs.read" />,
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({
+                      Component: (await import('../features/orgs/OrgsPage')).OrgsPage,
+                    }),
+                  },
+                  {
+                    path: ':orgId',
+                    lazy: async () => ({
+                      Component: (await import('../features/orgs/OrgsPage')).OrgDetailPage,
                     }),
                   },
                 ],

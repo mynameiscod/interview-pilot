@@ -208,12 +208,13 @@ import {
   UpdateProfileBody,
 } from '@cbi/shared-types';
 import { z } from 'zod';
+import { registerOrgPaths } from './org-paths.js';
 
 export type OpenApiDocument = ReturnType<OpenApiGeneratorV31['generateDocument']>;
 
-type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
+export type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
-interface RouteSpec {
+export interface RouteSpec {
   summary: string;
   tag: string;
   auth?: 'bearer' | 'refreshCookie';
@@ -321,6 +322,7 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
   for (const [prefix, tag] of [
     ['/auth', 'Candidate auth'],
     ['/admin/auth', 'Admin auth'],
+    ['/org/auth', 'Org auth'],
   ] as const) {
     route('get', `${prefix}/providers`, {
       tag,
@@ -391,6 +393,14 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     summary: 'Email and password; answers a session or a second-factor challenge',
     body: PasswordLoginBody,
     response: AdminSignInResponse,
+    errors: [400, 401, 403, 429],
+  });
+  route('post', '/org/auth/mfa/verify', {
+    tag: 'Org auth',
+    summary:
+      'Second sign-in step when the organisation requires an authenticator (or the member set one up)',
+    body: MfaVerifyBody,
+    response: MfaSessionResponse,
     errors: [400, 401, 403, 429],
   });
   route('post', '/admin/auth/mfa/verify', {
@@ -1807,6 +1817,8 @@ export function buildOpenApiDocument(version: string): OpenApiDocument {
     body: UpdateSettingBody,
     response: SettingEntry,
   });
+
+  registerOrgPaths(route);
 
   const generator = new OpenApiGeneratorV31(registry.definitions);
   return generator.generateDocument({

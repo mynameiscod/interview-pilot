@@ -16,7 +16,8 @@ import { useFlag } from '../../app/system-api';
 import { useTrackOnce } from '../../lib/use-analytics';
 import { RouteLoading } from '../../app/RouteStates';
 import { CodingWorkspace } from '../coding/CodingWorkspace';
-import { queryKeys } from '../interviews/interviews-api';
+import { useIdentityFrame } from '../campaigns/use-identity-frame';
+import { queryKeys, useInterview } from '../interviews/interviews-api';
 import { useCameraStream, useInterviewRecording, type TrackKind } from '../media/video-hooks';
 import { clearDraft, loadDraft, saveDraft } from './drafts';
 import { useIntegrityObservations } from './integrity';
@@ -385,6 +386,13 @@ export function RoomPage() {
     ended: Boolean(finished) || (room.joined && room.mode !== 'VIDEO'),
   });
   useIntegrityObservations(observing, reportIntegrity);
+  // Campaigns with identity capture: one frame from the camera for the reviewers.
+  const summary = useInterview(id);
+  useIdentityFrame(
+    id,
+    camera.stream,
+    videoMode && Boolean(summary.data?.campaign?.identity?.required),
+  );
   useTrackOnce('interview_room_joined', room.joined);
 
   const onTtsDown = useCallback(() => reportDegraded('TTS'), [reportDegraded]);

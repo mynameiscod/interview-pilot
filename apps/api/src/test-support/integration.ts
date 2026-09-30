@@ -81,8 +81,12 @@ export function extractCode(text: string): string {
   return match[1]!;
 }
 
-const base = (audience: SessionAudience) =>
-  audience === 'admin' ? '/api/v1/admin/auth' : '/api/v1/auth';
+const BASE: Record<SessionAudience, string> = {
+  candidate: '/api/v1/auth',
+  admin: '/api/v1/admin/auth',
+  org: '/api/v1/org/auth',
+};
+const base = (audience: SessionAudience) => BASE[audience];
 
 /** Recovery codes from authenticator set-ups in this run (to pass later VERIFY steps). */
 const recoveryCodes = new Map<string, string[]>();
@@ -95,13 +99,14 @@ export async function completeMfa(
   agent: ReturnType<typeof request.agent>,
   challenge: MfaChallenge,
   userKey: string,
+  audience: SessionAudience = 'admin',
 ) {
   const body =
     challenge.mode === 'ENROLL'
       ? { mfaToken: challenge.mfaToken, code: totpCode(challenge.enrollment!.secret) }
       : { mfaToken: challenge.mfaToken, recoveryCode: recoveryCodes.get(userKey)?.pop() };
   const res = await agent
-    .post('/api/v1/admin/auth/mfa/verify')
+    .post(`${base(audience)}/mfa/verify`)
     .set('Origin', TEST_ORIGIN)
     .send(body)
     .expect(200);
@@ -134,7 +139,12 @@ export async function signInWithEmail(
     .expect(200);
   // Super admins (and, when configured, every admin) complete the authenticator step.
   if (verified.body.data.mfaRequired) {
-    verified = await completeMfa(agent, verified.body.data as MfaChallenge, email.toLowerCase());
+    verified = await completeMfa(
+      agent,
+      verified.body.data as MfaChallenge,
+      email.toLowerCase(),
+      audience,
+    );
   }
   return {
     agent,

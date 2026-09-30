@@ -4,6 +4,8 @@ A **campaign** is a company's interview that every candidate takes on the same t
 
 **Manual review** lets staff flag an interview and revise its scores. Each revision is a new score and report. The AI original is never changed.
 
+Employers and colleges can also run campaigns themselves in the **org portal**: personal invites with reminders, invite-only campaigns, a candidate pipeline with notes and scorecards, cohort analytics, webhooks and API keys, and an optional identity check. See [the org portal](org-portal.md). CodeBegun admins still see and manage every campaign, including organisations' (`campaigns.orgId`).
+
 - Contracts: [`packages/shared-types/src/campaign.ts`](../../packages/shared-types/src/campaign.ts), [`review.ts`](../../packages/shared-types/src/review.ts)
 - Models: [`packages/db/src/models/campaign.ts`](../../packages/db/src/models/campaign.ts); results queries: [`packages/db/src/campaign-results.ts`](../../packages/db/src/campaign-results.ts)
 - Package exports: [`apps/worker/src/processors/campaign-export.ts`](../../apps/worker/src/processors/campaign-export.ts)
@@ -146,6 +148,8 @@ The detail view shows:
 | `campaigns.manage`  | OPERATIONS, ALL          | Create, update, status, rotate the link, CSV/package exports |
 | `interviews.read`   | OPERATIONS, SUPPORT, ALL | Interview list and review detail (audited)                   |
 | `interviews.review` | OPERATIONS, ALL          | Flag, revise scores                                          |
+| `orgs.read`         | OPERATIONS, SUPPORT, ALL | Organisations, their members and wallets                     |
+| `orgs.manage`       | ALL                      | Create organisations, invite owners, seats, quotas, wallets  |
 
 `ALL` = SUPER_ADMIN. CONTENT and FINANCE admins have no campaign or review access. Candidate tokens never open admin routes.
 

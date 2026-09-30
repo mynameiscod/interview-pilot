@@ -20,6 +20,17 @@ import {
   ReviewRevisionModel,
 } from './models/campaign.js';
 import {
+  CampaignInviteModel,
+  IdentityCaptureModel,
+  OrgApiKeyModel,
+  OrgMemberModel,
+  OrgModel,
+  OrgNoteModel,
+  OrgScorecardModel,
+  OrgWebhookModel,
+  WebhookDeliveryModel,
+} from './models/org.js';
+import {
   AnalyticsDailyModel,
   AnalyticsEventModel,
   FeatureFlagModel,
@@ -122,6 +133,15 @@ const MODELS = [
   UserProgressModel,
   BadgeAwardModel,
   CertificateModel,
+  OrgModel,
+  OrgMemberModel,
+  CampaignInviteModel,
+  OrgNoteModel,
+  OrgScorecardModel,
+  OrgWebhookModel,
+  WebhookDeliveryModel,
+  OrgApiKeyModel,
+  IdentityCaptureModel,
 ];
 
 export interface EnsureIndexesOptions {

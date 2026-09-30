@@ -18,6 +18,7 @@ import {
   type ConsentTextSummary,
   type ConsentType,
   type CreateConsentTextBody,
+  type IdentityCaptureStatus,
   type SessionConsents,
   type UserConsentEntry,
   type VoiceReadiness,
@@ -48,7 +49,12 @@ export const consentTextSummary = (t: ConsentTextRecord): ConsentTextSummary => 
 const localeOf = (s: Pick<Session, 'language'>): ConsentLocale =>
   s.language === 'hi' || s.language === 'te' ? s.language : 'en';
 
-export function createConsentService(deps: { audit: AuditService; hashSecret: string }) {
+export function createConsentService(deps: {
+  audit: AuditService;
+  hashSecret: string;
+  /** Identity capture before starting (organisations' campaigns that ask for it). */
+  identity?: { statusFor(s: Session): Promise<IdentityCaptureStatus | null> };
+}) {
   const { audit } = deps;
 
   /** The active text for a type in the locale, falling back to English. */
@@ -63,6 +69,13 @@ export function createConsentService(deps: { audit: AuditService; hashSecret: st
             active: true,
           }).lean<ConsentTextRecord>())
     );
+  }
+
+  /** Whether the interview's campaign captures identity photos. */
+  async function capturesIdentity(s: Session) {
+    if (!s.campaignId) return false;
+    const campaign = await CampaignModel.findById(s.campaignId, { idCapture: 1 }).lean();
+    return campaign?.idCapture ?? false;
   }
 
   /** A campaign's proctoring rules replace the template's for its interviews. */
@@ -82,6 +95,7 @@ export function createConsentService(deps: { audit: AuditService; hashSecret: st
   async function sessionConsents(s: Session): Promise<SessionConsents> {
     const requirements = consentRequirements(s.mode, await policyOf(s), {
       campaign: Boolean(s.campaignId),
+      idCapture: await capturesIdentity(s),
     });
     const items: SessionConsents['items'] = [];
     for (const r of requirements) {
@@ -158,6 +172,10 @@ export function createConsentService(deps: { audit: AuditService; hashSecret: st
       }
       if (!blocker && !consents.complete) {
         blocker = 'Please review and respond to the consent notices before starting.';
+      }
+      const identity = deps.identity ? await deps.identity.statusFor(s) : null;
+      if (!blocker && identity && !identity.complete) {
+        blocker = 'Take your selfie and a photo of your ID before starting.';
       }
       return {
         voice,

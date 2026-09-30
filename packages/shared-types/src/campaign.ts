@@ -52,8 +52,48 @@ const campaignFields = {
   sponsoredCredits: z.number().int().min(1).max(100_000).nullable(),
 };
 
-export const CreateCampaignBody = z.object(campaignFields);
+/**
+ * What an organisation's reviewers see of a candidate (shown to candidates
+ * before they join): `SCORES` = overall, band and dimension scores;
+ * `FULL_REPORT` also shows the report narrative and the transcript.
+ */
+export const EmployerView = z.enum(['SCORES', 'FULL_REPORT']);
+export type EmployerView = z.infer<typeof EmployerView>;
+
+/** Automatic invite reminders (sent by the worker to invitees who have not joined). */
+export const INVITE_REMINDER_MAX = 2;
+export const InviteReminders = z.object({
+  enabled: z.boolean(),
+  /** Reminders per invite, at most two. */
+  max: z.number().int().min(1).max(INVITE_REMINDER_MAX),
+  /** Hours after the invite (or the previous reminder) before the next one. */
+  intervalHours: z
+    .number()
+    .int()
+    .min(12)
+    .max(24 * 14),
+});
+export type InviteReminders = z.infer<typeof InviteReminders>;
+
+export const DEFAULT_INVITE_REMINDERS: InviteReminders = {
+  enabled: true,
+  max: INVITE_REMINDER_MAX,
+  intervalHours: 48,
+};
+
+/** Organisation portal options. Defaults keep the behaviour of campaigns created before them. */
+const orgCampaignFields = {
+  /** Only invited emails may join (an email allowlist); the shared link alone is not enough. */
+  requireInvite: z.boolean().default(false),
+  employerView: EmployerView.default('FULL_REPORT'),
+  /** Candidates capture a selfie and an ID photo before starting, for manual verification. */
+  idCapture: z.boolean().default(false),
+  reminders: InviteReminders.default(DEFAULT_INVITE_REMINDERS),
+};
+
+export const CreateCampaignBody = z.object({ ...campaignFields, ...orgCampaignFields });
 export type CreateCampaignBody = z.infer<typeof CreateCampaignBody>;
+export type CreateCampaignInput = z.input<typeof CreateCampaignBody>;
 
 /** Fields that can change after creation (the role, template and modes stay pinned). */
 export const UpdateCampaignBody = z.object({
@@ -64,6 +104,8 @@ export const UpdateCampaignBody = z.object({
   maxCandidates: campaignFields.maxCandidates,
   candidateSeesReport: z.boolean(),
   sponsoredCredits: campaignFields.sponsoredCredits,
+  /** Omitted keeps the current reminder settings. */
+  reminders: InviteReminders.optional(),
   reason: z.string().trim().min(3).max(300),
 });
 export type UpdateCampaignBody = z.infer<typeof UpdateCampaignBody>;
@@ -99,6 +141,12 @@ export const CampaignSummary = z.object({
   sponsoredCredits: z.object({ total: z.number().int(), used: z.number().int() }).nullable(),
   /** First characters of the invite token, to recognise a link (the token itself is not stored). */
   tokenHint: z.string(),
+  /** The organisation that runs it (org portal); null for campaigns run by CodeBegun admins. */
+  orgId: z.string().nullable(),
+  requireInvite: z.boolean(),
+  employerView: EmployerView,
+  idCapture: z.boolean(),
+  reminders: InviteReminders,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -157,6 +205,12 @@ export const PublicCampaign = z.object({
   closedReason: CampaignClosedReason.nullable(),
   /** The signed-in candidate already joined (their interview id). */
   joinedInterviewId: z.string().nullable(),
+  /** Only invited email addresses may join. */
+  inviteOnly: z.boolean(),
+  /** What the company's reviewers will see. */
+  employerView: EmployerView,
+  /** A selfie and an ID photo are captured before the interview starts. */
+  idCapture: z.boolean(),
 });
 export type PublicCampaign = z.infer<typeof PublicCampaign>;
 
@@ -177,6 +231,10 @@ export type JoinCampaignResult = z.infer<typeof JoinCampaignResult>;
 export const ApplicationStatus = z.enum(['JOINED', 'IN_PROGRESS', 'COMPLETED', 'DID_NOT_FINISH']);
 export type ApplicationStatus = z.infer<typeof ApplicationStatus>;
 
+/** Where the organisation has put a candidate (org portal pipeline); every application starts NEW. */
+export const CandidateStage = z.enum(['NEW', 'SHORTLISTED', 'ON_HOLD', 'REJECTED', 'HIRED']);
+export type CandidateStage = z.infer<typeof CandidateStage>;
+
 export const CampaignResultRow = z.object({
   applicationId: z.string(),
   interviewId: z.string().nullable(),
@@ -195,6 +253,7 @@ export const CampaignResultRow = z.object({
   scoreRevision: z.number().int().nullable(),
   dimensions: z.record(z.string(), z.number().int().nullable()),
   flagged: z.boolean(),
+  stage: CandidateStage,
 });
 export type CampaignResultRow = z.infer<typeof CampaignResultRow>;
 
@@ -232,6 +291,7 @@ export const CampaignResultsExportQuery = z.object({
     .string()
     .regex(/^[a-z0-9-]+:\d{1,3}$/)
     .optional(),
+  stage: CandidateStage.optional(),
   sort: CampaignResultsSort.default('overall_desc'),
 });
 export type CampaignResultsExportQuery = z.infer<typeof CampaignResultsExportQuery>;

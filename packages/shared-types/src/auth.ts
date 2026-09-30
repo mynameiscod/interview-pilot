@@ -2,8 +2,12 @@ import { z } from 'zod';
 import { UiLocale } from './i18n.js';
 import { MeResponse } from './users.js';
 
-/** Which app a session belongs to. Tokens for one audience are rejected by the other. */
-export const SessionAudience = z.enum(['candidate', 'admin']);
+/**
+ * Which app a session belongs to. Tokens for one audience are rejected by the
+ * others. `org`: employer and college members in the org portal (served by the
+ * admin web app under `/org`), never CodeBegun staff routes.
+ */
+export const SessionAudience = z.enum(['candidate', 'admin', 'org']);
 export type SessionAudience = z.infer<typeof SessionAudience>;
 
 export const OtpChannel = z.enum(['EMAIL', 'MOBILE']);

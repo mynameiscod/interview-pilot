@@ -1,5 +1,6 @@
 import type {
   ApplicationStatus,
+  CandidateStage,
   CampaignResultRow,
   CampaignResults,
   CampaignResultsExportQuery,
@@ -8,9 +9,11 @@ import type {
   CampaignSummary,
   InterviewState,
 } from '@cbi/shared-types';
+import { DEFAULT_INVITE_REMINDERS } from '@cbi/shared-types';
 import type { PipelineStage, Types } from 'mongoose';
 import { CampaignApplicationModel, type CampaignRecord } from './models/campaign.js';
 import { InterviewScoreModel } from './models/evaluation.js';
+import { OrgScorecardModel } from './models/org.js';
 import { InterviewSessionModel } from './models/interview-session.js';
 import { RoleBlueprintModel } from './models/library.js';
 import { UserProfileModel } from './models/user-profile.js';
@@ -67,8 +70,17 @@ const SORTS: Record<CampaignResultsSort, Record<string, 1 | -1>> = {
 
 export type CampaignResultsFilter = Pick<
   CampaignResultsExportQuery,
-  'status' | 'minOverall' | 'dimension'
+  'status' | 'minOverall' | 'dimension' | 'stage'
 > & { sort?: CampaignResultsSort };
+
+/**
+ * The org portal's view of the same results: only candidates who accepted
+ * the campaign's CAMPAIGN_SHARING consent, with each reviewer scorecard's
+ * mean (and an optional minimum on it).
+ */
+export interface OrgResultsOptions {
+  minScorecard?: number;
+}
 
 /**
  * Matches, joins, filters and sorts a campaign's applications. `dimensionKeys`
@@ -79,6 +91,7 @@ export function campaignResultsPipeline(
   campaignId: Types.ObjectId,
   dimensionKeys: readonly string[],
   query: CampaignResultsFilter,
+  org?: OrgResultsOptions,
 ): PipelineStage[] {
   const stages: PipelineStage[] = [
     { $match: { campaignId } },
@@ -88,7 +101,16 @@ export function campaignResultsPipeline(
         localField: 'sessionId',
         foreignField: '_id',
         as: 'session',
-        pipeline: [{ $project: { state: 1, endedAt: 1, 'review.flagged': 1 } }],
+        pipeline: [
+          {
+            $project: {
+              state: 1,
+              endedAt: 1,
+              'review.flagged': 1,
+              ...(org ? { consents: 1 } : {}),
+            },
+          },
+        ],
       },
     },
     {
@@ -126,11 +148,19 @@ export function campaignResultsPipeline(
         overall: { $ifNull: ['$score.overall', null] },
         rank: { $ifNull: ['$score.overall', -1] },
         scored: { $cond: [{ $eq: [{ $ifNull: ['$score.overall', null] }, null] }, 0, 1] },
+        stage: { $ifNull: ['$stage', 'NEW'] },
       },
     },
   ];
+  if (org) stages.push(...scorecardStages());
 
   const match: Record<string, unknown> = {};
+  // Employers only ever see candidates who agreed to share this interview with them.
+  if (org) match['session.consents'] = { $elemMatch: { type: 'CAMPAIGN_SHARING', accepted: true } };
+  if (org?.minScorecard !== undefined) {
+    match.scorecardAverage = { $ne: null, $gte: org.minScorecard };
+  }
+  if (query.stage) match.stage = query.stage;
   if (query.status) match.status = query.status;
   if (query.minOverall !== undefined) match.overall = { $ne: null, $gte: query.minOverall };
   if (query.dimension) {
@@ -141,6 +171,34 @@ export function campaignResultsPipeline(
   if (Object.keys(match).length > 0) stages.push({ $match: match });
   stages.push({ $sort: SORTS[query.sort ?? 'overall_desc'] });
   return stages;
+}
+
+/** Each reviewer scorecard's mean, averaged (null without scorecards), and how many there are. */
+function scorecardStages(): PipelineStage[] {
+  return [
+    {
+      $lookup: {
+        from: OrgScorecardModel.collection.collectionName,
+        localField: '_id',
+        foreignField: 'applicationId',
+        as: 'scorecardDocs',
+        pipeline: [{ $project: { average: 1 } }],
+      },
+    },
+    {
+      $set: {
+        scorecardAverage: {
+          $cond: [
+            { $gt: [{ $size: '$scorecardDocs' }, 0] },
+            { $round: [{ $avg: '$scorecardDocs.average' }, 2] },
+            null,
+          ],
+        },
+        scorecards: { $size: '$scorecardDocs' },
+      },
+    },
+    { $unset: 'scorecardDocs' },
+  ];
 }
 
 /** Adds the candidate's email and display name (run after paging: they are not filtered on). */
@@ -173,6 +231,7 @@ export interface CampaignResultDoc {
   userId: Types.ObjectId;
   joinedAt: Date;
   status: ApplicationStatus;
+  stage?: CandidateStage;
   session: {
     _id: Types.ObjectId;
     endedAt?: Date | null;
@@ -218,6 +277,7 @@ export function toResultRow(
       ]),
     ),
     flagged: Boolean(session?.review?.flagged),
+    stage: doc.stage ?? 'NEW',
   };
 }
 
@@ -232,7 +292,7 @@ export async function campaignDimensions(
 }
 
 const hasFilters = (q: CampaignResultsFilter) =>
-  Boolean(q.status || q.minOverall !== undefined || q.dimension);
+  Boolean(q.status || q.minOverall !== undefined || q.dimension || q.stage);
 
 /** Candidates matching the filters. */
 export async function countCampaignResults(
@@ -421,6 +481,11 @@ export function campaignSummary(c: CampaignRecord): CampaignSummary {
       ? { total: c.sponsoredCredits.total, used: c.sponsoredCredits.used }
       : null,
     tokenHint: c.tokenHint,
+    orgId: c.orgId ? String(c.orgId) : null,
+    requireInvite: c.requireInvite ?? false,
+    employerView: c.employerView ?? 'FULL_REPORT',
+    idCapture: c.idCapture ?? false,
+    reminders: c.reminders ?? { ...DEFAULT_INVITE_REMINDERS },
     createdAt: iso(c.createdAt),
     updatedAt: iso(c.updatedAt),
   };

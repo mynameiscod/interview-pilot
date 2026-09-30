@@ -178,6 +178,10 @@ export function createSessionService(opts: SessionServiceOptions) {
         await revokeFamily(row.familyId, 'ROLE_CHANGE');
         throw AppError.forbidden('Admin access has been removed from this account.');
       }
+      if (audience === 'org' && (!state.org || state.org.orgStatus !== 'ACTIVE')) {
+        await revokeFamily(row.familyId, 'ROLE_CHANGE');
+        throw AppError.forbidden('Organisation access has been removed from this account.');
+      }
 
       // Rows written before the absolute cap existed start their cap now.
       const familyCreatedAt = row.familyCreatedAt ?? row.createdAt ?? now;
