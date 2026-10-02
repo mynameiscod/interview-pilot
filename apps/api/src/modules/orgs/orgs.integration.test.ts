@@ -360,7 +360,8 @@ describe('organisations, members and sign-in', () => {
     // Removing a member ends their access at once.
     const viewerId = members.find((m) => m.email === 'view@acme.test')!.id;
     await owner('delete', `/members/${viewerId}`).expect(204);
-    await viewer('get', '/campaigns').expect(403);
+    // Removal ends the member's sessions, and an ended session stops working at once.
+    await viewer('get', '/campaigns').expect(401);
     expect(await actions('org.member_removed')).toHaveLength(1);
   });
 
