@@ -23,11 +23,11 @@ test('switching the language to Hindi translates the page', async ({ page }) => 
       name: 'असली इंटरव्यू से पहले जानिए कि आप ठीक कहाँ खड़े हैं।',
     }),
   ).toBeVisible();
-  await expect(page.getByRole('link', { name: 'शुरू करें' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'शुरू करें', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'कीमतें' })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
 
   // The choice is remembered across a reload.
   await page.reload();
-  await expect(page.getByRole('link', { name: 'शुरू करें' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'शुरू करें', exact: true })).toBeVisible();
 });

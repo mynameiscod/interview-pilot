@@ -28,7 +28,7 @@ test('landing → email OTP sign-in → onboarding → dashboard', async ({ page
 
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole('heading', { name: 'Hi Ravi Kumar' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Start an interview' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start an interview' }).first()).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Recent interviews' })).toBeVisible();
 
   // The session survives a reload (refresh cookie on the API origin).

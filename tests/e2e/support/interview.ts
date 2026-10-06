@@ -17,7 +17,8 @@ export type InterviewMode = 'Text' | 'Voice' | 'Video';
  */
 export async function setUpRoleOnlyInterview(page: Page, mode: InterviewMode) {
   // ---- New interview wizard: no resume, no JD, a library role ----
-  await page.getByRole('link', { name: 'Start an interview' }).click();
+  // A new account's dashboard also offers it in the empty progress card.
+  await page.getByRole('link', { name: 'Start an interview' }).first().click();
   await expect(page.getByRole('heading', { name: 'New interview', level: 1 })).toBeVisible();
   await page.getByRole('button', { name: "Let's begin" }).click();
   await expect(page.getByRole('heading', { name: 'Add your resume' })).toBeVisible();
