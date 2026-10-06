@@ -24,7 +24,7 @@ test('switching the language to Hindi translates the page', async ({ page }) => 
     }),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'शुरू करें', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'कीमतें' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'कीमतें', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
 
   // The choice is remembered across a reload.

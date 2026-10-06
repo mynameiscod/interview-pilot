@@ -20,7 +20,7 @@ test('video interview: camera check → recording consent → recording starts',
   await passDeviceCheck(page, 'Video');
   // The standard template makes recording optional: the candidate chooses it here.
   const recording = page.getByRole('group', { name: /Recording/ });
-  await expect(recording.getByText('Optional')).toBeVisible();
+  await expect(recording.getByText('Optional', { exact: true })).toBeVisible();
   await acceptAllConsents(page);
   await expect(page.getByText(/This is a video interview/)).toBeVisible();
 
