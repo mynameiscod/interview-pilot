@@ -97,38 +97,60 @@ export function ConnectionPill({ status }: { status: ConnectionStatus }) {
   );
 }
 
-/** The interview's rounds with the current one marked. */
+/**
+ * The interview's rounds with the current one marked. A progress line, not tabs:
+ * the interviewer moves to the next round once the current one is answered.
+ */
 export function RoundStepper({ rounds, current }: { rounds: LiveRound[]; current: number }) {
   const { t } = useTranslation();
   if (rounds.length === 0) return null;
   return (
-    <ol className="list-unstyled d-flex flex-wrap gap-2 mb-0" aria-label={t('room.roundsLabel')}>
-      {rounds.map((round, idx) => {
-        const done = idx < current || round.state === 'COMPLETED' || round.state === 'TIMED_OUT';
-        const isCurrent = idx === current;
-        return (
-          <li
-            key={`${round.type}-${idx}`}
-            aria-current={isCurrent ? 'step' : undefined}
-            className={`small px-2 py-1 rounded-pill border d-inline-flex align-items-center gap-1 ${
-              isCurrent ? 'border-primary text-primary fw-semibold' : 'cb-border cb-text-secondary'
-            }`}
-          >
-            {done && !isCurrent && (
-              <i className="bi bi-check-circle-fill text-success" aria-hidden="true" />
-            )}
-            {isCurrent && <i className="bi bi-record-circle" aria-hidden="true" />}
-            <span className="visually-hidden">
-              {t('room.roundOf', { n: idx + 1, total: rounds.length })}
-            </span>
-            {t(`analysis.roundTypes.${round.type}`)}
-            {done && !isCurrent && (
-              <span className="visually-hidden"> ({t('room.roundDone')})</span>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <div>
+      <ol
+        className="list-unstyled d-flex flex-wrap align-items-center gap-1 mb-1"
+        aria-label={t('room.roundsLabel')}
+      >
+        {rounds.map((round, idx) => {
+          const done = idx < current || round.state === 'COMPLETED' || round.state === 'TIMED_OUT';
+          const isCurrent = idx === current;
+          return (
+            <li
+              key={`${round.type}-${idx}`}
+              aria-current={isCurrent ? 'step' : undefined}
+              className={`small px-2 py-1 d-inline-flex align-items-center gap-1 ${
+                isCurrent
+                  ? 'rounded-pill border border-primary text-primary fw-semibold'
+                  : 'cb-text-secondary'
+              }`}
+            >
+              {idx > 0 && (
+                <i
+                  className="bi bi-chevron-right small cb-text-secondary me-1"
+                  aria-hidden="true"
+                />
+              )}
+              {done && !isCurrent && (
+                <i className="bi bi-check-circle-fill text-success" aria-hidden="true" />
+              )}
+              {isCurrent && <i className="bi bi-record-circle" aria-hidden="true" />}
+              <span className="visually-hidden">
+                {t('room.roundOf', { n: idx + 1, total: rounds.length })}
+              </span>
+              {t(`analysis.roundTypes.${round.type}`)}
+              {done && !isCurrent && (
+                <span className="visually-hidden"> ({t('room.roundDone')})</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="small cb-text-secondary mb-0">
+        {t('room.roundProgress', {
+          n: Math.min(current + 1, rounds.length),
+          total: rounds.length,
+        })}
+      </p>
+    </div>
   );
 }
 

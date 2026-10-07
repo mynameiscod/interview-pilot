@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { UploadStatus } from '../media/upload-queue';
+import { uploadsFallingBehind, type UploadStatus } from '../media/upload-queue';
 
 /**
  * Video interviews: the candidate's own camera, small and mirrored in a
@@ -34,6 +34,7 @@ export function SelfView({
   }, [stream]);
 
   const waiting = uploads?.waiting ?? 0;
+  const behind = uploadsFallingBehind(uploads);
   const notice = unavailable
     ? t('video.selfView.unavailable')
     : cameraLost
@@ -65,9 +66,9 @@ export function SelfView({
       <p
         className="small cb-text-secondary bg-white rounded-2 px-2 py-1 mt-1 mb-0 shadow-sm"
         role="status"
-        hidden={waiting === 0}
+        hidden={!behind}
       >
-        {waiting > 0 && (
+        {behind && (
           <>
             <span className="spinner-border spinner-border-sm me-1" aria-hidden="true" />
             {t('video.uploads.waiting', { count: waiting })}

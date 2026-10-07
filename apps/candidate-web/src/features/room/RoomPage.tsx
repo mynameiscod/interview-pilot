@@ -20,6 +20,7 @@ import { RouteLoading } from '../../app/RouteStates';
 import { CodingWorkspace } from '../coding/CodingWorkspace';
 import { useIdentityFrame } from '../campaigns/use-identity-frame';
 import { queryKeys, useInterview } from '../interviews/interviews-api';
+import { uploadsFallingBehind } from '../media/upload-queue';
 import { useCameraStream, useInterviewRecording, type TrackKind } from '../media/video-hooks';
 import { clearDraft, loadDraft, saveDraft } from './drafts';
 import { useIntegrityObservations } from './integrity';
@@ -672,7 +673,7 @@ export function RoomPage() {
           uploads={uploads}
         />
       )}
-      {!videoMode && uploads.waiting > 0 && (
+      {!videoMode && uploadsFallingBehind(uploads) && (
         <p className="small cb-text-secondary mt-3 mb-0" role="status">
           {t('video.uploads.waiting', { count: uploads.waiting })}
         </p>

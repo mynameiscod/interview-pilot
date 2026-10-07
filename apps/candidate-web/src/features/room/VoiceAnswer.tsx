@@ -1,6 +1,11 @@
-import { VOICE_LIMITS, type LiveQuestion, type VoiceTranscript } from '@cbi/shared-types';
+import {
+  ANSWER_LIMITS,
+  VOICE_LIMITS,
+  type LiveQuestion,
+  type VoiceTranscript,
+} from '@cbi/shared-types';
 import { ApiClientError } from '@cbi/web-core';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ClipboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatDuration } from '../voice/media';
 import { isSpeechUnavailable, useVoiceApi } from '../voice/voice-api';
@@ -151,6 +156,24 @@ export function VoiceAnswer({
     if (last && phase === 'idle' && !transcript) void transcribe(last);
   }
 
+  // Speech to text is down: this one answer can be typed while the interview stays
+  // spoken (in a video interview the camera keeps recording; switching the whole
+  // interview to text would end the recording).
+  const [typed, setTyped] = useState('');
+  const typedTooLong = typed.length > ANSWER_LIMITS.maxChars;
+  const canSendTyped =
+    Boolean(questionId) && !room.sending && typed.trim().length > 0 && !typedTooLong;
+
+  async function sendTyped() {
+    if (!canSendTyped || !questionId) return;
+    if ((await room.sendAnswer(questionId, typed)) === 'sent') setTyped('');
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    if (!room.integrityTracking) return;
+    room.reportIntegrity('PASTE', e.clipboardData?.getData('text').length ?? 0);
+  }
+
   const announcement =
     phase === 'recording'
       ? t('voice.room.announce.recording')
@@ -176,19 +199,47 @@ export function VoiceAnswer({
         <div className="alert alert-warning" role="alert">
           <p className="fw-semibold mb-1">{t('voice.room.sttDown.title')}</p>
           <p className="small mb-2">{t('voice.room.sttDown.body')}</p>
+          {questionId && phase !== 'recording' && phase !== 'transcribing' && (
+            <div className="mb-2">
+              <label htmlFor={`${id}-typed`} className="form-label small fw-semibold mb-1">
+                {t('voice.room.sttDown.typeLabel')}
+              </label>
+              <textarea
+                id={`${id}-typed`}
+                className={`form-control${typedTooLong ? ' is-invalid' : ''}`}
+                rows={4}
+                value={typed}
+                readOnly={room.sending}
+                onChange={(e) => setTyped(e.target.value)}
+                onPaste={onPaste}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary mt-2"
+                disabled={!canSendTyped}
+                onClick={() => void sendTyped()}
+              >
+                <i className="bi bi-send me-1" aria-hidden="true" />
+                {room.sending ? t('room.sending') : t('voice.room.sttDown.send')}
+              </button>
+            </div>
+          )}
           <div className="d-flex flex-wrap gap-2">
             <button type="button" className="btn btn-sm btn-outline-primary" onClick={retrySpeech}>
               {t('voice.room.sttDown.retry')}
             </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              disabled={room.switchingMode}
-              onClick={() => void room.switchMode('TEXT', 'STT_UNAVAILABLE')}
-            >
-              <i className="bi bi-keyboard me-1" aria-hidden="true" />
-              {t('voice.room.switchToTyping')}
-            </button>
+            {/* Typing for the rest of a video interview would end its recording. */}
+            {room.mode !== 'VIDEO' && (
+              <button
+                type="button"
+                className="btn btn-sm btn-link"
+                disabled={room.switchingMode}
+                onClick={() => void room.switchMode('TEXT', 'STT_UNAVAILABLE')}
+              >
+                <i className="bi bi-keyboard me-1" aria-hidden="true" />
+                {t('voice.room.switchToTyping')}
+              </button>
+            )}
           </div>
         </div>
       )}

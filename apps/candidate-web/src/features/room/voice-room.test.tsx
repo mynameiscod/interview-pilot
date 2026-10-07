@@ -177,6 +177,28 @@ describe('voice interview room', () => {
     expect(screen.getByRole('button', { name: 'Answer by voice' })).toBeInTheDocument();
   });
 
+  it('lets this answer be typed during a speech outage without leaving voice mode', async () => {
+    const { api, sockets } = await openVoiceRoom({
+      handlers: {
+        'POST /interviews/int1/voice/transcribe': () => fail(503, 'SPEECH_UNAVAILABLE'),
+      },
+    });
+    const user = userEvent.setup();
+    await recordAnswer(user);
+
+    await user.type(
+      await screen.findByRole('textbox', { name: 'Your answer' }),
+      'I led a team of three.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send answer' }));
+
+    await waitFor(() => expect(sockets.last.sent('answer:text')).toHaveLength(1));
+    const [sent] = sockets.last.sent('answer:text') as [Record<string, unknown>];
+    expect(sent).toMatchObject({ questionId: 'q1', text: 'I led a team of three.' });
+    expect(sent.voiceTranscriptId).toBeUndefined();
+    expect(api.calls.some((c) => c.key === 'POST /interviews/int1/mode')).toBe(false);
+  });
+
   it('retries the same recording after a speech outage', async () => {
     let attempts = 0;
     const { api } = await openVoiceRoom({

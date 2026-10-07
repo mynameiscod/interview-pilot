@@ -39,6 +39,16 @@ export interface UploadStatus {
   closed: boolean;
 }
 
+/**
+ * One part in flight every 10 s is normal and not worth showing; tell the candidate
+ * only when parts pile up or an upload is being retried.
+ */
+const UPLOAD_NOTICE_AT = 3;
+
+export function uploadsFallingBehind(status: UploadStatus | null): boolean {
+  return Boolean(status) && (status!.retrying || status!.waiting >= UPLOAD_NOTICE_AT);
+}
+
 export const UPLOAD_BACKOFF = { baseMs: 1_000, maxMs: 60_000 } as const;
 
 /** 1 s, 2 s, 4 s … capped at 60 s, with ±20 % jitter so tabs do not retry in step. */

@@ -6,7 +6,21 @@ import {
   SegmentUploadQueue,
   type SendResult,
   type UploadQueueDeps,
+  uploadsFallingBehind,
 } from './upload-queue';
+
+describe('uploadsFallingBehind', () => {
+  const status = { waiting: 0, retrying: false, done: false, closed: false };
+  it('stays quiet for the normal part in flight', () => {
+    expect(uploadsFallingBehind(null)).toBe(false);
+    expect(uploadsFallingBehind({ ...status, waiting: 1 })).toBe(false);
+    expect(uploadsFallingBehind({ ...status, waiting: 2 })).toBe(false);
+  });
+  it('speaks up when parts pile up or a retry is scheduled', () => {
+    expect(uploadsFallingBehind({ ...status, waiting: 3 })).toBe(true);
+    expect(uploadsFallingBehind({ ...status, waiting: 1, retrying: true })).toBe(true);
+  });
+});
 
 const SESSION = 'int1';
 

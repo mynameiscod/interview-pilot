@@ -716,6 +716,7 @@
     "roundsLabel": "Interview rounds",
     "roundOf": "Round {{n}} of {{total}}:",
     "roundDone": "completed",
+    "roundProgress": "Round {{n}} of {{total}}. The interviewer moves on to the next round after your answers.",
     "interviewer": "Interviewer",
     "followUp": "Follow-up",
     "thinking": "Preparing the next question…",
@@ -1431,7 +1432,9 @@
       },
       "sttDown": {
         "title": "We cannot turn speech into text right now",
-        "body": "Try again in a moment, or switch to typing your answers.",
+        "body": "Type your answer below to carry on. You can try speaking again on the next question.",
+        "typeLabel": "Your answer",
+        "send": "Send answer",
         "retry": "Try again"
       },
       "ttsDown": {
