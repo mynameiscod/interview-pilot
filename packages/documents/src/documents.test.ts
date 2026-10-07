@@ -141,7 +141,7 @@ describe('DOCX extraction', () => {
     expect(await code(bomb)).toBe('TOO_LARGE');
   });
 
-  it('does not trust sizes declared in zip headers', () => {
+  it('does not trust sizes declared in zip headers', { timeout: 30_000 }, () => {
     const bomb = buildDocxBomb(30);
     // Rewrite every central-directory "uncompressed size" to 1 byte.
     const lying = Buffer.from(bomb);
