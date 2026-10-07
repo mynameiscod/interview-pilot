@@ -143,7 +143,7 @@ export async function passDeviceCheck(page: Page, mode: 'Voice' | 'Video') {
 export async function acceptAllConsents(page: Page) {
   const recording = page.getByRole('group', { name: /Recording/ });
   if (await recording.count()) {
-    await recording.getByRole('radio', { name: 'Record this interview' }).check();
+    await recording.getByRole('radio', { name: 'Record this interview', exact: true }).check();
   }
   for (const agree of await page.getByRole('radio', { name: 'I agree' }).all()) {
     await agree.check();
