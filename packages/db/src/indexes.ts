@@ -151,7 +151,12 @@ const MODELS = [
 export interface EnsureIndexesOptions {
   /** Days audit log entries are kept (default 730). */
   auditLogRetentionDays?: number;
+  /** Told when the retention could not be applied because the database user lacks collMod. */
+  warn?: (details: Record<string, unknown>, msg: string) => void;
 }
+
+/** MongoDB's "Unauthorized" error code. */
+const UNAUTHORIZED = 13;
 
 /**
  * Creates every declared index (unique, TTL, query). Idempotent; never drops
@@ -162,7 +167,21 @@ export async function ensureIndexes(opts: EnsureIndexesOptions = {}): Promise<vo
   // Data written before the unique index existed must not stop it being built.
   await failDuplicateActiveExports();
   for (const model of MODELS) await model.createIndexes();
-  await ensureAuditLogRetention(opts.auditLogRetentionDays ?? AUDIT_LOG_RETENTION_DAYS_DEFAULT);
+  const days = opts.auditLogRetentionDays ?? AUDIT_LOG_RETENTION_DAYS_DEFAULT;
+  try {
+    await ensureAuditLogRetention(days);
+  } catch (err) {
+    // A readWrite-only user cannot run collMod. Changing the retention must not stop
+    // the service starting: the old expiry stays until an admin applies the new one.
+    if ((err as { code?: unknown }).code !== UNAUTHORIZED) throw err;
+    opts.warn?.(
+      {
+        days,
+        fix: `db.runCommand({ collMod: "auditLogs", index: { keyPattern: ${JSON.stringify(AUDIT_LOG_TTL_KEY)}, expireAfterSeconds: ${Math.round(days * 24 * 3600)} } }) as a database admin`,
+      },
+      'audit log retention not applied: the database user may not run collMod',
+    );
+  }
 }
 
 interface IndexInfo {
